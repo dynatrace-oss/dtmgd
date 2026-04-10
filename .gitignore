@@ -1,0 +1,52 @@
+# Binaries
+bin/
+dist/
+releases/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+dtmgd
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+
+# Dependency directories
+vendor/
+go/
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config files (might contain tokens)
+config.yaml
+.dtmgd/
+.env
+dt-config.yaml
+
+# Build artifacts
+*.log
+.integrationtests.env
+completions/
+
+# API specs (copied for reference, not tracked)
+.api-spec/
+
+# Snapshot data
+snapshot.json

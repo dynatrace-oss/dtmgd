@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Get version info
+        id: version
+        run: |
+          VERSION=$(git describe --tags --dirty 2>/dev/null || echo "dev")
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "date=$DATE" >> $GITHUB_OUTPUT
+
+      - name: Build
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          go build \
+            -ldflags "-s -w \
+              -X github.com/dynatrace-oss/dtmgd/pkg/version.Version=${{ steps.version.outputs.version }} \
+              -X github.com/dynatrace-oss/dtmgd/pkg/version.Commit=${{ steps.version.outputs.commit }} \
+              -X github.com/dynatrace-oss/dtmgd/pkg/version.Date=${{ steps.version.outputs.date }}" \
+            -o dtmgd-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtmgd-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dtmgd-*
+          retention-days: 30

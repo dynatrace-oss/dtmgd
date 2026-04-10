@@ -1,0 +1,54 @@
+version: 2
+project_name: dtmgd
+
+before:
+  hooks:
+    - go mod tidy
+    - go build -o /tmp/dtmgd-completions .
+    - sh -c "mkdir -p completions && /tmp/dtmgd-completions completion bash > completions/dtmgd.bash"
+    - sh -c "/tmp/dtmgd-completions completion zsh > completions/dtmgd.zsh"
+    - sh -c "/tmp/dtmgd-completions completion fish > completions/dtmgd.fish"
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/dynatrace-oss/dtmgd/pkg/version.Version={{.Version}}
+      - -X github.com/dynatrace-oss/dtmgd/pkg/version.Commit={{.ShortCommit}}
+      - -X github.com/dynatrace-oss/dtmgd/pkg/version.Date={{.Date}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE*
+      - README*
+      - SKILL.md
+      - completions/*
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - 'Merge pull request'
+      - 'Merge branch'
