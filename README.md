@@ -55,17 +55,29 @@ dtmgd get problems --status OPEN
 > (`~/.config/dtmgd/config`, mode 0600). Run
 > `dtmgd config migrate-tokens` any time after a keyring becomes available.
 
-## Required API Token Scopes
+## Authentication
 
-| Scope | Used for |
-|---|---|
-| `DataExport` | Metrics, topology |
-| `ReadConfig` | Cluster version |
-| `ReadLogContent` | Logs |
-| `ReadEvents` | Events |
-| `ReadProblems` | Problems |
-| `ReadSecurityProblems` | Security vulnerabilities |
-| `ReadSLO` | Service Level Objectives |
+`dtmgd` uses API token-based authentication. Create an API token in your Managed cluster with the required scopes.
+
+For more information about creating API tokens in Managed deployments, refer to the [Dynatrace Managed documentation](https://docs.dynatrace.com/managed/discover-dynatrace/references/dynatrace-api/basics/dynatrace-api-authentication).
+
+### Required API Token Scopes
+
+Your API token must include the following scopes for full functionality:
+
+- Access problem and event feed, metrics, and topology (`DataExport`) — required for `dtmgd get environments`
+- Read cluster configuration (`ReadConfig`)
+- Read audit logs (`auditLogs.read`)
+- Read entities (`entities.read`)
+- Read events (`events.read`)
+- Read logs (`logs.read`)
+- Read metrics (`metrics.read`)
+- Read network zones (`networkZones.read`)
+- Read problems (`problems.read`)
+- Read security problems (`securityProblems.read`)
+- Read SLO (`slo.read`)
+
+> **Note:** API token scopes in Managed deployments differ from SaaS Platform tokens. Ensure you select the correct scopes for your Managed cluster version.
 
 ## Commands
 
