@@ -41,10 +41,10 @@ type SecurityProblemEntry struct {
 }
 
 var (
-	spRisk   string
-	spStatus string
-	spLimit  int
-	spEntity string
+	spRisk     string
+	spStatus   string
+	spLimit    int
+	spSelector string
 )
 
 var getSecurityProblemsCmd = &cobra.Command{
@@ -56,6 +56,7 @@ var getSecurityProblemsCmd = &cobra.Command{
 Examples:
   dtmgd get security-problems
   dtmgd get security-problems --risk CRITICAL
+  dtmgd get security-problems --selector 'managementZones("BookStore")'
   dtmgd get security-problems --env ALL_ENVIRONMENTS`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := LoadConfig()
@@ -64,6 +65,8 @@ Examples:
 		}
 
 		params := map[string]string{}
+		params["fields"] = "+riskAssessment,+managementZones"
+		params["sort"] = "-riskAssessment.riskScore"
 		pageSize := 200
 		if spLimit > 0 {
 			pageSize = spLimit
@@ -75,8 +78,8 @@ Examples:
 		if spStatus != "" {
 			params["status"] = spStatus
 		}
-		if spEntity != "" {
-			params["entitySelector"] = spEntity
+		if spSelector != "" {
+			params["securityProblemSelector"] = spSelector
 		}
 
 		if isMultiEnv() {
@@ -161,5 +164,5 @@ func init() {
 	getSecurityProblemsCmd.Flags().StringVar(&spRisk, "risk", "", "filter by risk level: LOW, MEDIUM, HIGH, CRITICAL")
 	getSecurityProblemsCmd.Flags().StringVar(&spStatus, "status", "", "filter by status: OPEN, RESOLVED, MUTED")
 	getSecurityProblemsCmd.Flags().IntVar(&spLimit, "limit", 0, "maximum number of results")
-	getSecurityProblemsCmd.Flags().StringVar(&spEntity, "entity", "", "entity selector to filter vulnerabilities")
+	getSecurityProblemsCmd.Flags().StringVar(&spSelector, "selector", "", `security problem selector, e.g. managementZones("BookStore")`)
 }
