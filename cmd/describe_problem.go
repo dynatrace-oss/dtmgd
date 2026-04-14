@@ -54,5 +54,4 @@ Use the problemId (UUID format) from 'dtmgd get problems', not the display ID (P
 
 func init() {
 	describeCmd.AddCommand(describeProblemCmd)
-	describeProblemCmd.Flags().SetInterspersed(false)
 }
