@@ -101,6 +101,12 @@ func LoadConfig() (*config.Config, error) {
 		cfg.CurrentContext = contextName
 	}
 
+	// If --env is a single named context (not ALL_ENVIRONMENTS or semicolon-separated),
+	// treat it like --context so table output works correctly.
+	if envSpec != "" && envSpec != "ALL_ENVIRONMENTS" && !strings.Contains(envSpec, ";") {
+		cfg.CurrentContext = envSpec
+	}
+
 	return cfg, nil
 }
 
@@ -186,7 +192,7 @@ func NewClientWithHostEnv(host, envID, token string) (*client.Client, error) {
 
 // isMultiEnv returns true if the --env flag specifies multiple environments.
 func isMultiEnv() bool {
-	return envSpec != ""
+	return envSpec == "ALL_ENVIRONMENTS" || strings.Contains(envSpec, ";")
 }
 
 // effectiveMaxPages returns the page limit. When --limit is set, fetch only 1 page
