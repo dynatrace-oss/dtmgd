@@ -260,13 +260,17 @@ dtmgd get security-problems
 dtmgd get security-problems --risk CRITICAL
 dtmgd get security-problems --status OPEN --limit 50
 
-# Filter by security problem selector (management zone, technology, vulnerability type, etc.)
-# Use managementZones("Name") to scope to a specific management zone
-dtmgd get security-problems --selector 'managementZones("BookStore")'
-dtmgd get security-problems --selector 'managementZones("BookStore")' --status OPEN --limit 5
+# Filter by management zone: use --selector with managementZones("Name") DSL
+# --status and --risk are automatically merged into the selector
+dtmgd get security-problems --status OPEN --selector 'managementZones("bookstore")'
+dtmgd get security-problems --status OPEN --selector 'managementZones("bookstore")' --limit 5
 
-# Full CVE detail
-dtmgd describe security-problem <security-problem-id> -o json
+# --status, --risk, and --selector are composable — combined with AND logic:
+# e.g. CRITICAL open vulnerabilities in the bookstore management zone:
+dtmgd get security-problems --status OPEN --risk CRITICAL --selector 'managementZones("bookstore")'
+
+# Full CVE detail (use the display ID, e.g. S-42)
+dtmgd describe security-problem S-42 --env prod -o json
 ```
 
 ## Typical Investigation Workflow

@@ -30,3 +30,8 @@ func truncate(s string, maxLen int) string {
 	}
 	return string(runes[:maxLen-1]) + "…"
 }
+
+// joinSelector joins multiple securityProblemSelector DSL clauses with a comma.
+func joinSelector(parts ...string) string {
+return strings.Join(parts, ",")
+}

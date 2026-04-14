@@ -72,14 +72,22 @@ Examples:
 			pageSize = spLimit
 		}
 		params["pageSize"] = fmt.Sprintf("%d", pageSize)
-		if spRisk != "" {
-			params["riskLevel"] = spRisk
-		}
+
+		// Build securityProblemSelector from all filters (status, risk, and explicit selector)
+		// Note: the API list endpoint has no standalone status/riskLevel params — all
+		// filtering goes through securityProblemSelector as a comma-separated DSL.
+		var selectorParts []string
 		if spStatus != "" {
-			params["status"] = spStatus
+			selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", spStatus))
+		}
+		if spRisk != "" {
+			selectorParts = append(selectorParts, fmt.Sprintf("riskLevel(%q)", spRisk))
 		}
 		if spSelector != "" {
-			params["securityProblemSelector"] = spSelector
+			selectorParts = append(selectorParts, spSelector)
+		}
+		if len(selectorParts) > 0 {
+			params["securityProblemSelector"] = joinSelector(selectorParts...)
 		}
 
 		if isMultiEnv() {
