@@ -109,7 +109,7 @@ dtmgd get entity-types       # list all entity types
 dtmgd get events             # --from (required), --to, --type, --entity, --limit
 dtmgd get metrics            # --search, --entity, --limit
 dtmgd get slos               # --enabled, --limit, --evaluate
-dtmgd get security-problems  # --risk, --status, --entity, --limit
+dtmgd get security-problems  # --risk, --status, --selector, --limit
 ```
 
 > `describe problem` accepts the UUID from the `PROBLEM-ID` column, **not** the
