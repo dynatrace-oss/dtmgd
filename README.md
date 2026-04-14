@@ -114,6 +114,12 @@ dtmgd get security-problems  # --risk, --status, --entity, --limit
 
 > `describe problem` accepts the UUID from the `PROBLEM-ID` column, **not** the
 > short `P-XXXXX` display ID shown in the `DISPLAY-ID` column.
+>
+> Some problem UUIDs are negative integers (e.g. `-6546711275898328738_1776193140000V2`).
+> Pass them after `--` to prevent the leading `-` from being parsed as a flag:
+> ```
+> dtmgd describe problem -- -6546711275898328738_1776193140000V2
+> ```
 
 ### Describe (detail view, outputs JSON by default)
 

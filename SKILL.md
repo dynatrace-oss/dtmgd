@@ -165,7 +165,11 @@ dtmgd describe problem <uuid> -o json
 ```
 
 > **Important**: `describe problem` requires the internal UUID (e.g. `8a3f1b2c-...`),
-> **not** the short display ID like `P-12345`.
+> **not** the short display ID like `P-12345`. Some UUIDs are negative integers — pass
+> them after `--` to avoid flag-parsing errors:
+> ```bash
+> dtmgd describe problem -- -6546711275898328738_1776193140000V2
+> ```
 
 ## Entities
 
@@ -299,6 +303,7 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 ## Gotchas
 
 - `describe problem` requires the **UUID** (`PROBLEM-ID` column), not the display ID (`P-XXXXX`).
+- Problem UUIDs can be **negative integers** (e.g. `-6546711275898328738_1776193140000V2`). Always pass them after `--` to prevent the leading `-` being parsed as a flag: `dtmgd describe problem -- -6546711275898328738_V2`
 - `get events` requires `--from`; it won't default like `get problems` does.
 - `query logs` uses plain text search only — no `content:` prefix or structured syntax.
 - `query metrics` defaults to table/text summary; add `-o json` to get raw time-series data.
