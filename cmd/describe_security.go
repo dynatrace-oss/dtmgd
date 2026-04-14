@@ -27,7 +27,7 @@ display ID (S-XXXXX).`,
 
 		path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(args[0]))
 		params := map[string]string{
-			"fields": "+riskAssessment,+managementZones,+codeLocations,+vulnerableComponents,+affectedEntities",
+			"fields": "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description",
 		}
 
 		if isMultiEnv() {
