@@ -100,6 +100,11 @@ Examples:
 			}
 		}
 
+		if len(entityNames) == 0 {
+			output.PrintInfo("No entities found for the specified entity selector.")
+			return nil
+		}
+
 		// For each log level, call aggregate with groupBy=dt.entity.process_group.
 		// entitySelector is intentionally omitted: on DT Managed Classic it is a hidden
 		// parameter that does not actually filter the aggregate result (returns empty).
@@ -147,23 +152,15 @@ Examples:
 			}
 		}
 
-		if len(pgCounts) == 0 {
-			output.PrintInfo("No log records found for the specified entity selector and time range.")
-			return nil
-		}
-
-		// Build rows.
-		rows := make([]LogCountRow, 0, len(pgCounts))
-		for pgID, levels := range pgCounts {
+		// Build rows: include zero rows for all known entities so that services
+		// with no log ingestion are visible (rather than silently omitted).
+		rows := make([]LogCountRow, 0, len(entityNames))
+		for pgID, name := range entityNames {
+			levels := pgCounts[pgID] // nil if no logs found for this PG
 			info := levels["INFO"]
 			warn := levels["WARN"]
 			errCount := levels["ERROR"]
 			total := info + warn + errCount
-
-			name := entityNames[pgID]
-			if name == "" {
-				name = pgID
-			}
 
 			rows = append(rows, LogCountRow{
 				Service: name,

@@ -108,6 +108,56 @@ func TestEntityIDNormalization(t *testing.T) {
 	}
 }
 
+// TestZeroRowsIncluded verifies that services with no log data still appear in output as
+// zero rows (fixing the silent omission bug: services with no logs were previously dropped).
+func TestZeroRowsIncluded(t *testing.T) {
+	// Simulate entity lookup: 3 known services.
+	entityNames := map[string]string{
+		"process_group-aaa": "books",
+		"process_group-bbb": "orders",
+		"process_group-ccc": "payments",
+	}
+
+	// Simulate aggregate result: only "payments" had any logs.
+	pgCounts := map[string]map[string]int64{
+		"process_group-ccc": {"ERROR": 12},
+	}
+
+	// Apply the fixed row-building logic (iterate entityNames, not pgCounts).
+	rows := make([]LogCountRow, 0, len(entityNames))
+	for pgID, name := range entityNames {
+		levels := pgCounts[pgID] // nil for books and orders
+		rows = append(rows, LogCountRow{
+			Service: name,
+			Info:    levels["INFO"],
+			Warn:    levels["WARN"],
+			Error:   levels["ERROR"],
+			Total:   levels["INFO"] + levels["WARN"] + levels["ERROR"],
+		})
+	}
+
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows (including zero rows), got %d", len(rows))
+	}
+
+	byService := map[string]LogCountRow{}
+	for _, r := range rows {
+		byService[r.Service] = r
+	}
+
+	// payments should have 12 errors.
+	if byService["payments"].Error != 12 {
+		t.Errorf("payments error count = %d, want 12", byService["payments"].Error)
+	}
+	// books and orders should have zero totals (not omitted).
+	for _, svc := range []string{"books", "orders"} {
+		r := byService[svc]
+		if r.Total != 0 {
+			t.Errorf("%s total = %d, want 0 (zero-row should be included)", svc, r.Total)
+		}
+	}
+}
+
 // TestPGSelectorConversion verifies that type(SERVICE) is converted to type(PROCESS_GROUP).
 func TestPGSelectorConversion(t *testing.T) {
 	tests := []struct {
