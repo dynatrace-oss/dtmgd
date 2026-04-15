@@ -108,7 +108,7 @@ dtmgd get entities           # --selector (required), --from, --to, --limit, --s
 dtmgd get entity-types       # list all entity types
 dtmgd get events             # --from (required), --to, --type, --entity, --limit
 dtmgd get metrics            # --search, --entity, --limit
-dtmgd get slos               # --enabled, --limit, --evaluate
+dtmgd get slos               # --enabled, --limit, --evaluate, --selector (sloSelector DSL)
 dtmgd get security-problems  # --risk, --status, --selector, --limit
 ```
 

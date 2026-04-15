@@ -287,7 +287,19 @@ dtmgd query logs --query "OutOfMemoryError" --from now-6h --sort -timestamp
 # List SLOs
 dtmgd get slos
 dtmgd get slos --enabled false      # disabled SLOs
-dtmgd get slos --evaluate           # include current compliance %
+dtmgd get slos --evaluate           # include current evaluated % (auto-pages in batches of 25)
+
+# Filter SLOs by management zone, name, or text (sloSelector DSL)
+# Supported predicates: name("..."), text("..."), managementZone("..."), managementZoneID("..."),
+#   entityIDs("..."), healthState("HEALTHY"|"UNHEALTHY")
+dtmgd get slos --selector 'managementZone("bookstore")' --evaluate
+dtmgd get slos --selector 'text("OrderController")' --evaluate
+dtmgd get slos --selector 'healthState("UNHEALTHY")' --evaluate
+
+# SLO status: SUCCESS (green) = at/above warning threshold
+#             WARNING (yellow) = at/above target but below warning threshold
+#             FAILURE (red)   = below target
+#             NONE            = not evaluated
 
 # SLO detail with error budget
 dtmgd describe slo <slo-id>
