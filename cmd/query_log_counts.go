@@ -94,7 +94,9 @@ Examples:
 		}
 		if err := c.GetV2("/entities", entParams, &entResp); err == nil {
 			for _, e := range entResp.Entities {
-				entityNames[e.EntityID] = cleanPGName(e.DisplayName)
+				// Store with lowercase key: entities API returns "PROCESS_GROUP-UPPERCASE"
+				// but logs aggregate returns "process_group-lowercase" for the same entity.
+				entityNames[strings.ToLower(e.EntityID)] = cleanPGName(e.DisplayName)
 			}
 		}
 
