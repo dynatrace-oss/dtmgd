@@ -148,11 +148,15 @@ Examples:
 			if s.Warning != nil {
 				warningPct = fmt.Sprintf("%.2f%%", *s.Warning)
 			}
+			evalPct := "N/A"
+			if s.EvaluatedPctOf >= 0 {
+				evalPct = fmt.Sprintf("%.2f%%", s.EvaluatedPctOf)
+			}
 			items = append(items, SLOListItem{
 				ID:           s.ID,
 				Name:         s.Name,
 				Status:       s.Status,
-				EvaluatedPct: fmt.Sprintf("%.2f%%", s.EvaluatedPctOf),
+				EvaluatedPct: evalPct,
 				TargetPct:    fmt.Sprintf("%.2f%%", s.TargetSuccess),
 				WarningPct:   warningPct,
 				Enabled:      enabled,
