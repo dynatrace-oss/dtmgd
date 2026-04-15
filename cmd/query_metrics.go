@@ -208,7 +208,12 @@ func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) {
 		nameMap[e.EntityID] = e.DisplayName
 	}
 
-	// Inject .name keys into every DimensionMap.
+	injectEntityNames(resp, nameMap)
+}
+
+// injectEntityNames writes "dt.entity.X.name" keys into every DimensionMap in resp
+// using the provided entityID→displayName lookup. This is extracted for testability.
+func injectEntityNames(resp *MetricQueryResponse, nameMap map[string]string) {
 	for ri := range resp.Result {
 		for di := range resp.Result[ri].Data {
 			dm := resp.Result[ri].Data[di].DimensionMap

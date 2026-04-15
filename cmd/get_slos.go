@@ -148,10 +148,7 @@ Examples:
 			if s.Warning != nil {
 				warningPct = fmt.Sprintf("%.2f%%", *s.Warning)
 			}
-			evalPct := "N/A"
-			if s.EvaluatedPctOf >= 0 {
-				evalPct = fmt.Sprintf("%.2f%%", s.EvaluatedPctOf)
-			}
+			evalPct := formatEvaluatedPct(s.EvaluatedPctOf)
 			items = append(items, SLOListItem{
 				ID:           s.ID,
 				Name:         s.Name,
@@ -195,4 +192,14 @@ func init() {
 	getSLOsCmd.Flags().IntVar(&sloLimit, "limit", 0, "maximum number of results to show")
 	getSLOsCmd.Flags().BoolVar(&sloEval, "evaluate", false, "evaluate SLO percentages (slower; max 25 per page, auto-paged)")
 	getSLOsCmd.Flags().StringVar(&sloSelector, "selector", "", "sloSelector DSL to filter SLOs (e.g. 'managementZone(\"bookstore\")')")
+}
+
+// formatEvaluatedPct formats the SLO evaluated percentage for display.
+// Dynatrace returns -1 when the SLO cannot be evaluated (e.g. service was down
+// for the entire evaluation window). We show "N/A" in that case.
+func formatEvaluatedPct(v float64) string {
+	if v < 0 {
+		return "N/A"
+	}
+	return fmt.Sprintf("%.2f%%", v)
 }

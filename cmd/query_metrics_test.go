@@ -140,3 +140,93 @@ func TestExtractEntityLabel(t *testing.T) {
 
 // fptr is a helper to create a *float64 from a float64 literal.
 func fptr(v float64) *float64 { return &v }
+
+// TestInjectEntityNames verifies that injectEntityNames populates "dt.entity.X.name"
+// keys in DimensionMaps from a pre-built name map.  This covers the bug fix that
+// resolved blank ENTITY columns in the metrics table output.
+func TestInjectEntityNames(t *testing.T) {
+	resp := &MetricQueryResponse{
+		Result: []MetricQueryResult{
+			{
+				MetricID: "builtin:service.requestCount.total",
+				Data: []MetricQueryDataPoints{
+					{
+						DimensionMap: map[string]string{
+							"dt.entity.service": "SERVICE-ABC123",
+						},
+					},
+					{
+						DimensionMap: map[string]string{
+							"dt.entity.service": "SERVICE-DEF456",
+						},
+					},
+				},
+			},
+			{
+				MetricID: "builtin:service.errors.total.count",
+				Data: []MetricQueryDataPoints{
+					{
+						DimensionMap: map[string]string{
+							"dt.entity.service": "SERVICE-ABC123",
+						},
+					},
+					{
+						// Entity not in the name map — should remain without .name key.
+						DimensionMap: map[string]string{
+							"dt.entity.service": "SERVICE-UNKNOWN",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	nameMap := map[string]string{
+		"SERVICE-ABC123": "payments",
+		"SERVICE-DEF456": "orders",
+	}
+
+	injectEntityNames(resp, nameMap)
+
+	tests := []struct {
+		ri, di   int
+		wantName string
+		wantID   string
+	}{
+		{0, 0, "payments", "SERVICE-ABC123"},
+		{0, 1, "orders", "SERVICE-DEF456"},
+		{1, 0, "payments", "SERVICE-ABC123"},
+		{1, 1, "", "SERVICE-UNKNOWN"}, // unknown entity: name must be absent
+	}
+
+	for _, tt := range tests {
+		dm := resp.Result[tt.ri].Data[tt.di].DimensionMap
+		name, id := extractEntityLabel(dm)
+		if name != tt.wantName {
+			t.Errorf("result[%d].data[%d]: name = %q, want %q", tt.ri, tt.di, name, tt.wantName)
+		}
+		if id != tt.wantID {
+			t.Errorf("result[%d].data[%d]: id = %q, want %q", tt.ri, tt.di, id, tt.wantID)
+		}
+	}
+}
+
+// TestInjectEntityNames_NoOp verifies that an empty name map leaves DimensionMaps unchanged.
+func TestInjectEntityNames_NoOp(t *testing.T) {
+	resp := &MetricQueryResponse{
+		Result: []MetricQueryResult{
+			{
+				Data: []MetricQueryDataPoints{
+					{DimensionMap: map[string]string{"dt.entity.service": "SERVICE-XYZ"}},
+				},
+			},
+		},
+	}
+
+	injectEntityNames(resp, map[string]string{})
+
+	dm := resp.Result[0].Data[0].DimensionMap
+	if _, hasName := dm["dt.entity.service.name"]; hasName {
+		t.Error("expected no .name key injected when nameMap is empty")
+	}
+}
