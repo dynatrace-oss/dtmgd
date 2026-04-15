@@ -48,6 +48,7 @@ var (
 	probTo        string
 	probStatus    string
 	probImpact    string
+	probSelector  string
 	probEntitySel string
 	probLimit     int
 	probSort      string
@@ -86,11 +87,19 @@ Multi-environment:
 				"from": probFrom,
 				"to":   probTo,
 			}
+			// Build problemSelector DSL: status(), impactLevel(), and any user-supplied selector
+			var selectorParts []string
 			if probStatus != "" {
-				params["status"] = probStatus
+				selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", probStatus))
 			}
 			if probImpact != "" {
-				params["impactLevel"] = probImpact
+				selectorParts = append(selectorParts, fmt.Sprintf("impactLevel(%q)", probImpact))
+			}
+			if probSelector != "" {
+				selectorParts = append(selectorParts, probSelector)
+			}
+			if sel := joinSelector(selectorParts...); sel != "" {
+				params["problemSelector"] = sel
 			}
 			if probEntitySel != "" {
 				params["entitySelector"] = probEntitySel
@@ -192,9 +201,10 @@ func init() {
 
 	getProblemsCmd.Flags().StringVar(&probFrom, "from", "", "start time (e.g. now-24h, 2024-01-01T00:00:00Z)")
 	getProblemsCmd.Flags().StringVar(&probTo, "to", "", "end time (default: now)")
-	getProblemsCmd.Flags().StringVar(&probStatus, "status", "", "filter by status: OPEN or CLOSED")
-	getProblemsCmd.Flags().StringVar(&probImpact, "impact", "", "filter by impact: SERVICE, INFRASTRUCTURE, APPLICATION")
-	getProblemsCmd.Flags().StringVar(&probEntitySel, "entity", "", "entity selector to filter problems")
+	getProblemsCmd.Flags().StringVar(&probStatus, "status", "", "filter by status: OPEN or CLOSED (added to problemSelector)")
+	getProblemsCmd.Flags().StringVar(&probImpact, "impact", "", "filter by impact level: SERVICE, INFRASTRUCTURE, APPLICATION (added to problemSelector)")
+	getProblemsCmd.Flags().StringVar(&probSelector, "selector", "", `problemSelector DSL (e.g. managementZones("bookstore"))`)
+	getProblemsCmd.Flags().StringVar(&probEntitySel, "entity", "", "entitySelector to filter problems by entity")
 	getProblemsCmd.Flags().IntVar(&probLimit, "limit", 0, "maximum number of problems to return")
 	getProblemsCmd.Flags().StringVar(&probSort, "sort", "", "sort order (e.g. +status, -startTime)")
 }
