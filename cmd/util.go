@@ -33,5 +33,5 @@ func truncate(s string, maxLen int) string {
 
 // joinSelector joins multiple securityProblemSelector DSL clauses with a comma.
 func joinSelector(parts ...string) string {
-return strings.Join(parts, ",")
+	return strings.Join(parts, ",")
 }

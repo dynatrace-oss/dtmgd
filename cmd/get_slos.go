@@ -42,10 +42,10 @@ type SLOEntry struct {
 }
 
 var (
-	sloEnabled   string
-	sloLimit     int
-	sloEval      bool
-	sloSelector  string
+	sloEnabled  string
+	sloLimit    int
+	sloEval     bool
+	sloSelector string
 )
 
 var getSLOsCmd = &cobra.Command{

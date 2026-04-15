@@ -24,7 +24,7 @@ type SecurityProblemListItem struct {
 // SecurityProblemsResponse models /api/v2/securityProblems.
 type SecurityProblemsResponse struct {
 	SecurityProblems []SecurityProblemEntry `json:"securityProblems"`
-	TotalCount       int                   `json:"totalCount"`
+	TotalCount       int                    `json:"totalCount"`
 }
 
 type SecurityProblemEntry struct {

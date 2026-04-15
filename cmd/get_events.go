@@ -26,11 +26,11 @@ type EventsResponse struct {
 }
 
 type EventEntry struct {
-	EventID   string `json:"eventId"`
-	EventType string `json:"eventType"`
-	Title     string `json:"title"`
-	StartTime int64  `json:"startTime"`
-	EndTime   int64  `json:"endTime"`
+	EventID        string `json:"eventId"`
+	EventType      string `json:"eventType"`
+	Title          string `json:"title"`
+	StartTime      int64  `json:"startTime"`
+	EndTime        int64  `json:"endTime"`
 	AffectedEntity *struct {
 		EntityID string `json:"entityId"`
 		Name     string `json:"name"`

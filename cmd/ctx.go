@@ -32,7 +32,7 @@ Examples:
   dtmgd ctx                   # list all contexts
   dtmgd ctx production        # switch to context
   dtmgd ctx current           # show current context name`,
-	Args: cobra.MaximumNArgs(1),
+	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: contextCompletionFn,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
@@ -69,10 +69,10 @@ var ctxSetCmd = &cobra.Command{
 }
 
 var ctxDeleteCmd = &cobra.Command{
-	Use:     "delete <context-name>",
-	Aliases: []string{"rm"},
-	Short:   "Delete a context",
-	Args:    cobra.ExactArgs(1),
+	Use:               "delete <context-name>",
+	Aliases:           []string{"rm"},
+	Short:             "Delete a context",
+	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: contextCompletionFn,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return deleteContext(args[0])
