@@ -21,18 +21,23 @@ jobs:
 
       - name: Download dependencies
         run: go mod download
+        shell: bash
 
       - name: Build
         run: go build ./...
+        shell: bash
 
       - name: Vet
         run: go vet ./...
+        shell: bash
 
       - name: Test
         run: go test -race -coverprofile=coverage.out ./...
+        shell: bash
 
       - name: Check coverage threshold
         if: matrix.os == 'ubuntu-latest'
+        shell: bash
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Total coverage: ${COVERAGE}%"
