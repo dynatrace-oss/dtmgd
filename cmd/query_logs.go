@@ -133,18 +133,8 @@ Examples:
 		fmt.Println()
 		for _, entry := range resp.Results {
 			ts := msToTime(entry.Timestamp)
-			content := entry.Content
-			if content == "" {
-				if c, ok := entry.Event["content"]; ok {
-					content = fmt.Sprintf("%v", c)
-				}
-			}
-			status := entry.Status
-			if status == "" {
-				if s, ok := entry.Event["status"]; ok {
-					status = fmt.Sprintf("%v", s)
-				}
-			}
+			content := resolveLogContent(entry)
+			status := resolveLogStatus(entry)
 			if status != "" {
 				fmt.Printf("[%s] [%s] %s\n", ts, status, content)
 			} else {
@@ -156,6 +146,30 @@ Examples:
 		}
 		return nil
 	},
+}
+
+// resolveLogContent returns the log content from a LogEntry.
+// Falls back to entry.Event["content"] when Content is empty (DT Managed Classic format).
+func resolveLogContent(entry LogEntry) string {
+	if entry.Content != "" {
+		return entry.Content
+	}
+	if c, ok := entry.Event["content"]; ok {
+		return fmt.Sprintf("%v", c)
+	}
+	return ""
+}
+
+// resolveLogStatus returns the log status/level from a LogEntry.
+// Falls back to entry.Event["status"] when Status is empty.
+func resolveLogStatus(entry LogEntry) string {
+	if entry.Status != "" {
+		return entry.Status
+	}
+	if s, ok := entry.Event["status"]; ok {
+		return fmt.Sprintf("%v", s)
+	}
+	return ""
 }
 
 func init() {

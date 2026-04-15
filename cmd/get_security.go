@@ -135,35 +135,41 @@ Examples:
 
 		var items []SecurityProblemListItem
 		for _, sp := range problems {
-			riskLevel := ""
-			riskScore := ""
-			if sp.RiskAssessment != nil {
-				riskLevel = sp.RiskAssessment.RiskLevel
-				riskScore = fmt.Sprintf("%.1f", sp.RiskAssessment.RiskScore)
-			}
-			cves := ""
-			if len(sp.CveIds) > 0 {
-				cves = sp.CveIds[0]
-				if len(sp.CveIds) > 1 {
-					cves += fmt.Sprintf(" +%d", len(sp.CveIds)-1)
-				}
-			}
-			items = append(items, SecurityProblemListItem{
-				SecurityID:  sp.SecurityProblemID,
-				DisplayID:   sp.DisplayID,
-				PackageName: sp.PackageName,
-				Technology:  sp.Technology,
-				RiskLevel:   riskLevel,
-				RiskScore:   riskScore,
-				Status:      sp.Status,
-				CVEs:        cves,
-			})
+			items = append(items, securityEntryToListItem(sp))
 		}
 		if resp.TotalCount > len(problems) {
 			output.PrintInfo("Showing %d of %d security problems.", len(problems), resp.TotalCount)
 		}
 		return NewPrinter().PrintList(items)
 	},
+}
+
+// securityEntryToListItem converts a SecurityProblemEntry to a table row.
+// The CVEs field shows the first CVE; if there are more, appends " +N".
+func securityEntryToListItem(sp SecurityProblemEntry) SecurityProblemListItem {
+	riskLevel := ""
+	riskScore := ""
+	if sp.RiskAssessment != nil {
+		riskLevel = sp.RiskAssessment.RiskLevel
+		riskScore = fmt.Sprintf("%.1f", sp.RiskAssessment.RiskScore)
+	}
+	cves := ""
+	if len(sp.CveIds) > 0 {
+		cves = sp.CveIds[0]
+		if len(sp.CveIds) > 1 {
+			cves += fmt.Sprintf(" +%d", len(sp.CveIds)-1)
+		}
+	}
+	return SecurityProblemListItem{
+		SecurityID:  sp.SecurityProblemID,
+		DisplayID:   sp.DisplayID,
+		PackageName: sp.PackageName,
+		Technology:  sp.Technology,
+		RiskLevel:   riskLevel,
+		RiskScore:   riskScore,
+		Status:      sp.Status,
+		CVEs:        cves,
+	}
 }
 
 func init() {
