@@ -234,6 +234,41 @@ dtmgd query metrics \
   --from now-6h \
   --entity 'type(HOST),entityName.contains("web")' \
   --resolution 30m
+
+# Per-entity summary table (use --resolution Inf + :splitBy + :names for compact output)
+# Shows one row per entity sorted by value desc, with resolved entity names.
+dtmgd query metrics \
+  --metric 'builtin:service.requestCount.server:splitBy("dt.entity.service"):sum:names' \
+  --entity 'type(SERVICE),tag("[Environment]BookStore")' \
+  --from now-1h --resolution Inf
+
+# Service performance summary for BookStore (requests/min + failures/min)
+# Step 1: total requests over last 1h per service
+dtmgd query metrics \
+  --metric 'builtin:service.requestCount.server:splitBy("dt.entity.service"):sum:names' \
+  --entity 'type(SERVICE),tag("[Environment]BookStore")' \
+  --from now-1h --resolution Inf
+
+# Step 2: total errors over last 1h per service
+dtmgd query metrics \
+  --metric 'builtin:service.errors.server.count:splitBy("dt.entity.service"):sum:names' \
+  --entity 'type(SERVICE),tag("[Environment]BookStore")' \
+  --from now-1h --resolution Inf
+
+# Step 3: average response time per service
+dtmgd query metrics \
+  --metric 'builtin:service.response.time:splitBy("dt.entity.service"):avg:names' \
+  --entity 'type(SERVICE),tag("[Environment]BookStore")' \
+  --from now-1h --resolution Inf
+
+# Divide by 60 to convert 1h totals to per-minute rates.
+# Key BookStore service metrics (builtin:service.*):
+#   builtin:service.requestCount.server          — request count (server-side)
+#   builtin:service.errors.server.count          — server error count
+#   builtin:service.errors.server.rate           — server error rate (%)
+#   builtin:service.response.time                — average response time (µs)
+#   builtin:service.errors.fivexx.count          — HTTP 5xx error count
+#   builtin:service.errors.fourxx.count          — HTTP 4xx error count
 ```
 
 ## Logs
