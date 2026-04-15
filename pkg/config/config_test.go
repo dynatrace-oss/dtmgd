@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -316,9 +317,11 @@ func TestSaveToCreatesFile(t *testing.T) {
 	if _, err := os.Stat(tmp); os.IsNotExist(err) {
 		t.Error("config file was not created")
 	}
-	// Verify file permissions (mode 0600).
-	info, _ := os.Stat(tmp)
-	if info.Mode().Perm() != 0600 {
-		t.Errorf("expected file mode 0600, got %04o", info.Mode().Perm())
+	// Verify file permissions (mode 0600) — Windows uses NTFS ACLs, not Unix bits.
+	if runtime.GOOS != "windows" {
+		info, _ := os.Stat(tmp)
+		if info.Mode().Perm() != 0600 {
+			t.Errorf("expected file mode 0600, got %04o", info.Mode().Perm())
+		}
 	}
 }
