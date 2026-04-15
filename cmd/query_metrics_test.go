@@ -230,3 +230,119 @@ func TestInjectEntityNames_NoOp(t *testing.T) {
 		t.Error("expected no .name key injected when nameMap is empty")
 	}
 }
+
+// TestPrintTimeSeriesDataPoint exercises all label-derivation branches of the function
+// (name+id, id-only, dimensions list, dimensionMap fallback, empty).  The function
+// writes to stdout; we just verify it doesn't panic with any combination of inputs.
+func TestPrintTimeSeriesDataPoint(t *testing.T) {
+	v42 := fptr(42.0)
+	cases := []MetricQueryDataPoints{
+		{
+			// name + id resolved
+			DimensionMap: map[string]string{
+				"dt.entity.service":      "SERVICE-ABC",
+				"dt.entity.service.name": "payments",
+			},
+			Timestamps: []int64{1704067200000, 1704070800000},
+			Values:     []*float64{v42, nil},
+		},
+		{
+			// id only (no name)
+			DimensionMap: map[string]string{"dt.entity.service": "SERVICE-XYZ"},
+			Timestamps:   []int64{1704067200000},
+			Values:       []*float64{v42},
+		},
+		{
+			// Dimensions slice used when DimensionMap is empty
+			Dimensions: []string{"prod", "eu"},
+			Timestamps: []int64{},
+			Values:     nil,
+		},
+		{
+			// DimensionMap with non-entity keys (fallback)
+			DimensionMap: map[string]string{"host": "web-1", "region": "eu-west"},
+			Timestamps:   []int64{1704067200000},
+			Values:       []*float64{fptr(1.0)},
+		},
+		{
+			// Completely empty input
+			DimensionMap: map[string]string{},
+		},
+	}
+
+	for _, dp := range cases {
+		// Should not panic.
+		printTimeSeriesDataPoint(dp)
+	}
+}
+
+// TestPrintEntitySummaryTable exercises the sort and formatting logic.  Output goes
+// to stdout; we verify the function completes without panic for various inputs.
+func TestPrintEntitySummaryTable(t *testing.T) {
+	v1, v2 := fptr(100.0), fptr(50.0)
+	data := []MetricQueryDataPoints{
+		{
+			DimensionMap: map[string]string{
+				"dt.entity.service":      "SERVICE-B",
+				"dt.entity.service.name": "orders",
+			},
+			Timestamps: []int64{1704067200000},
+			Values:     []*float64{v2},
+		},
+		{
+			DimensionMap: map[string]string{
+				"dt.entity.service":      "SERVICE-A",
+				"dt.entity.service.name": "payments",
+			},
+			Timestamps: []int64{1704067200000},
+			Values:     []*float64{v1},
+		},
+		{
+			// null value entry
+			DimensionMap: map[string]string{"dt.entity.service": "SERVICE-C"},
+			Timestamps:   []int64{1704067200000},
+			Values:       []*float64{nil},
+		},
+	}
+
+	// Should not panic.
+	printEntitySummaryTable(data)
+	// Empty slice.
+	printEntitySummaryTable(nil)
+}
+
+// TestPrintMetricQuerySummary exercises both the single-value and time-series
+// branches of the summary printer.
+func TestPrintMetricQuerySummary(t *testing.T) {
+	v := fptr(1.5)
+	resp := MetricQueryResponse{
+		Resolution: "1h",
+		Result: []MetricQueryResult{
+			{
+				MetricID: "builtin:service.requestCount.total",
+				Data: []MetricQueryDataPoints{
+					{
+						// single-value branch
+						DimensionMap: map[string]string{"dt.entity.service": "SERVICE-A"},
+						Timestamps:   []int64{1704067200000},
+						Values:       []*float64{v},
+					},
+				},
+			},
+			{
+				MetricID: "builtin:service.errors.total.count",
+				Data: []MetricQueryDataPoints{
+					{
+						// time-series branch (multiple timestamps)
+						DimensionMap: map[string]string{"dt.entity.service": "SERVICE-B"},
+						Timestamps:   []int64{1704067200000, 1704070800000},
+						Values:       []*float64{v, v},
+					},
+				},
+			},
+		},
+	}
+
+	// Should not panic.
+	printMetricQuerySummary(resp)
+}

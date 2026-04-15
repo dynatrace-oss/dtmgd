@@ -3,6 +3,8 @@ package cmd
 import (
 	"reflect"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestParseColumns verifies the column filter parsing logic.
@@ -124,4 +126,17 @@ func TestIsMultiEnv(t *testing.T) {
 	}
 	// Reset global state.
 	envSpec = ""
+}
+
+// TestRequireSubcommand verifies that requireSubcommand always returns a non-nil error
+// (the "a subcommand is required" sentinel), regardless of the command passed in.
+func TestRequireSubcommand(t *testing.T) {
+	cmd := &cobra.Command{Use: "test", Short: "test command"}
+	err := requireSubcommand(cmd, nil)
+	if err == nil {
+		t.Fatal("expected non-nil error from requireSubcommand")
+	}
+	if err.Error() != "a subcommand is required" {
+		t.Errorf("unexpected error message: %q", err.Error())
+	}
 }
