@@ -44,6 +44,13 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
+func TestTruncateNewlines(t *testing.T) {
+	result := truncate("line1\nline2\nline3", 50)
+	if result != "line1 line2 line3" {
+		t.Errorf("newlines should be replaced with spaces, got '%s'", result)
+	}
+}
+
 func TestJoinSelector(t *testing.T) {
 	tests := []struct {
 		name  string
