@@ -58,9 +58,9 @@ func TestNewTrailingSlash(t *testing.T) {
 
 func TestSetProxy(t *testing.T) {
 	c, _ := New("https://host.example.com", "env1", "tok")
-	c.SetProxy("", "")                                      // no-op: proxy == ""
-	c.SetProxy("http://proxy.example.com:8080", "")         // httpProxy only
-	c.SetProxy("", "https://proxy.example.com:8080")        // httpsProxy takes priority
+	c.SetProxy("", "")                                     // no-op: proxy == ""
+	c.SetProxy("http://proxy.example.com:8080", "")        // httpProxy only
+	c.SetProxy("", "https://proxy.example.com:8080")       // httpsProxy takes priority
 	c.SetProxy("http://a.example.com:80", "https://b:443") // both: https wins
 }
 
