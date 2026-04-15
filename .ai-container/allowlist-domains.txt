@@ -1,0 +1,94 @@
+# GitHub UI and API
+github.com
+api.github.com
+uploads.github.com
+
+# GitHub and Copilot concrete endpoints observed in direct-connect setups
+copilot-proxy.githubusercontent.com
+origin-tracker.githubusercontent.com
+copilot-telemetry.githubusercontent.com
+api.business.githubcopilot.com
+telemetry.business.githubcopilot.com
+collector.github.com
+default.exp-tas.com
+api.githubcopilot.com
+api.individual.githubcopilot.com
+api.business.githubcopilot.com
+api.enterprise.githubcopilot.com
+origin-tracker.business.githubcopilot.com
+origin-tracker.enterprise.githubcopilot.com
+origin-tracker.individual.githubcopilot.com
+proxy.business.githubcopilot.com
+githubcopilot.com
+# individual.githubcopilot.com
+# business.githubcopilot.com
+# enterprise.githubcopilot.com
+
+# GitHub Models / multi-model support (required by newer Copilot CLI versions)
+models.inference.ai.azure.com
+
+# Kiro CLI (core endpoints — see https://kiro.dev/docs/cli/privacy-and-security/firewalls/)
+app.kiro.dev
+cli.kiro.dev
+kiro.dev
+prod.us-east-1.auth.desktop.kiro.dev
+prod.us-east-1.telemetry.desktop.kiro.dev
+prod.download.desktop.kiro.dev
+q.us-east-1.amazonaws.com
+q.eu-central-1.amazonaws.com
+desktop-release.q.us-east-1.amazonaws.com
+
+# GitHub content
+raw.githubusercontent.com
+objects.githubusercontent.com
+codeload.github.com
+lfs.github.com
+github-cloud.githubusercontent.com
+github-cloud.s3.amazonaws.com
+api.mcp.github.com
+scanning-api.github.com
+user-images.githubusercontent.com
+release-assets.githubusercontent.com
+
+# Dockerfile build hosts
+archive.ubuntu.com
+security.ubuntu.com
+ppa.launchpad.net
+keyserver.ubuntu.com
+deb.nodesource.com
+dl.k8s.io
+awscli.amazonaws.com
+aka.ms
+packages.microsoft.com
+cli.github.com
+registry.npmjs.org
+npmjs.org
+npmjs.com
+registry.npmjs.com
+skimdb.npmjs.com
+
+# Runtime and docs
+repo.maven.apache.org
+plugins.gradle.org
+plugins-artifacts.gradle.org
+services.gradle.org
+docs.dynatrace.com
+artifactory.lab.dynatrace.org
+bitbucket.lab.dynatrace.org
+dt-url.net
+repo.yarnpkg.com
+cdn.cypress.io
+download.cypress.io
+guu84124.apps.dynatrace.com
+guu84124.live.dynatrace.com
+opencollective.com
+registry.yarnpkg.com
+token.internal.dynatrace.com
+
+# MCP targets
+# Add the concrete endpoints for every MCP server you configure.
+# Example: the Dynatrace Managed environment URLs used by a Dynatrace Managed MCP Server.
+# your-managed-environment.example.com
+amd808.dynatrace-managed.com
+tac886.managed-dev.dynalabs.io
+

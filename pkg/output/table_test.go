@@ -84,3 +84,44 @@ func TestTablePrinterEmpty(t *testing.T) {
 		t.Error("should show empty message")
 	}
 }
+
+func TestTablePrinterPrintSingleStruct(t *testing.T) {
+	var buf bytes.Buffer
+	p := &TablePrinter{w: &buf}
+	p.Print(testRow{Name: "gamma", Status: "OK", Detail: "d3"})
+	out := buf.String()
+	if !strings.Contains(out, "gamma") {
+		t.Errorf("single struct should appear in table: %s", out)
+	}
+}
+
+func TestTablePrinterPrimitiveSlice(t *testing.T) {
+	var buf bytes.Buffer
+	p := &TablePrinter{w: &buf}
+	p.Print([]string{"item1", "item2"})
+	out := buf.String()
+	if !strings.Contains(out, "item1") || !strings.Contains(out, "item2") {
+		t.Errorf("primitive slice items should appear: %s", out)
+	}
+}
+
+type noTagRow struct {
+	Name   string
+	Status string
+}
+
+func TestTablePrinterNoTagsFallback(t *testing.T) {
+	var buf bytes.Buffer
+	p := &TablePrinter{w: &buf}
+	rows := []noTagRow{{Name: "x", Status: "y"}}
+	p.PrintList(rows) // no `table:` tags → fallback to fmt.Fprintln(w, v)
+	// Should not panic; may print struct or fallback
+}
+
+func TestTablePrinterColumnsNoMatch(t *testing.T) {
+	var buf bytes.Buffer
+	p := &TablePrinter{w: &buf, columns: []string{"NONEXISTENT"}}
+	rows := []testRow{{Name: "alpha", Status: "OK"}}
+	p.PrintList(rows)
+	// No headers match → falls through to fmt.Fprintln fallback
+}

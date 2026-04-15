@@ -1,6 +1,7 @@
 package client
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
@@ -105,5 +106,28 @@ func TestIsSingleEnv(t *testing.T) {
 	}
 	if IsSingleEnv([]EnvResult{{Name: "a"}, {Name: "b"}}) {
 		t.Error("two results should not be single env")
+	}
+}
+
+func TestUnwrapSingleWithError(t *testing.T) {
+	errExpected := fmt.Errorf("request failed")
+	results := []EnvResult{{Name: "prod", Data: nil, Error: errExpected}}
+	data, err := UnwrapSingle(results)
+	if err != errExpected {
+		t.Errorf("expected errExpected, got %v", err)
+	}
+	if data != nil {
+		t.Errorf("expected nil data, got %v", data)
+	}
+}
+
+func TestResolveContextsEmptySemicolon(t *testing.T) {
+	cfg := testConfig()
+	ctxs, err := resolveContexts(cfg, "prod;")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ctxs) != 1 || ctxs[0].Name != "prod" {
+		t.Errorf("expected 1 context 'prod', got %v", ctxs)
 	}
 }
