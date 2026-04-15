@@ -12,21 +12,21 @@ import (
 
 // SLODetail maps the /slo/{id} API response for human-readable describe output.
 type SLODetail struct {
-	ID                  string   `json:"id"`
-	Name                string   `json:"name"`
-	Status              string   `json:"status"`
-	Enabled             bool     `json:"enabled"`
-	Target              float64  `json:"target"`
-	Warning             *float64 `json:"warning"`
-	EvaluatedPct        float64  `json:"evaluatedPercentage"`
-	ErrorBudget         float64  `json:"errorBudget"`
-	Timeframe           string   `json:"timeframe"`
-	EvaluationType      string   `json:"evaluationType"`
-	Filter              string   `json:"filter"`
-	MetricExpression    string   `json:"metricExpression"`
-	RelatedOpenProblems int      `json:"relatedOpenProblems"`
-	RelatedTotalProblems int     `json:"relatedTotalProblems"`
-	ErrorBudgetBurnRate *struct {
+	ID                   string   `json:"id"`
+	Name                 string   `json:"name"`
+	Status               string   `json:"status"`
+	Enabled              bool     `json:"enabled"`
+	Target               float64  `json:"target"`
+	Warning              *float64 `json:"warning"`
+	EvaluatedPct         float64  `json:"evaluatedPercentage"`
+	ErrorBudget          float64  `json:"errorBudget"`
+	Timeframe            string   `json:"timeframe"`
+	EvaluationType       string   `json:"evaluationType"`
+	Filter               string   `json:"filter"`
+	MetricExpression     string   `json:"metricExpression"`
+	RelatedOpenProblems  int      `json:"relatedOpenProblems"`
+	RelatedTotalProblems int      `json:"relatedTotalProblems"`
+	ErrorBudgetBurnRate  *struct {
 		BurnRateValue float64 `json:"burnRateValue"`
 		BurnRateType  string  `json:"burnRateType"`
 	} `json:"errorBudgetBurnRate"`
