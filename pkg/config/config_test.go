@@ -325,3 +325,113 @@ func TestSaveToCreatesFile(t *testing.T) {
 		}
 	}
 }
+
+// --- DefaultConfigPath / ConfigDir ---
+
+func TestDefaultConfigPath(t *testing.T) {
+	p := DefaultConfigPath()
+	if p == "" {
+		t.Error("DefaultConfigPath should not be empty")
+	}
+	if !filepath.IsAbs(p) {
+		t.Errorf("DefaultConfigPath should be absolute, got %q", p)
+	}
+	base := filepath.Base(p)
+	if base != "config" {
+		t.Errorf("DefaultConfigPath should end with 'config', got %q", base)
+	}
+	dir := filepath.Dir(p)
+	if filepath.Base(dir) != "dtmgd" {
+		t.Errorf("DefaultConfigPath parent dir should be 'dtmgd', got %q", filepath.Base(dir))
+	}
+}
+
+func TestConfigDir(t *testing.T) {
+	d := ConfigDir()
+	if d == "" {
+		t.Error("ConfigDir should not be empty")
+	}
+	if filepath.Base(d) != "dtmgd" {
+		t.Errorf("ConfigDir should end with 'dtmgd', got %q", d)
+	}
+}
+
+// --- SetToken ---
+
+func TestSetTokenCreatesNew(t *testing.T) {
+	if IsKeyringAvailable() {
+		t.Skip("skipping: keyring available — plaintext path not exercised")
+	}
+	cfg := NewConfig()
+	if err := cfg.SetToken("mytoken", "secret"); err != nil {
+		t.Fatalf("SetToken failed: %v", err)
+	}
+	if len(cfg.Tokens) != 1 {
+		t.Errorf("expected 1 token, got %d", len(cfg.Tokens))
+	}
+	if cfg.Tokens[0].Token != "secret" {
+		t.Errorf("expected token 'secret', got %q", cfg.Tokens[0].Token)
+	}
+}
+
+func TestSetTokenUpdatesExisting(t *testing.T) {
+	if IsKeyringAvailable() {
+		t.Skip("skipping: keyring available — plaintext path not exercised")
+	}
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "mytoken", Token: "old-secret"}}
+	if err := cfg.SetToken("mytoken", "new-secret"); err != nil {
+		t.Fatalf("SetToken update failed: %v", err)
+	}
+	if len(cfg.Tokens) != 1 {
+		t.Errorf("expected 1 token, got %d", len(cfg.Tokens))
+	}
+	if cfg.Tokens[0].Token != "new-secret" {
+		t.Errorf("expected token 'new-secret', got %q", cfg.Tokens[0].Token)
+	}
+}
+
+// --- FindLocalConfig ---
+
+func TestFindLocalConfig(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "project", "src")
+	if err := os.MkdirAll(sub, 0700); err != nil {
+		t.Fatal(err)
+	}
+	configFile := filepath.Join(dir, LocalConfigName)
+	if err := os.WriteFile(configFile, []byte("apiVersion: dtmgd.io/v1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origDir)
+
+	if err := os.Chdir(sub); err != nil {
+		t.Fatal(err)
+	}
+
+	found := FindLocalConfig()
+	if found == "" {
+		t.Error("expected to find local config, got empty string")
+	}
+}
+
+func TestFindLocalConfigNotFound(t *testing.T) {
+	dir := t.TempDir()
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(origDir)
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	// Just call FindLocalConfig — it may or may not find something (depending on
+	// whether there's a .dtmgd.yaml above the tmp dir). Just ensure no panic.
+	_ = FindLocalConfig()
+}

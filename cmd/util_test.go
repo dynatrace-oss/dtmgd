@@ -88,3 +88,31 @@ func TestJoinSelector(t *testing.T) {
 		})
 	}
 }
+
+// TestAgentMode checks agentMode with --agent and --no-agent flags.
+func TestAgentMode(t *testing.T) {
+	defer func() { agentFlag = false; noAgentFlag = false }()
+
+	agentFlag = false
+	noAgentFlag = true
+	if agentMode() {
+		t.Error("noAgentFlag=true should force agentMode=false")
+	}
+
+	noAgentFlag = false
+	agentFlag = true
+	if !agentMode() {
+		t.Error("agentFlag=true should return true")
+	}
+}
+
+// TestEffectiveEnvSpec checks effectiveEnvSpec reads global envSpec.
+func TestEffectiveEnvSpec(t *testing.T) {
+	origEnvSpec := envSpec
+	defer func() { envSpec = origEnvSpec }()
+
+	envSpec = "prod;staging"
+	if got := effectiveEnvSpec(); got != "prod;staging" {
+		t.Errorf("expected 'prod;staging', got %q", got)
+	}
+}
