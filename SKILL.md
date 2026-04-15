@@ -275,10 +275,23 @@ dtmgd query metrics \
 
 ```bash
 # Search logs (--query and --from are required)
-# Use plain text — do NOT use "content:error" structured syntax
+# Use plain text — do NOT use "content:error" or "status:ERROR" structured syntax
+# Use --entity to scope to specific services
 dtmgd query logs --query "error" --from now-1h --to now
 dtmgd query logs --query "timeout" --from now-30m --limit 50
 dtmgd query logs --query "OutOfMemoryError" --from now-6h --sort -timestamp
+dtmgd query logs --query "error" --from now-1h --entity 'type(SERVICE),tag("[Environment]BookStore")'
+
+# Aggregate log counts by service and log level (INFO/WARN/ERROR)
+# This uses /api/v2/logs/aggregate with full-text level matching (Spring Boot log format)
+# --entity is required; --from defaults to now-1h
+dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-1h
+dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-30m --to now
+
+# IMPORTANT: On DT Managed Classic, structured field queries (e.g. loglevel:ERROR) are NOT
+# supported in LQL. Log level counts use full-text matching ("INFO", "WARN", "ERROR") which
+# is accurate for standard Spring Boot/Java logs where the level appears in each line.
+# "WARN" counts may under-count if some frameworks use "WARNING" instead.
 ```
 
 ## SLOs
@@ -368,8 +381,8 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 - `describe problem` requires the **UUID** (`PROBLEM-ID` column), not the display ID (`P-XXXXX`).
 - Problem UUIDs can be **negative integers** (e.g. `-6546711275898328738_1776193140000V2`). Always pass them after `--` to prevent the leading `-` being parsed as a flag: `dtmgd describe problem -- -6546711275898328738_V2`
 - `get events` requires `--from`; it won't default like `get problems` does.
-- `query logs` uses plain text search only — no `content:` prefix or structured syntax.
-- `query metrics` defaults to table/text summary; add `-o json` to get raw time-series data.
+- `query logs` uses plain text search only — no `content:`, `status:`, or `loglevel:` structured syntax (LQL structured queries are unsupported on DT Managed Classic).
+- `query log-counts` counts log levels using full-text matching; accurate for Spring Boot/Java logs, may under-count WARN if framework uses "WARNING".
 - Entity selectors must specify **exactly one** entity type per query.
 - Log search on Managed clusters does not support structured query syntax.
 - `--limit` caps results to a single page. Without it, all pages are fetched automatically.
@@ -384,7 +397,8 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 | `list_available_metrics` | `dtmgd get metrics [--search <text>]` |
 | `get_metric_details` | `dtmgd describe metric <id>` |
 | `query_metrics_data` | `dtmgd query metrics --metric <id> --from <t> --to <t>` |
-| `query_logs` | `dtmgd query logs --query <text> --from <t> --to <t>` |
+| `query_logs` | `dtmgd query logs --query <text> --from <t> --to <t> [--entity <sel>]` |
+| `aggregate_logs` | `dtmgd query log-counts --entity <sel> --from <t> --to <t>` |
 | `list_events` | `dtmgd get events --from <t>` |
 | `get_event_details` | `dtmgd describe event <id>` |
 | `list_entity_types` | `dtmgd get entity-types` |

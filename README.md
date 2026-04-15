@@ -141,6 +141,8 @@ dtmgd query metrics --metric builtin:service.response.time --from now-1h --to no
 dtmgd query metrics --metric builtin:host.cpu.usage --from now-24h --resolution 1h
 dtmgd query logs --query "error" --from now-1h --to now
 dtmgd query logs --query "timeout" --from now-30m --limit 50
+dtmgd query logs --query "error" --from now-1h --entity 'type(SERVICE),tag("[Environment]BookStore")'
+dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-1h
 ```
 
 ## Global Flags

@@ -25,11 +25,12 @@ type LogEntry struct {
 }
 
 var (
-	qlQuery string
-	qlFrom  string
-	qlTo    string
-	qlLimit int
-	qlSort  string
+	qlQuery  string
+	qlFrom   string
+	qlTo     string
+	qlLimit  int
+	qlSort   string
+	qlEntity string
 )
 
 var queryLogsCmd = &cobra.Command{
@@ -73,6 +74,9 @@ Examples:
 		params["limit"] = fmt.Sprintf("%d", limit)
 		if qlSort != "" {
 			params["sort"] = qlSort
+		}
+		if qlEntity != "" {
+			params["entitySelector"] = qlEntity
 		}
 
 		if isMultiEnv() {
@@ -147,7 +151,7 @@ Examples:
 				fmt.Printf("[%s] %s\n", ts, content)
 			}
 		}
-		if resp.TotalCount > len(resp.Results) {
+		if resp.TotalCount > 0 && resp.TotalCount > len(resp.Results) {
 			output.PrintInfo("\nShowing %d of %d records. Use --limit to retrieve more.", len(resp.Results), resp.TotalCount)
 		}
 		return nil
@@ -162,4 +166,5 @@ func init() {
 	queryLogsCmd.Flags().StringVar(&qlTo, "to", "", "end time (default: now)")
 	queryLogsCmd.Flags().IntVar(&qlLimit, "limit", 0, "maximum number of records (default: 100)")
 	queryLogsCmd.Flags().StringVar(&qlSort, "sort", "", "sort order (e.g. -timestamp for newest first)")
+	queryLogsCmd.Flags().StringVar(&qlEntity, "entity", "", "entitySelector to scope log search (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
 }

@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -158,6 +159,21 @@ func (c *Client) GetV2(path string, params map[string]string, result interface{}
 	for k, v := range params {
 		req.SetQueryParam(k, v)
 	}
+	resp, err := req.Get("/v2" + path)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	if resp.IsError() {
+		return APIError(resp.StatusCode(), resp.String())
+	}
+	return nil
+}
+
+// GetV2WithValues performs a GET against the v2 environment API, supporting
+// repeated query parameter keys (e.g. groupBy=a&groupBy=b).
+func (c *Client) GetV2WithValues(path string, params url.Values, result interface{}) error {
+	req := c.http.R().SetResult(result)
+	req.SetQueryParamsFromValues(params)
 	resp, err := req.Get("/v2" + path)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
