@@ -141,7 +141,7 @@ dtmgd query metrics --metric builtin:service.response.time --from now-1h --to no
 dtmgd query metrics --metric builtin:host.cpu.usage --from now-24h --resolution 1h
 dtmgd query logs --query "error" --from now-1h --to now
 dtmgd query logs --query "timeout" --from now-30m --limit 50
-dtmgd query logs --query "error" --from now-1h --entity 'type(SERVICE),tag("[Environment]BookStore")'
+dtmgd query logs --query "error" --from now-1h --entity 'type(PROCESS_GROUP),tag("[Environment]BookStore")'
 dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-1h
 # Note: type(SERVICE) is auto-converted to type(PROCESS_GROUP) internally (logs are attributed
 # to process groups on DT Managed Classic). Services with ERROR-only log level show 0 INFO/WARN.
@@ -292,7 +292,8 @@ dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
 | `list_available_metrics` | `dtmgd get metrics` |
 | `get_metric_details` | `dtmgd describe metric <id>` |
 | `query_metrics_data` | `dtmgd query metrics` |
-| `query_logs` | `dtmgd query logs` |
+| `query_logs` | `dtmgd query logs --query <text> --from <t> --to <t>` |
+| `aggregate_logs` | `dtmgd query log-counts --entity <sel> --from <t> --to <t>` |
 | `list_events` | `dtmgd get events` |
 | `get_event_details` | `dtmgd describe event <id>` |
 | `list_entity_types` | `dtmgd get entity-types` |

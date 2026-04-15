@@ -280,7 +280,9 @@ dtmgd query metrics \
 dtmgd query logs --query "error" --from now-1h --to now
 dtmgd query logs --query "timeout" --from now-30m --limit 50
 dtmgd query logs --query "OutOfMemoryError" --from now-6h --sort -timestamp
-dtmgd query logs --query "error" --from now-1h --entity 'type(SERVICE),tag("[Environment]BookStore")'
+# NOTE: --entity scopes log search but requires PROCESS_GROUP selector (not SERVICE).
+# On DT Managed Classic, logs are attributed to process groups, not services.
+dtmgd query logs --query "error" --from now-1h --entity 'type(PROCESS_GROUP),tag("[Environment]BookStore")'
 
 # Aggregate log counts by service and log level (INFO/WARN/ERROR)
 # This uses /api/v2/logs/aggregate with full-text level matching (Spring Boot log format)
@@ -384,6 +386,7 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 - `query logs` uses plain text search only — no `content:`, `status:`, or `loglevel:` structured syntax (LQL structured queries are unsupported on DT Managed Classic).
 - `query log-counts` counts log levels using full-text matching; accurate for Spring Boot/Java logs, may under-count WARN if framework uses "WARNING".
 - `query log-counts` internally converts `type(SERVICE)` entity selectors to `type(PROCESS_GROUP)` because DT Managed Classic attributes logs to process groups, not services. Services that log at ERROR-only level (e.g., BookStore prod profile) will show 0 INFO and 0 WARN — this is correct behavior, not a bug.
+- `query logs --entity` also requires `type(PROCESS_GROUP)` on DT Managed Classic (not `type(SERVICE)`). Using a SERVICE selector returns 0 results even though the API accepts the parameter.
 - The logs aggregate endpoint's `entitySelector` param is `hidden=true` on DT Managed Classic and does not actually filter results. `query log-counts` works around this by fetching entities first, then filtering aggregate results client-side.
 - Entity selectors must specify **exactly one** entity type per query.
 - Log search on Managed clusters does not support structured query syntax.
