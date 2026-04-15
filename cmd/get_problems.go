@@ -41,6 +41,14 @@ type ProblemEntry struct {
 		EntityID interface{} `json:"entityId"`
 		Name     string      `json:"name"`
 	} `json:"rootCauseEntity"`
+	AffectedEntities []struct {
+		EntityID interface{} `json:"entityId"`
+		Name     string      `json:"name"`
+	} `json:"affectedEntities"`
+	ManagementZones []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"managementZones"`
 }
 
 var (
@@ -84,8 +92,9 @@ Multi-environment:
 			}
 
 			params := map[string]string{
-				"from": probFrom,
-				"to":   probTo,
+				"from":   probFrom,
+				"to":     probTo,
+				"fields": "+affectedEntities,+managementZones",
 			}
 			// Build problemSelector DSL: status(), impactLevel(), and any user-supplied selector
 			var selectorParts []string
