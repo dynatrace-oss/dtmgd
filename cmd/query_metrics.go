@@ -108,6 +108,7 @@ Examples:
 			return NewPrinter().Print(resp)
 		}
 		if outputFormat == "table" || outputFormat == "wide" || outputFormat == "" {
+			resolveMetricEntityNames(c, &resp)
 			printMetricQuerySummary(resp)
 			return nil
 		}
@@ -159,6 +160,67 @@ func extractEntityLabel(dimMap map[string]string) (name, id string) {
 		return
 	}
 	return
+}
+
+// resolveMetricEntityNames enriches every DimensionMap in resp with
+// "dt.entity.X.name" entries by fetching display names from /api/v2/entities.
+// Missing or failed lookups are silently ignored so output is always printed.
+func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) {
+	// Collect unique entity IDs and their dimension key prefix.
+	seen := map[string]string{} // entityID -> dimKey (e.g. "dt.entity.service")
+	for _, res := range resp.Result {
+		for _, dp := range res.Data {
+			for k, v := range dp.DimensionMap {
+				if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+					seen[v] = k
+				}
+			}
+		}
+	}
+	if len(seen) == 0 {
+		return
+	}
+
+	// Build entitySelector: entityId("id1","id2",...)
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, fmt.Sprintf("%q", id))
+	}
+	selector := "entityId(" + strings.Join(ids, ",") + ")"
+
+	var entResp struct {
+		Entities []struct {
+			EntityID    string `json:"entityId"`
+			DisplayName string `json:"displayName"`
+		} `json:"entities"`
+	}
+	params := map[string]string{
+		"entitySelector": selector,
+		"pageSize":       "500",
+	}
+	if err := c.GetV2("/entities", params, &entResp); err != nil {
+		return // silently ignore; entity IDs will still be shown
+	}
+
+	// Build ID → name map.
+	nameMap := make(map[string]string, len(entResp.Entities))
+	for _, e := range entResp.Entities {
+		nameMap[e.EntityID] = e.DisplayName
+	}
+
+	// Inject .name keys into every DimensionMap.
+	for ri := range resp.Result {
+		for di := range resp.Result[ri].Data {
+			dm := resp.Result[ri].Data[di].DimensionMap
+			for k, entityID := range dm {
+				if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+					if name, ok := nameMap[entityID]; ok {
+						dm[k+".name"] = name
+					}
+				}
+			}
+		}
+	}
 }
 
 func printMetricQuerySummary(resp MetricQueryResponse) {
