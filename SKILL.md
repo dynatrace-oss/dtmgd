@@ -156,6 +156,14 @@ dtmgd get problems --from now-2h --to now
 dtmgd get problems --impact SERVICE --limit 20
 dtmgd get problems --entity 'type(SERVICE),entityName.contains("checkout")'
 
+# Filter by management zone: use --selector with managementZones("Name") DSL
+# Default timeframe is 24 h — use --from for a wider window
+dtmgd get problems --selector 'managementZones("bookstore")' --from now-7d --limit 5 --sort "-startTime"
+dtmgd get problems --status OPEN --selector 'managementZones("bookstore")' --from now-7d
+
+# Combine status + impact + management zone (all merged into problemSelector DSL)
+dtmgd get problems --status OPEN --impact SERVICE --selector 'managementZones("bookstore")' --from now-7d
+
 # Sort: open first, or newest first
 dtmgd get problems --sort "+status"
 dtmgd get problems --sort "-startTime"

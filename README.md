@@ -103,7 +103,7 @@ dtmgd ctx delete <name>            # delete context
 
 ```
 dtmgd get environments       # verify connectivity and cluster version
-dtmgd get problems           # --from, --to, --status, --impact, --entity, --limit, --sort
+dtmgd get problems           # --from, --to, --status, --impact, --selector, --entity, --limit, --sort
 dtmgd get entities           # --selector (required), --from, --to, --limit, --sort, --mz
 dtmgd get entity-types       # list all entity types
 dtmgd get events             # --from (required), --to, --type, --entity, --limit
