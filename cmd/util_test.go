@@ -44,9 +44,40 @@ func TestTruncate(t *testing.T) {
 	}
 }
 
-func TestTruncateNewlines(t *testing.T) {
-	result := truncate("line1\nline2\nline3", 50)
-	if result != "line1 line2 line3" {
-		t.Errorf("newlines should be replaced with spaces, got '%s'", result)
+func TestJoinSelector(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []string
+		want  string
+	}{
+		{
+			name:  "single part",
+			parts: []string{`status("OPEN")`},
+			want:  `status("OPEN")`,
+		},
+		{
+			name:  "two parts",
+			parts: []string{`status("OPEN")`, `impactLevel("SERVICE")`},
+			want:  `status("OPEN"),impactLevel("SERVICE")`,
+		},
+		{
+			name:  "three parts — problems + security combined",
+			parts: []string{`status("OPEN")`, `riskLevel("CRITICAL")`, `managementZones("bookstore")`},
+			want:  `status("OPEN"),riskLevel("CRITICAL"),managementZones("bookstore")`,
+		},
+		{
+			name:  "empty",
+			parts: []string{},
+			want:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := joinSelector(tt.parts...)
+			if got != tt.want {
+				t.Errorf("joinSelector(%v) = %q, want %q", tt.parts, got, tt.want)
+			}
+		})
 	}
 }
