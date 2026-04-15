@@ -2,6 +2,8 @@ module github.com/dynatrace-oss/dtmgd
 
 go 1.25
 
+toolchain go1.25.9
+
 require (
 	github.com/adrg/xdg v0.5.3
 	github.com/go-resty/resty/v2 v2.11.0
