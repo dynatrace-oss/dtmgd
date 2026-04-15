@@ -143,6 +143,8 @@ dtmgd query logs --query "error" --from now-1h --to now
 dtmgd query logs --query "timeout" --from now-30m --limit 50
 dtmgd query logs --query "error" --from now-1h --entity 'type(SERVICE),tag("[Environment]BookStore")'
 dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-1h
+# Note: type(SERVICE) is auto-converted to type(PROCESS_GROUP) internally (logs are attributed
+# to process groups on DT Managed Classic). Services with ERROR-only log level show 0 INFO/WARN.
 ```
 
 ## Global Flags

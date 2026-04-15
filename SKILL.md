@@ -383,6 +383,8 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 - `get events` requires `--from`; it won't default like `get problems` does.
 - `query logs` uses plain text search only — no `content:`, `status:`, or `loglevel:` structured syntax (LQL structured queries are unsupported on DT Managed Classic).
 - `query log-counts` counts log levels using full-text matching; accurate for Spring Boot/Java logs, may under-count WARN if framework uses "WARNING".
+- `query log-counts` internally converts `type(SERVICE)` entity selectors to `type(PROCESS_GROUP)` because DT Managed Classic attributes logs to process groups, not services. Services that log at ERROR-only level (e.g., BookStore prod profile) will show 0 INFO and 0 WARN — this is correct behavior, not a bug.
+- The logs aggregate endpoint's `entitySelector` param is `hidden=true` on DT Managed Classic and does not actually filter results. `query log-counts` works around this by fetching entities first, then filtering aggregate results client-side.
 - Entity selectors must specify **exactly one** entity type per query.
 - Log search on Managed clusters does not support structured query syntax.
 - `--limit` caps results to a single page. Without it, all pages are fetched automatically.
