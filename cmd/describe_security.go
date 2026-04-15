@@ -33,10 +33,10 @@ type SecurityProblemDetail struct {
 		Exposure       string  `json:"exposure"`
 	} `json:"riskAssessment"`
 	VulnerableComponents []struct {
-		DisplayName          string   `json:"displayName"`
-		FileName             string   `json:"fileName"`
-		NumberOfAffected     int      `json:"numberOfAffectedEntities"`
-		AffectedEntities     []string `json:"affectedEntities"`
+		DisplayName      string   `json:"displayName"`
+		FileName         string   `json:"fileName"`
+		NumberOfAffected int      `json:"numberOfAffectedEntities"`
+		AffectedEntities []string `json:"affectedEntities"`
 	} `json:"vulnerableComponents"`
 	AffectedEntities []string `json:"affectedEntities"`
 	ManagementZones  []struct {
@@ -176,4 +176,3 @@ display ID (S-XXXXX).`,
 func init() {
 	describeCmd.AddCommand(describeSecurityProblemCmd)
 }
-
