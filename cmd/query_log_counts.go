@@ -61,8 +61,8 @@ Examples:
 		if lcTo == "" {
 			lcTo = "now"
 		}
-		if lcMaxGroupValues <= 0 {
-			lcMaxGroupValues = 200
+		if lcMaxGroupValues <= 0 || lcMaxGroupValues > 100 {
+			lcMaxGroupValues = 100
 		}
 
 		cfg, err := LoadConfig()
@@ -201,5 +201,5 @@ func init() {
 	queryLogCountsCmd.Flags().StringVar(&lcEntity, "entity", "", "entitySelector to scope log aggregation (required)")
 	queryLogCountsCmd.Flags().StringVar(&lcFrom, "from", "", "start time (default: now-1h), e.g. now-2h")
 	queryLogCountsCmd.Flags().StringVar(&lcTo, "to", "", "end time (default: now)")
-	queryLogCountsCmd.Flags().IntVar(&lcMaxGroupValues, "max-services", 200, "maximum number of services to return per level")
+	queryLogCountsCmd.Flags().IntVar(&lcMaxGroupValues, "max-services", 100, "maximum number of services to return per level (max: 100)")
 }
