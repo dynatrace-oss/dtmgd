@@ -24,6 +24,7 @@ func watchOrRun(fn func() error) error {
 	}
 	return fn()
 }
+
 // Returns nil only when interrupted by signal.
 func runWatch(fn func() error) error {
 	// Run once immediately

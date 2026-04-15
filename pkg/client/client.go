@@ -73,8 +73,8 @@ func New(host, envID, token string) (*Client, error) {
 		SetHeader("Content-Type", "application/json").
 		SetHeader("User-Agent", ua).
 		SetRetryCount(3).
-		SetRetryWaitTime(1*time.Second).
-		SetRetryMaxWaitTime(10*time.Second).
+		SetRetryWaitTime(1 * time.Second).
+		SetRetryMaxWaitTime(10 * time.Second).
 		AddRetryCondition(isRetryable).
 		SetTimeout(60 * time.Second)
 

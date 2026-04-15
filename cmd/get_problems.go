@@ -30,13 +30,13 @@ type ProblemsResponse struct {
 
 // ProblemEntry is a single problem in the list.
 type ProblemEntry struct {
-	ProblemID     string `json:"problemId"`
-	DisplayID     string `json:"displayId"`
-	Title         string `json:"title"`
-	Status        string `json:"status"`
-	SeverityLevel string `json:"severityLevel"`
-	ImpactLevel   string `json:"impactLevel"`
-	StartTime     int64  `json:"startTime"`
+	ProblemID       string `json:"problemId"`
+	DisplayID       string `json:"displayId"`
+	Title           string `json:"title"`
+	Status          string `json:"status"`
+	SeverityLevel   string `json:"severityLevel"`
+	ImpactLevel     string `json:"impactLevel"`
+	StartTime       int64  `json:"startTime"`
 	RootCauseEntity *struct {
 		EntityID interface{} `json:"entityId"`
 		Name     string      `json:"name"`

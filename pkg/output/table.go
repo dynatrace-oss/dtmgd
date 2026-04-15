@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/tw"
 )
 
 // TablePrinter formats data as a terminal table using struct field tags.
@@ -93,17 +94,23 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 		return nil
 	}
 
-	tw := tablewriter.NewWriter(p.w)
-	if tw == nil {
-		tw = tablewriter.NewWriter(os.Stdout)
+	tbl := tablewriter.NewTable(p.w,
+		tablewriter.WithHeader(headers),
+		tablewriter.WithHeaderAlignment(tw.AlignLeft),
+		tablewriter.WithRowAlignment(tw.AlignLeft),
+		tablewriter.WithRowAutoWrap(tw.WrapNone),
+		tablewriter.WithHeaderAutoFormat(tw.Off),
+		tablewriter.WithRendition(tw.Rendition{
+			Borders: tw.BorderNone,
+			Settings: tw.Settings{
+				Lines:      tw.LinesNone,
+				Separators: tw.SeparatorsNone,
+			},
+		}),
+	)
+	if tbl == nil {
+		tbl = tablewriter.NewTable(os.Stdout)
 	}
-	tw.SetHeader(headers)
-	tw.SetAutoWrapText(false)
-	tw.SetBorder(false)
-	tw.SetHeaderLine(false)
-	tw.SetColumnSeparator("  ")
-	tw.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	tw.SetAlignment(tablewriter.ALIGN_LEFT)
 
 	for _, row := range rows {
 		rv := row
@@ -114,9 +121,10 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 		for _, idx := range fieldIdx {
 			cells = append(cells, fmt.Sprintf("%v", rv.Field(idx).Interface()))
 		}
-		tw.Append(cells)
+		if err := tbl.Append(cells); err != nil {
+			return err
+		}
 	}
 
-	tw.Render()
-	return nil
+	return tbl.Render()
 }

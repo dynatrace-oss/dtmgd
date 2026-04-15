@@ -15,7 +15,7 @@ import (
 // aggregationResult[groupByField][timeBucket][value] = count
 type LogAggregateResponse struct {
 	AggregationResult map[string]map[string]map[string]int64 `json:"aggregationResult"`
-	Warnings          string                                  `json:"warnings"`
+	Warnings          string                                 `json:"warnings"`
 }
 
 // LogCountRow is a table row for log level counts per service.
@@ -201,7 +201,9 @@ Examples:
 
 // cleanPGName extracts a short service name from a Dynatrace process group display name.
 // Process group display names on DT Managed have the form:
-//   "SpringBoot BookStore-Orders com.dynatrace.orders.OrdersApplication orders-*"
+//
+//	"SpringBoot BookStore-Orders com.dynatrace.orders.OrdersApplication orders-*"
+//
 // This function extracts the short name after "BookStore-" (lowercased),
 // or falls back to the raw display name if the pattern is not found.
 func cleanPGName(name string) string {
