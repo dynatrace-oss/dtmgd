@@ -3,6 +3,8 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -120,32 +122,135 @@ Examples:
 	},
 }
 
+// MetricEntitySummaryRow is a table row for per-entity single-value metric results.
+type MetricEntitySummaryRow struct {
+	Entity string `table:"ENTITY"`
+	ID     string `table:"ENTITY-ID"`
+	Value  string `table:"VALUE"`
+}
+
+// isSingleValueResult returns true when every data series has exactly 1 timestamp slot.
+// This is always true for resolution=Inf.
+func isSingleValueResult(data []MetricQueryDataPoints) bool {
+	if len(data) == 0 {
+		return false
+	}
+	for _, dp := range data {
+		if len(dp.Timestamps) != 1 {
+			return false
+		}
+	}
+	return true
+}
+
+// extractEntityLabel returns (displayName, entityID) from a dimensionMap.
+// It pairs "dt.entity.X" (entity ID) with "dt.entity.X.name" (resolved name).
+func extractEntityLabel(dimMap map[string]string) (name, id string) {
+	for k, v := range dimMap {
+		if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+			id = v
+			name = dimMap[k+".name"]
+			return
+		}
+	}
+	// Fallback: use first value as id
+	for _, v := range dimMap {
+		id = v
+		return
+	}
+	return
+}
+
 func printMetricQuerySummary(resp MetricQueryResponse) {
 	output.PrintInfo("Resolution: %s", resp.Resolution)
 	for _, res := range resp.Result {
 		output.PrintInfo("\nMetric: %s", res.MetricID)
-		for _, dp := range res.Data {
-			dims := ""
-			if len(dp.DimensionMap) > 0 {
-				for k, v := range dp.DimensionMap {
-					dims += fmt.Sprintf("%s=%s ", k, v)
-				}
-			} else if len(dp.Dimensions) > 0 {
-				dims = fmt.Sprintf("%v", dp.Dimensions)
-			}
-			if dims != "" {
-				output.PrintInfo("  Dimensions: %s", dims)
-			}
-			fmt.Printf("  %-26s  %s\n", "TIMESTAMP (UTC)", "VALUE")
-			fmt.Printf("  %-26s  %s\n", "-------------------", "-----")
-			for i, ts := range dp.Timestamps {
-				val := "null"
-				if i < len(dp.Values) && dp.Values[i] != nil {
-					val = fmt.Sprintf("%.4f", *dp.Values[i])
-				}
-				fmt.Printf("  %-26s  %s\n", msToTime(ts), val)
+		if isSingleValueResult(res.Data) {
+			printEntitySummaryTable(res.Data)
+		} else {
+			for _, dp := range res.Data {
+				printTimeSeriesDataPoint(dp)
 			}
 		}
+	}
+}
+
+func printEntitySummaryTable(data []MetricQueryDataPoints) {
+	type row struct {
+		name  string
+		id    string
+		value *float64
+	}
+	var rows []row
+	for _, dp := range data {
+		name, id := extractEntityLabel(dp.DimensionMap)
+		var val *float64
+		if len(dp.Values) == 1 {
+			val = dp.Values[0]
+		}
+		rows = append(rows, row{name: name, id: id, value: val})
+	}
+	// Sort: value desc (nulls last), then name asc, then id asc for determinism
+	sort.Slice(rows, func(i, j int) bool {
+		vi, vj := rows[i].value, rows[j].value
+		if vi == nil && vj != nil {
+			return false
+		}
+		if vi != nil && vj == nil {
+			return true
+		}
+		if vi != nil && vj != nil && *vi != *vj {
+			return *vi > *vj
+		}
+		if rows[i].name != rows[j].name {
+			return rows[i].name < rows[j].name
+		}
+		return rows[i].id < rows[j].id
+	})
+	var tableRows []MetricEntitySummaryRow
+	for _, r := range rows {
+		val := "null"
+		if r.value != nil {
+			val = fmt.Sprintf("%.2f", *r.value)
+		}
+		tableRows = append(tableRows, MetricEntitySummaryRow{
+			Entity: r.name,
+			ID:     r.id,
+			Value:  val,
+		})
+	}
+	_ = NewPrinter().PrintList(tableRows)
+}
+
+func printTimeSeriesDataPoint(dp MetricQueryDataPoints) {
+	name, id := extractEntityLabel(dp.DimensionMap)
+	label := ""
+	if name != "" {
+		label = fmt.Sprintf("%s (%s)", name, id)
+	} else if id != "" {
+		label = id
+	} else if len(dp.Dimensions) > 0 {
+		label = fmt.Sprintf("%v", dp.Dimensions)
+	} else {
+		var parts []string
+		for k, v := range dp.DimensionMap {
+			if !strings.HasSuffix(k, ".name") {
+				parts = append(parts, k+"="+v)
+			}
+		}
+		label = strings.Join(parts, " ")
+	}
+	if label != "" {
+		output.PrintInfo("  Entity: %s", label)
+	}
+	fmt.Printf("  %-26s  %s\n", "TIMESTAMP (UTC)", "VALUE")
+	fmt.Printf("  %-26s  %s\n", "-------------------", "-----")
+	for i, ts := range dp.Timestamps {
+		val := "null"
+		if i < len(dp.Values) && dp.Values[i] != nil {
+			val = fmt.Sprintf("%.4f", *dp.Values[i])
+		}
+		fmt.Printf("  %-26s  %s\n", msToTime(ts), val)
 	}
 }
 
