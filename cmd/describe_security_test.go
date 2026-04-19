@@ -36,6 +36,7 @@ func TestResolveSecurityProblemID_NonDisplayID(t *testing.T) {
 	}
 }
 
+func TestSecurityProblemDetailUnmarshal(t *testing.T) {
 	raw := `{
 		"securityProblemId": "abc-123",
 		"displayId": "S-99",
