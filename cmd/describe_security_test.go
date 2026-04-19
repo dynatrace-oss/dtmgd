@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
 )
 
 func TestDisplayIDRegexp(t *testing.T) {
@@ -33,6 +37,90 @@ func TestResolveSecurityProblemID_NonDisplayID(t *testing.T) {
 		if got != id {
 			t.Errorf("resolveSecurityProblemID(nil, %q) = %q, want %q", id, got, id)
 		}
+	}
+}
+
+// newSecurityProblemsServer starts a test HTTP server that returns a fake
+// security-problems list containing the provided entries.
+func newSecurityProblemsServer(t *testing.T, entries []SecurityProblemEntry) (*httptest.Server, *client.Client) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "securityProblems") {
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(SecurityProblemsResponse{
+			SecurityProblems: entries,
+		})
+	}))
+	c, err := client.New(srv.URL, "env1", "tok")
+	if err != nil {
+		t.Fatalf("client.New: %v", err)
+	}
+	return srv, c
+}
+
+func TestResolveSecurityProblemID_DisplayIDFound(t *testing.T) {
+	entries := []SecurityProblemEntry{
+		{SecurityProblemID: "111222333444555666", DisplayID: "S-100"},
+		{SecurityProblemID: "9767149894821966314", DisplayID: "S-281"},
+		{SecurityProblemID: "999888777666555444", DisplayID: "S-500"},
+	}
+	srv, c := newSecurityProblemsServer(t, entries)
+	defer srv.Close()
+
+	got := resolveSecurityProblemID(c, "S-281")
+	if got != "9767149894821966314" {
+		t.Errorf("resolveSecurityProblemID(c, %q) = %q, want %q", "S-281", got, "9767149894821966314")
+	}
+}
+
+func TestResolveSecurityProblemID_DisplayIDCaseInsensitive(t *testing.T) {
+	entries := []SecurityProblemEntry{
+		{SecurityProblemID: "9767149894821966314", DisplayID: "S-281"},
+	}
+	srv, c := newSecurityProblemsServer(t, entries)
+	defer srv.Close()
+
+	// Lower-case "s-281" must resolve the same as "S-281".
+	got := resolveSecurityProblemID(c, "s-281")
+	if got != "9767149894821966314" {
+		t.Errorf("resolveSecurityProblemID(c, %q) = %q, want %q", "s-281", got, "9767149894821966314")
+	}
+}
+
+func TestResolveSecurityProblemID_DisplayIDNotFound(t *testing.T) {
+	entries := []SecurityProblemEntry{
+		{SecurityProblemID: "9767149894821966314", DisplayID: "S-281"},
+	}
+	srv, c := newSecurityProblemsServer(t, entries)
+	defer srv.Close()
+
+	// An ID not present in the list must be returned unchanged so the API
+	// returns a meaningful 404.
+	got := resolveSecurityProblemID(c, "S-999")
+	if got != "S-999" {
+		t.Errorf("resolveSecurityProblemID(c, %q) = %q, want %q (fallback)", "S-999", got, "S-999")
+	}
+}
+
+func TestResolveSecurityProblemID_ClientError(t *testing.T) {
+	// Server returns 404 (not retried) → GetV2Paged returns an error →
+	// resolveSecurityProblemID must fall back to returning the original ID.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	c, err := client.New(srv.URL, "env1", "tok")
+	if err != nil {
+		t.Fatalf("client.New: %v", err)
+	}
+
+	got := resolveSecurityProblemID(c, "S-42")
+	if got != "S-42" {
+		t.Errorf("resolveSecurityProblemID on client error = %q, want %q (fallback)", got, "S-42")
 	}
 }
 
