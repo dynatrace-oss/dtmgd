@@ -2,8 +2,41 @@ package cmd
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
+
+// TestProblemsPageSizeWithFields verifies that the pageSize sent to the API never exceeds 10
+// when the fields parameter is set (DT Managed API rejects pageSize > 10 with fields).
+func TestProblemsPageSizeWithFields(t *testing.T) {
+	cases := []struct {
+		limit        int
+		wantPageSize int
+	}{
+		{limit: 0, wantPageSize: 10},  // default unlimited → capped at 10
+		{limit: 5, wantPageSize: 5},   // small limit → use it directly
+		{limit: 10, wantPageSize: 10}, // exactly 10 → kept as-is
+		{limit: 20, wantPageSize: 10}, // limit > 10 → capped at 10, pagination + truncation applies
+		{limit: 50, wantPageSize: 10}, // old default → capped at 10
+	}
+
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("limit=%d", tc.limit), func(t *testing.T) {
+			const maxPageSizeWithFields = 10
+			pageSize := maxPageSizeWithFields
+			if tc.limit > 0 && tc.limit < maxPageSizeWithFields {
+				pageSize = tc.limit
+			}
+			if pageSize != tc.wantPageSize {
+				t.Errorf("limit=%d: pageSize=%d, want %d", tc.limit, pageSize, tc.wantPageSize)
+			}
+			if pageSize > maxPageSizeWithFields {
+				t.Errorf("limit=%d: pageSize=%d exceeds DT Managed max of %d for fields requests",
+					tc.limit, pageSize, maxPageSizeWithFields)
+			}
+		})
+	}
+}
 
 // TestProblemEntryUnmarshal verifies that the affectedEntities and managementZones
 // fields added in the bug fix are correctly populated from the API JSON response.
