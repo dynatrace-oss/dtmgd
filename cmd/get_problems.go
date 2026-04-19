@@ -116,8 +116,11 @@ Multi-environment:
 			if probSort != "" {
 				params["sort"] = probSort
 			}
-			pageSize := 50
-			if probLimit > 0 {
+			// DT Managed limits pageSize to 10 when the fields parameter is set.
+			// Always cap at 10; pagination handles fetching additional pages.
+			const maxPageSizeWithFields = 10
+			pageSize := maxPageSizeWithFields
+			if probLimit > 0 && probLimit < maxPageSizeWithFields {
 				pageSize = probLimit
 			}
 			params["pageSize"] = fmt.Sprintf("%d", pageSize)
