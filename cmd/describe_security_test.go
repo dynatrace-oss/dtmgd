@@ -9,7 +9,33 @@ import (
 	"testing"
 )
 
-func TestSecurityProblemDetailUnmarshal(t *testing.T) {
+func TestDisplayIDRegexp(t *testing.T) {
+	valid := []string{"S-1", "S-281", "S-9999", "s-42", "s-0"}
+	for _, id := range valid {
+		if !displayIDRegexp.MatchString(id) {
+			t.Errorf("expected %q to match displayIDRegexp", id)
+		}
+	}
+	invalid := []string{"S-", "S-abc", "9767149894821966314", "SP-42", "S42", ""}
+	for _, id := range invalid {
+		if displayIDRegexp.MatchString(id) {
+			t.Errorf("expected %q NOT to match displayIDRegexp", id)
+		}
+	}
+}
+
+func TestResolveSecurityProblemID_NonDisplayID(t *testing.T) {
+	// Non-display IDs must be returned unchanged without calling the client.
+	// We pass nil to verify no HTTP call is attempted.
+	cases := []string{"9767149894821966314", "abc-uuid-123", "SP-42", ""}
+	for _, id := range cases {
+		got := resolveSecurityProblemID(nil, id)
+		if got != id {
+			t.Errorf("resolveSecurityProblemID(nil, %q) = %q, want %q", id, got, id)
+		}
+	}
+}
+
 	raw := `{
 		"securityProblemId": "abc-123",
 		"displayId": "S-99",

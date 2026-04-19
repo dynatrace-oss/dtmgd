@@ -4,12 +4,40 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
 )
+
+// displayIDRegexp matches security problem display IDs of the form S-NNN (case-insensitive).
+var displayIDRegexp = regexp.MustCompile(`(?i)^s-\d+$`)
+
+// resolveSecurityProblemID converts a display ID (e.g. "S-281") to the internal UUID
+// by listing security problems. If id is already a UUID or cannot be resolved, id is
+// returned unchanged so the API call can fail with a meaningful 404.
+func resolveSecurityProblemID(c *client.Client, id string) string {
+	if !displayIDRegexp.MatchString(id) {
+		return id
+	}
+	raw, err := c.GetV2Paged("/securityProblems", map[string]string{"pageSize": "200"}, 0)
+	if err != nil {
+		return id
+	}
+	var resp SecurityProblemsResponse
+	if err := client.DecodePaged(raw, &resp); err != nil {
+		return id
+	}
+	upperID := strings.ToUpper(id)
+	for _, sp := range resp.SecurityProblems {
+		if strings.ToUpper(sp.DisplayID) == upperID {
+			return sp.SecurityProblemID
+		}
+	}
+	return id
+}
 
 // SecurityProblemDetail maps the /securityProblems/{id} API response.
 type SecurityProblemDetail struct {
@@ -117,8 +145,8 @@ var describeSecurityProblemCmd = &cobra.Command{
 	Long: `Show full CVE details, risk assessment, affected entities, and remediation hints
 for a specific security problem.
 
-Use the security problem ID (UUID) from 'dtmgd get security-problems', not the
-display ID (S-XXXXX).`,
+Accepts either the display ID (e.g. S-281) from 'dtmgd get security-problems'
+or the internal UUID. Display IDs are resolved automatically.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := LoadConfig()
@@ -126,15 +154,14 @@ display ID (S-XXXXX).`,
 			return err
 		}
 
-		path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(args[0]))
-		params := map[string]string{
-			"fields": "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description",
-		}
+		spFields := "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description"
 
 		if isMultiEnv() {
 			data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
+				resolvedID := resolveSecurityProblemID(c, args[0])
+				path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
 				var result map[string]interface{}
-				if err := c.GetV2(path, params, &result); err != nil {
+				if err := c.GetV2(path, map[string]string{"fields": spFields}, &result); err != nil {
 					return nil, err
 				}
 				return result, nil
@@ -150,8 +177,11 @@ display ID (S-XXXXX).`,
 			return err
 		}
 
+		resolvedID := resolveSecurityProblemID(c, args[0])
+		path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
+
 		var raw map[string]interface{}
-		if err := c.GetV2(path, params, &raw); err != nil {
+		if err := c.GetV2(path, map[string]string{"fields": spFields}, &raw); err != nil {
 			return err
 		}
 
