@@ -10,17 +10,17 @@ import (
 // when the fields parameter is set (DT Managed API rejects pageSize > 10 with fields).
 func TestProblemsPageSizeWithFields(t *testing.T) {
 	cases := []struct {
-		limit	int
-		wantPageSize	int
-		wantSinglePage	bool // singlePageSuffices
+		limit          int
+		wantPageSize   int
+		wantSinglePage bool
 	}{
-		{limit: 0, wantPageSize: 10, wantSinglePage: false},  // unlimited → paginate
-		{limit: 5, wantPageSize: 5, wantSinglePage: true},    // small limit → single page
-		{limit: 9, wantPageSize: 9, wantSinglePage: true},    // just below max → single page
-		{limit: 10, wantPageSize: 10, wantSinglePage: true},  // exactly max → single page
-		{limit: 11, wantPageSize: 10, wantSinglePage: false}, // exceeds max → paginate
-		{limit: 20, wantPageSize: 10, wantSinglePage: false}, // large limit → paginate
-		{limit: 50, wantPageSize: 10, wantSinglePage: false}, // old default was 50 → paginate
+		{0, 10, false},
+		{5, 5, true},
+		{9, 9, true},
+		{10, 10, true},
+		{11, 10, false},
+		{20, 10, false},
+		{50, 10, false},
 	}
 
 	for _, tc := range cases {
