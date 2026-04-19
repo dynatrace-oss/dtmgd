@@ -138,7 +138,9 @@ var describeProblemCmd = &cobra.Command{
 	Aliases: []string{"prob"},
 	Short:   "Show detailed information about a specific problem",
 	Long: `Show full problem details including evidence, affected entities, and root cause.
-Use the problemId (UUID format) from 'dtmgd get problems', not the display ID (P-XXXXX).`,
+Use the problemId (UUID format) from 'dtmgd get problems', not the display ID (P-XXXXX).
+Negative-integer problem IDs (e.g. -6546711275898328738_1776193140000V2) are handled
+automatically — no special syntax or "--" separator is required.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := LoadConfig()
