@@ -10,14 +10,17 @@ import (
 // when the fields parameter is set (DT Managed API rejects pageSize > 10 with fields).
 func TestProblemsPageSizeWithFields(t *testing.T) {
 	cases := []struct {
-		limit        int
-		wantPageSize int
+		limit          int
+		wantPageSize   int
+		wantSinglePage bool // singlePageSuffices
 	}{
-		{limit: 0, wantPageSize: 10},  // default unlimited → capped at 10
-		{limit: 5, wantPageSize: 5},   // small limit → use it directly
-		{limit: 10, wantPageSize: 10}, // exactly 10 → kept as-is
-		{limit: 20, wantPageSize: 10}, // limit > 10 → capped at 10, pagination + truncation applies
-		{limit: 50, wantPageSize: 10}, // old default → capped at 10
+		{limit: 0, wantPageSize: 10, wantSinglePage: false}, // unlimited → paginate
+		{limit: 5, wantPageSize: 5, wantSinglePage: true},   // small limit → single page
+		{limit: 9, wantPageSize: 9, wantSinglePage: true},   // just below max → single page
+		{limit: 10, wantPageSize: 10, wantSinglePage: true},  // exactly max → single page
+		{limit: 11, wantPageSize: 10, wantSinglePage: false}, // exceeds max → paginate
+		{limit: 20, wantPageSize: 10, wantSinglePage: false}, // large limit → paginate
+		{limit: 50, wantPageSize: 10, wantSinglePage: false}, // old default was 50 → paginate
 	}
 
 	for _, tc := range cases {
@@ -27,12 +30,17 @@ func TestProblemsPageSizeWithFields(t *testing.T) {
 			if tc.limit > 0 && tc.limit < maxPageSizeWithFields {
 				pageSize = tc.limit
 			}
+			singlePageSuffices := tc.limit > 0 && tc.limit <= maxPageSizeWithFields
+
 			if pageSize != tc.wantPageSize {
 				t.Errorf("limit=%d: pageSize=%d, want %d", tc.limit, pageSize, tc.wantPageSize)
 			}
 			if pageSize > maxPageSizeWithFields {
 				t.Errorf("limit=%d: pageSize=%d exceeds DT Managed max of %d for fields requests",
 					tc.limit, pageSize, maxPageSizeWithFields)
+			}
+			if singlePageSuffices != tc.wantSinglePage {
+				t.Errorf("limit=%d: singlePageSuffices=%v, want %v", tc.limit, singlePageSuffices, tc.wantSinglePage)
 			}
 		})
 	}

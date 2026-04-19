@@ -117,7 +117,7 @@ Multi-environment:
 				params["sort"] = probSort
 			}
 			// DT Managed limits pageSize to 10 when the fields parameter is set.
-			// Always cap at 10; pagination handles fetching additional pages.
+			// Cap at 10 and let pagination fulfil larger or unlimited requests.
 			const maxPageSizeWithFields = 10
 			pageSize := maxPageSizeWithFields
 			if probLimit > 0 && probLimit < maxPageSizeWithFields {
@@ -125,10 +125,14 @@ Multi-environment:
 			}
 			params["pageSize"] = fmt.Sprintf("%d", pageSize)
 
+			// Skip pagination only when a single page already covers the whole limit.
+			// When probLimit > maxPageSizeWithFields we must paginate to honour the request.
+			singlePageSuffices := probLimit > 0 && probLimit <= maxPageSizeWithFields
+
 			// Multi-env mode
 			if isMultiEnv() {
 				data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					return c.GetV2Paged("/problems", params, effectiveMaxPages(probLimit > 0))
+					return c.GetV2Paged("/problems", params, effectiveMaxPages(singlePageSuffices))
 				})
 				if err != nil {
 					return err
@@ -141,7 +145,7 @@ Multi-environment:
 				return err
 			}
 
-			raw, err := c.GetV2Paged("/problems", params, effectiveMaxPages(probLimit > 0))
+			raw, err := c.GetV2Paged("/problems", params, effectiveMaxPages(singlePageSuffices))
 			if err != nil {
 				return err
 			}
