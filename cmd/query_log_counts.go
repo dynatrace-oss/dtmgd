@@ -160,15 +160,36 @@ Examples:
 			info := levels["INFO"]
 			warn := levels["WARN"]
 			errCount := levels["ERROR"]
-			total := info + warn + errCount
 
 			rows = append(rows, LogCountRow{
 				Service: name,
 				Info:    info,
 				Warn:    warn,
 				Error:   errCount,
-				Total:   total,
+				Total:   info + warn + errCount,
 			})
+		}
+
+		// Aggregate rows with the same service name.
+		// Multiple process group entities (e.g. per-pod PGs, shell startup scripts)
+		// can map to the same logical service name; sum their counts so the caller
+		// sees one row per logical service.
+		aggMap := map[string]*LogCountRow{}
+		for i := range rows {
+			r := &rows[i]
+			if existing, ok := aggMap[r.Service]; ok {
+				existing.Info += r.Info
+				existing.Warn += r.Warn
+				existing.Error += r.Error
+				existing.Total = existing.Info + existing.Warn + existing.Error
+			} else {
+				cp := *r
+				aggMap[r.Service] = &cp
+			}
+		}
+		rows = rows[:0]
+		for _, r := range aggMap {
+			rows = append(rows, *r)
 		}
 
 		// Sort by ERROR desc, then WARN desc, then Total desc.
@@ -201,7 +222,12 @@ Examples:
 //
 //	"SpringBoot BookStore-Orders com.dynatrace.orders.OrdersApplication orders-*"
 //
+// Shell startup processes inside K8s pods have the form:
+//
+//	"sh books-*"  (prefix "sh ", terminal wildcard "-*" for pod hash)
+//
 // This function extracts the short name after "BookStore-" (lowercased),
+// or for "sh <service>-*" strips the prefix and wildcard suffix,
 // or falls back to the raw display name if the pattern is not found.
 func cleanPGName(name string) string {
 	const marker = "BookStore-"
@@ -210,6 +236,14 @@ func cleanPGName(name string) string {
 		if spIdx := strings.Index(rest, " "); spIdx >= 0 {
 			return strings.ToLower(rest[:spIdx])
 		}
+		return strings.ToLower(rest)
+	}
+	// Handle "sh service-*" pattern (shell startup scripts in K8s pods).
+	// "sh books-*" → "books", "sh client-api-*" → "client-api".
+	// Strip the leading "sh " and trailing "-*" wildcard pod suffix.
+	if strings.HasPrefix(name, "sh ") {
+		rest := strings.TrimPrefix(name, "sh ")
+		rest = strings.TrimSuffix(rest, "-*")
 		return strings.ToLower(rest)
 	}
 	// Fallback: strip common k8s service suffixes.

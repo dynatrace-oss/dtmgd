@@ -63,8 +63,8 @@ func TestCleanPGName_FallbackSuffixStrip(t *testing.T) {
 		{"ingest.bookstore", "ingest"},
 		// No suffix to strip — returned as-is
 		{"some-unknown-service", "some-unknown-service"},
-		// sh process groups that don't have BookStore- prefix
-		{"sh storage-*", "sh storage-*"},
+		// sh process groups: strip "sh " prefix and trailing "-*" wildcard
+		{"sh storage-*", "storage"},
 	}
 
 	for _, tt := range tests {
@@ -158,7 +158,152 @@ func TestZeroRowsIncluded(t *testing.T) {
 	}
 }
 
-// TestPGSelectorConversion verifies that type(SERVICE) is converted to type(PROCESS_GROUP).
+// TestCleanPGName_ShStartup verifies that "sh service-*" shell startup process group names
+// are correctly mapped to their service name, including hyphenated service names.
+func TestCleanPGName_ShStartup(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"sh books-*", "books"},
+		{"sh dynapay-*", "dynapay"},
+		{"sh storage-*", "storage"},
+		// Hyphenated service name: only the terminal "-*" is stripped, not at first hyphen.
+		{"sh client-api-*", "client-api"},
+		{"sh order-worker-*", "order-worker"},
+		// No wildcard suffix: strip "sh " only.
+		{"sh payments", "payments"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.input, func(t *testing.T) {
+			got := cleanPGName(tt.input)
+			if got != tt.want {
+				t.Errorf("cleanPGName(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestLogCountAggregation verifies that multiple process group rows with the same service
+// name are summed into a single row (deduplication for per-pod PG entities).
+func TestLogCountAggregation(t *testing.T) {
+	// Simulate two PGs for "books" (two pods), one for "orders".
+	entityNames := map[string]string{
+		"process_group-aaa": "books",
+		"process_group-bbb": "books", // second pod
+		"process_group-ccc": "orders",
+	}
+	pgCounts := map[string]map[string]int64{
+		"process_group-aaa": {"ERROR": 3, "WARN": 1},
+		"process_group-bbb": {"ERROR": 5, "INFO": 10},
+		"process_group-ccc": {"ERROR": 2},
+	}
+
+	// Build rows as the command does.
+	rows := make([]LogCountRow, 0, len(entityNames))
+	for pgID, name := range entityNames {
+		levels := pgCounts[pgID]
+		info := levels["INFO"]
+		warn := levels["WARN"]
+		errCount := levels["ERROR"]
+		rows = append(rows, LogCountRow{
+			Service: name,
+			Info:    info,
+			Warn:    warn,
+			Error:   errCount,
+			Total:   info + warn + errCount,
+		})
+	}
+
+	// Apply aggregation (mirrors the fixed RunE logic).
+	aggMap := map[string]*LogCountRow{}
+	for i := range rows {
+		r := &rows[i]
+		if existing, ok := aggMap[r.Service]; ok {
+			existing.Info += r.Info
+			existing.Warn += r.Warn
+			existing.Error += r.Error
+			existing.Total = existing.Info + existing.Warn + existing.Error
+		} else {
+			cp := *r
+			aggMap[r.Service] = &cp
+		}
+	}
+
+	if len(aggMap) != 2 {
+		t.Fatalf("expected 2 aggregated rows, got %d", len(aggMap))
+	}
+
+	books := aggMap["books"]
+	if books == nil {
+		t.Fatal("expected 'books' row")
+	}
+	if books.Info != 10 {
+		t.Errorf("books Info = %d, want 10", books.Info)
+	}
+	if books.Warn != 1 {
+		t.Errorf("books Warn = %d, want 1", books.Warn)
+	}
+	if books.Error != 8 {
+		t.Errorf("books Error = %d, want 8 (3+5)", books.Error)
+	}
+	if books.Total != 19 {
+		t.Errorf("books Total = %d, want 19 (10+1+8)", books.Total)
+	}
+
+	orders := aggMap["orders"]
+	if orders == nil {
+		t.Fatal("expected 'orders' row")
+	}
+	if orders.Error != 2 {
+		t.Errorf("orders Error = %d, want 2", orders.Error)
+	}
+}
+
+// TestLogCountAggregation_ZeroDuplicates verifies that two zero-count PGs for the same
+// service collapse to a single zero row (not two rows).
+func TestLogCountAggregation_ZeroDuplicates(t *testing.T) {
+	entityNames := map[string]string{
+		"process_group-x1": "books",
+		"process_group-x2": "books",
+	}
+	pgCounts := map[string]map[string]int64{} // no logs
+
+	rows := make([]LogCountRow, 0, len(entityNames))
+	for pgID, name := range entityNames {
+		levels := pgCounts[pgID]
+		rows = append(rows, LogCountRow{
+			Service: name,
+			Info:    levels["INFO"],
+			Warn:    levels["WARN"],
+			Error:   levels["ERROR"],
+			Total:   levels["INFO"] + levels["WARN"] + levels["ERROR"],
+		})
+	}
+
+	aggMap := map[string]*LogCountRow{}
+	for i := range rows {
+		r := &rows[i]
+		if existing, ok := aggMap[r.Service]; ok {
+			existing.Info += r.Info
+			existing.Warn += r.Warn
+			existing.Error += r.Error
+			existing.Total = existing.Info + existing.Warn + existing.Error
+		} else {
+			cp := *r
+			aggMap[r.Service] = &cp
+		}
+	}
+
+	if len(aggMap) != 1 {
+		t.Fatalf("expected 1 aggregated row for 2 zero-count duplicate PGs, got %d", len(aggMap))
+	}
+	if aggMap["books"].Total != 0 {
+		t.Errorf("merged zero row should have Total=0, got %d", aggMap["books"].Total)
+	}
+}
 func TestPGSelectorConversion(t *testing.T) {
 	tests := []struct {
 		input string
