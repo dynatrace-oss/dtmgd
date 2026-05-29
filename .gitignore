@@ -48,6 +48,10 @@ completions/
 # API specs (copied for reference, not tracked)
 .api-spec/
 
+# AI Agentic data
+/.claude
+/.ai-containers
+
 # Snapshot data
 snapshot.json
 /.agent-discovery/
