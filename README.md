@@ -13,13 +13,22 @@ It gives you terminal access to problems, entities, events, logs, metrics, SLOs,
 
 ## Installation
 
-**Option 1 — go install (requires Go 1.22+)**
+**Option 1 — Homebrew (macOS / Linux)**
+
+```bash
+brew install dynatrace-oss/tap/dtmgd
+
+# Upgrades work automatically:
+brew upgrade dtmgd
+```
+
+**Option 2 — go install (requires Go 1.25+)**
 
 ```bash
 go install github.com/dynatrace-oss/dtmgd@latest
 ```
 
-**Option 2 — build from source**
+**Option 3 — build from source**
 
 ```bash
 git clone https://github.com/dynatrace-oss/dtmgd.git
@@ -263,7 +272,7 @@ A project-local `.dtmgd.yaml` takes precedence over the global `~/.config/dtmgd/
 ## Building
 
 ```bash
-# Requires Go 1.22+
+# Requires Go 1.25+
 make build        # produces ./dtmgd
 make install      # installs to $GOPATH/bin (or $HOME/go/bin)
 make vet          # run go vet

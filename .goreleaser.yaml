@@ -43,6 +43,32 @@ checksum:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+homebrew_casks:
+  - repository:
+      owner: ivan-gudak
+      name: homebrew-tap
+      branch: "{{ .ProjectName }}-{{ .Version }}"
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        base:
+          owner: dynatrace-oss
+          name: homebrew-tap
+          branch: main
+    homepage: https://github.com/dynatrace-oss/dtmgd
+    description: "kubectl-inspired CLI for Dynatrace Managed - problems, entities, events, logs, metrics, SLOs, and security from your terminal"
+    skip_upload: auto
+    completions:
+      bash: completions/dtmgd.bash
+      zsh: completions/dtmgd.zsh
+      fish: completions/dtmgd.fish
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/dtmgd"]
+          end
+
 changelog:
   sort: asc
   filters:
