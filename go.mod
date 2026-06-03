@@ -1,8 +1,8 @@
 module github.com/dynatrace-oss/dtmgd
 
-go 1.25
+go 1.25.0
 
-toolchain go1.25.9
+toolchain go1.25.11
 
 require (
 	github.com/adrg/xdg v0.5.3
@@ -29,6 +29,6 @@ require (
 	github.com/olekukonko/errors v1.2.0 // indirect
 	github.com/olekukonko/ll v0.1.6 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
-	golang.org/x/net v0.43.0 // indirect
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
 )
