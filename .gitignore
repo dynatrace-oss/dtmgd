@@ -7,7 +7,7 @@ releases/
 *.dll
 *.so
 *.dylib
-dtmgd
+/dtmgd
 
 # Test binary
 *.test

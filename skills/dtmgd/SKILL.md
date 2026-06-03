@@ -8,6 +8,17 @@ description: Query and investigate Dynatrace Managed (self-hosted) environments 
 `dtmgd` is a `kubectl`-inspired read-only CLI for **Dynatrace Managed (self-hosted)** clusters.
 It mirrors the full tool set of the Dynatrace Managed MCP Server as shell commands.
 
+## Contexts — Multiple Environments Are User-Defined
+
+`dtmgd` supports any number of named environments ("contexts"). The names —
+`prod`, `staging`, `dev`, `eu-prod`, `customer-acme`, etc. — are **user-defined
+aliases**, not hard-coded keywords. Throughout this document, `prod` and
+`staging` appear only as illustrative examples; substitute whatever names exist
+in the user's config.
+
+Run `dtmgd ctx` (or `dtmgd config get-contexts`) to see the actual context
+names configured on this system.
+
 ## Recommended Initialization
 
 At the start of any investigation, run these to confirm connectivity and current context:
@@ -79,20 +90,23 @@ dtmgd describe problem <uuid> -A
 
 ## Multi-Environment Queries
 
-Query multiple environments in parallel with `--env`:
+Query multiple environments in parallel with `--env`. Environment names are
+**user-defined aliases** (any names the user chose during setup) — `prod` and
+`staging` below are illustrative only.
 
 ```bash
 # All configured environments
 dtmgd get problems --env ALL_ENVIRONMENTS -o json
 
-# Specific environments (semicolon-separated)
+# Specific environments (semicolon-separated; substitute the user's actual context names)
 dtmgd get problems --env "prod;staging" -o json
 
 # Single env → unwrapped data
-# Multi env → { "prod": {...}, "staging": {...} }
+# Multi env → { "<context-name-1>": {...}, "<context-name-2>": {...} }
 ```
 
-Works with all `get`, `describe`, and `query` commands.
+Works with all `get`, `describe`, and `query` commands. Use `dtmgd ctx` first
+to discover which context names are available.
 
 ## Pagination
 
@@ -119,8 +133,12 @@ dtmgd get entities --selector 'type(HOST)' --columns "ENTITY-ID,DISPLAY-NAME"
 
 ## Context Management
 
+Contexts are named environments. **Names are arbitrary, user-defined aliases**
+— `prod`, `staging`, `dev`, `acme-tenant1`, anything. The examples below use
+`prod` purely as a placeholder.
+
 ```bash
-# List all configured environments
+# List all configured environments (shows the user's actual context names)
 dtmgd ctx
 dtmgd config get-contexts
 
@@ -128,13 +146,13 @@ dtmgd config get-contexts
 dtmgd ctx current
 dtmgd ctx <context-name>
 
-# Configure a new environment
-dtmgd config set-context prod \
+# Configure a new environment (pick any name you like for <context-name>)
+dtmgd config set-context <context-name> \
   --host https://managed.company.com \
   --env-id abc12345 \
-  --token-ref prod-token
+  --token-ref <context-name>-token
 
-dtmgd config set-credentials prod-token --token <api-token>
+dtmgd config set-credentials <context-name>-token --token <api-token>
 
 # Delete context
 dtmgd ctx delete <name>

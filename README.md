@@ -40,8 +40,13 @@ Make sure `$(go env GOPATH)/bin` is in your `$PATH`.
 
 ## Quick Start
 
+`dtmgd` supports any number of named environments ("contexts"). The name you
+choose is just an alias — there are no reserved names. Pick whatever fits
+your setup: `prod`, `staging`, `dev`, `eu-prod`, `acme-tenant`, anything.
+
 ```bash
-# 1. Create a context pointing to your Managed cluster
+# 1. Create a context pointing to your Managed cluster.
+#    Replace "prod" below with any alias you want for this environment.
 dtmgd config set-context prod \
   --host https://managed.company.com \
   --env-id abc12345 \
@@ -56,6 +61,11 @@ dtmgd get environments
 # 4. List open problems
 dtmgd get problems --status OPEN
 ```
+
+You can repeat step 1 as many times as needed to register additional
+environments — there is no limit on the number of contexts, and each can use
+any alias you choose. See [Multi-Environment Queries](#multi-environment-queries)
+for cross-context fan-out.
 
 > **Note on token storage**: when an OS keyring (macOS Keychain, GNOME Keyring,
 > Windows Credential Manager) is available, the token is stored there and the
@@ -178,15 +188,21 @@ dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --
 Query one, several, or all configured environments in a single command.
 Requests fan out in parallel and results are merged.
 
+Context names (`prod`, `staging` below) are just user-defined aliases —
+substitute whatever names you used when configuring your contexts.
+
 ```bash
-# Query all environments
+# Query all configured environments
 dtmgd get problems --env ALL_ENVIRONMENTS -o json
 
-# Query specific environments (semicolon-separated)
+# Query specific environments (semicolon-separated list of your context names)
 dtmgd get problems --env "prod;staging" -o json
 
-# Single env result → unwrapped data
-# Multi env result → { "prod": {...}, "staging": {...} }
+# You can list any number of contexts:
+dtmgd get problems --env "eu-prod;us-prod;ap-prod;dev" -o json
+
+# Single env result  → unwrapped data
+# Multi env result   → { "<context-1>": {...}, "<context-2>": {...} }
 ```
 
 The `--env` flag works with all `get`, `describe`, and `query` commands.
@@ -214,6 +230,44 @@ Errors are also wrapped:
 ```
 
 Force it on with `-A` / `--agent`, or disable auto-detection with `--no-agent`.
+
+### Install the dtmgd Skill for Your AI Agent
+
+`dtmgd` ships with an embedded skill file (`SKILL.md`) that teaches your AI
+coding assistant how to use the CLI effectively — including command patterns,
+output formats, and gotchas specific to Dynatrace Managed Classic.
+
+Install it with one command — the target agent is auto-detected from your
+environment, or you can pick it explicitly:
+
+```bash
+# Auto-detect the current AI agent and install
+dtmgd skills install
+
+# Install for a specific agent (claude, copilot, cursor, junie, kiro, opencode)
+dtmgd skills install --for claude
+
+# Install user-wide (instead of project-local)
+dtmgd skills install --for claude --global
+
+# Install to the cross-client shared directory (agentskills.io convention)
+# — picked up automatically by any compatible agent
+dtmgd skills install --cross-client
+
+# List all supported agents and their install paths
+dtmgd skills install --list
+
+# Check what's installed across all agents
+dtmgd skills status
+
+# Remove the skill
+dtmgd skills uninstall --for claude
+```
+
+Skill files are installed as a directory following the
+[agentskills.io](https://agentskills.io) standard:
+`<agent-config>/skills/dtmgd/SKILL.md`. Use `--force` to overwrite an
+existing installation.
 
 ## Pagination
 
@@ -245,22 +299,40 @@ Both relative and absolute times are accepted:
 
 ## Configuration File Format
 
+Context names (`production`, `staging`, etc.) and token names (`prod-token`)
+are user-chosen aliases. There are no reserved names — pick whatever fits
+your environments. You can register as many contexts as you need.
+
 ```yaml
 apiVersion: dtmgd.io/v1
 kind: Config
-current-context: production
+current-context: production       # any context name from the list below
 contexts:
-  - name: production
+  - name: production              # ← user-defined alias
     context:
       host: https://managed.company.com   # Managed cluster base URL
       env-id: abc12345                     # Environment ID
-      token-ref: prod-token
+      token-ref: prod-token                # reference into tokens list
       description: Production environment
       http-proxy: http://proxy.corp:8080   # optional HTTP proxy
       https-proxy: http://proxy.corp:8080  # optional HTTPS proxy
+  - name: staging                 # ← another user-defined alias; add as many as needed
+    context:
+      host: https://managed-staging.company.com
+      env-id: def67890
+      token-ref: staging-token
+  - name: eu-prod                 # ← any name you want
+    context:
+      host: https://managed-eu.company.com
+      env-id: xyz12345
+      token-ref: eu-prod-token
 tokens:
-  - name: prod-token
+  - name: prod-token              # ← matches token-ref above
     token: ""   # empty when stored in OS keyring
+  - name: staging-token
+    token: ""
+  - name: eu-prod-token
+    token: ""
 preferences:
   output: table
 ```
