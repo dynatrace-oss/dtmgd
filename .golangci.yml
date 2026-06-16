@@ -1,3 +1,5 @@
+version: "2"
+
 linters:
   enable:
     - gosec
@@ -8,15 +10,15 @@ linters:
     - unused
     - misspell
 
-linters-settings:
-  gosec:
-    severity: medium
-    confidence: medium
+  settings:
+    gosec:
+      severity: medium
+      confidence: medium
 
-issues:
-  exclude-rules:
-    # Test files: relax some rules
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
+  exclusions:
+    rules:
+      # Test files: relax some rules
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
