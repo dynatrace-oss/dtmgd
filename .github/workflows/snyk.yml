@@ -13,6 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     # Requires SNYK_TOKEN to be added as a repository secret:
     # Settings → Secrets and variables → Actions → New repository secret
+    # When the secret is absent (e.g. forks or Dependabot PRs, which do not
+    # receive repository secrets) the scan is skipped instead of failing with
+    # a 401 Unauthorized.
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
     steps:
       - uses: actions/checkout@v7
 
@@ -21,8 +26,13 @@ jobs:
           go-version-file: go.mod
 
       - name: Run Snyk to check for vulnerabilities
+        if: env.SNYK_TOKEN != ''
         uses: snyk/actions/golang@master
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
         with:
           args: --severity-threshold=high
+
+      - name: Snyk Unavailable
+        if: env.SNYK_TOKEN == ''
+        run: echo "Skipping Snyk scan because SNYK_TOKEN is not available in this workflow context."

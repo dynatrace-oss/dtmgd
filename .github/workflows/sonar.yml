@@ -8,6 +8,11 @@ on:
 
 jobs:
   sonar:
+    # Dependabot PRs (and forks) cannot access repository secrets, so the
+    # SonarCloud scan cannot run there. Skip the job for Dependabot instead of
+    # reporting a misleading green "passing" check. Pushes to main and normal
+    # PRs still run the real scan.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
