@@ -31,7 +31,8 @@ archives:
     files:
       - LICENSE*
       - README*
-      - SKILL.md
+      - src: skills/dtmgd/SKILL.md
+        strip_parent: true
       - completions/*
     format_overrides:
       - goos: windows
