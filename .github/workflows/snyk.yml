@@ -26,4 +26,4 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --severity-threshold=high
+          args: --severity-threshold=high --org=cf209dc7-eeb0-489a-822b-bcf09c4d1b8a
