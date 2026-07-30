@@ -94,12 +94,16 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 		return nil
 	}
 
+	// WithHeaderAutoFormat must precede WithHeader: WithHeader applies the
+	// headers immediately, and tablewriter defaults AutoFormat to On at that
+	// point. With AutoFormat on, headers are camel-split and rejoined with
+	// spaces, turning "ENV-ID" into "ENV - ID".
 	tbl := tablewriter.NewTable(p.w,
+		tablewriter.WithHeaderAutoFormat(tw.Off),
 		tablewriter.WithHeader(headers),
 		tablewriter.WithHeaderAlignment(tw.AlignLeft),
 		tablewriter.WithRowAlignment(tw.AlignLeft),
 		tablewriter.WithRowAutoWrap(tw.WrapNone),
-		tablewriter.WithHeaderAutoFormat(tw.Off),
 		tablewriter.WithRendition(tw.Rendition{
 			Borders: tw.BorderNone,
 			Settings: tw.Settings{

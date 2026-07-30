@@ -1,8 +1,21 @@
 # dtmgd — Dynatrace Managed CLI
 
-`dtmgd` is a `kubectl`-inspired read-only CLI for **Dynatrace Managed** (self-hosted) clusters, modeled after [`dtctl`](https://github.com/dynatrace-oss/dtctl).
+`dtmgd` is a `kubectl`-inspired read-only CLI for **Dynatrace Managed** (self-hosted) environments, modeled after [`dtctl`](https://github.com/dynatrace-oss/dtctl).
 
 It gives you terminal access to problems, entities, events, logs, metrics, SLOs, and security vulnerabilities via the Dynatrace Managed classic API — with the same feature set as the [Dynatrace Managed MCP Server](https://github.com/dynatrace-oss/dynatrace-managed-mcp).
+
+## Architecture
+
+![dtmgd architecture — a local CLI fanning out across any number of Dynatrace Managed environments](assets/architecture.png)
+
+`dtmgd` runs entirely on your workstation and talks directly to the Dynatrace
+Managed APIs, with no broker and no third-party service in between. Each named
+context points at one Dynatrace Managed environment. Environments may live on
+the same cluster or on separate clusters, in different locations, running
+different Dynatrace versions. Because the same systems are often monitored by
+several environments (production, staging, development), a single command can
+query one environment or fan out across every environment you have configured.
+See [Multi-Environment Queries](#multi-environment-queries).
 
 ## API Endpoints
 
@@ -41,8 +54,8 @@ Make sure `$(go env GOPATH)/bin` is in your `$PATH`.
 ## Quick Start
 
 `dtmgd` supports any number of named environments ("contexts"). The name you
-choose is just an alias — there are no reserved names. Pick whatever fits
-your setup: `prod`, `staging`, `dev`, `eu-prod`, `acme-tenant`, anything.
+choose is only an alias — there are no reserved names. Pick whatever fits
+your setup: `prod`, `staging`, `dev`, `eu-prod`, `acme-prod`, anything.
 
 ```bash
 # 1. Create a context pointing to your Managed cluster.
