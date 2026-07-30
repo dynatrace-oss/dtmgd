@@ -125,3 +125,30 @@ func TestTablePrinterColumnsNoMatch(t *testing.T) {
 	p.PrintList(rows)
 	// No headers match → falls through to fmt.Fprintln fallback
 }
+
+type hyphenatedRow struct {
+	ProblemID string `table:"PROBLEM-ID"`
+	DisplayID string `table:"DISPLAY-ID"`
+}
+
+// Headers containing hyphens must render verbatim. tablewriter's AutoFormat
+// camel-splits and rejoins with spaces ("PROBLEM-ID" → "PROBLEM - ID"), and it
+// defaults to On at the moment WithHeader is applied — so WithHeaderAutoFormat
+// has to be passed before WithHeader.
+func TestTablePrinterHyphenatedHeaders(t *testing.T) {
+	var buf bytes.Buffer
+	p := &TablePrinter{w: &buf}
+	rows := []hyphenatedRow{{ProblemID: "123_456V2", DisplayID: "P-1001"}}
+	if err := p.PrintList(rows); err != nil {
+		t.Fatalf("PrintList: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"PROBLEM-ID", "DISPLAY-ID"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("header %q missing from output:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, " - ID") {
+		t.Errorf("header hyphen was padded with spaces:\n%s", out)
+	}
+}
