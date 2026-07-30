@@ -9,6 +9,12 @@ on:
 jobs:
   sonar:
     runs-on: ubuntu-latest
+    # continue-on-error: SONAR_TOKEN is present but not authorized for project
+    # dynatrace-oss_dtmgd, so every run fails with "Not authorized or project
+    # not found". The scan result is reported but does not block merges. Remove
+    # this once the token has Execute Analysis permission, so that quality-gate
+    # failures gate again.
+    continue-on-error: true
     env:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
