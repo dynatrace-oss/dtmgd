@@ -36,7 +36,7 @@ func (p *TablePrinter) columnRequested(header string) bool {
 // PrintList accepts either a slice or a single struct, printing rows to a table.
 func (p *TablePrinter) PrintList(v interface{}) error {
 	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
 	}
 
@@ -50,19 +50,21 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 	}
 
 	if len(rows) == 0 {
-		fmt.Fprintln(p.w, "No items found.")
-		return nil
+		_, err := fmt.Fprintln(p.w, "No items found.")
+		return err
 	}
 
 	// Determine element type
 	elemType := rows[0].Type()
-	if elemType.Kind() == reflect.Ptr {
+	if elemType.Kind() == reflect.Pointer {
 		elemType = elemType.Elem()
 	}
 	if elemType.Kind() != reflect.Struct {
-		// Fallback: just print each value
+		// Fallback: print each value on its own line
 		for _, r := range rows {
-			fmt.Fprintln(p.w, r.Interface())
+			if _, err := fmt.Fprintln(p.w, r.Interface()); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -90,8 +92,8 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 	}
 
 	if len(headers) == 0 {
-		fmt.Fprintln(p.w, v)
-		return nil
+		_, err := fmt.Fprintln(p.w, v)
+		return err
 	}
 
 	// WithHeaderAutoFormat must precede WithHeader: WithHeader applies the
@@ -118,7 +120,7 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 
 	for _, row := range rows {
 		rv := row
-		if rv.Kind() == reflect.Ptr {
+		if rv.Kind() == reflect.Pointer {
 			rv = rv.Elem()
 		}
 		var cells []string

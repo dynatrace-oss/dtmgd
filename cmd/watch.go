@@ -57,7 +57,8 @@ func runWatch(fn func() error) error {
 }
 
 func clearScreen() {
-	fmt.Fprint(os.Stdout, "\033[H\033[2J")
+	// Best effort: a failed terminal escape sequence is cosmetic only.
+	_, _ = fmt.Fprint(os.Stdout, "\033[H\033[2J")
 }
 
 func printWatchHeader() {

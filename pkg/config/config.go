@@ -120,7 +120,11 @@ func Load() (*Config, error) {
 
 // LoadFrom loads config from the given path.
 func LoadFrom(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	// #nosec G304 -- reading a caller-supplied config path is this function's
+	// purpose. The path comes from --config, a discovered .dtmgd.yaml, or the
+	// XDG default, and dtmgd runs with the invoking user's own privileges, so
+	// there is no privilege boundary to cross here.
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("config file not found at %s. Run 'dtmgd config set-context' to create one", path)
