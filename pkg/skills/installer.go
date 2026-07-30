@@ -198,7 +198,7 @@ func copyEmbeddedFS(embeddedFS fs.FS, destDir string) error {
 		destPath := filepath.Join(destDir, path)
 
 		if d.IsDir() {
-			return os.MkdirAll(destPath, 0o755)
+			return os.MkdirAll(destPath, 0o750)
 		}
 
 		data, err := fs.ReadFile(embeddedFS, path)
@@ -207,11 +207,11 @@ func copyEmbeddedFS(embeddedFS fs.FS, destDir string) error {
 		}
 
 		dir := filepath.Dir(destPath)
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("creating directory %s: %w", dir, err)
 		}
 
-		return os.WriteFile(destPath, data, 0o644)
+		return os.WriteFile(destPath, data, 0o600)
 	})
 }
 

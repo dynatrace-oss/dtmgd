@@ -81,5 +81,7 @@ func PrintAgentError(err error) {
 		Error: &AgentError{Code: "error", Message: err.Error()},
 	}
 	data, _ := json.MarshalIndent(resp, "", "  ")
-	fmt.Fprintln(os.Stdout, string(data))
+	// Best effort: this is the last-resort error reporter, so there is nothing
+	// useful to do if writing to stdout fails.
+	_, _ = fmt.Fprintln(os.Stdout, string(data))
 }

@@ -23,7 +23,7 @@ Examples:
 
   # PowerShell
   dtmgd completion powershell | Out-String | Invoke-Expression`,
-	Args:      cobra.ExactValidArgs(1),
+	Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 	ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		switch args[0] {

@@ -2,7 +2,7 @@ module github.com/dynatrace-oss/dtmgd
 
 go 1.25.0
 
-toolchain go1.25.11
+toolchain go1.25.12
 
 require (
 	github.com/adrg/xdg v0.5.3

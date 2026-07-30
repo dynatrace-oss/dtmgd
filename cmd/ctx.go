@@ -147,39 +147,6 @@ func useContext(name string) error {
 	return nil
 }
 
-func describeContext(name string) error {
-	cfg, err := LoadConfig()
-	if err != nil {
-		return err
-	}
-
-	var found *config.NamedContext
-	for i := range cfg.Contexts {
-		if cfg.Contexts[i].Name == name {
-			found = &cfg.Contexts[i]
-			break
-		}
-	}
-	if found == nil {
-		return fmt.Errorf("context %q not found", name)
-	}
-
-	const w = 12
-	suffix := ""
-	if found.Name == cfg.CurrentContext {
-		suffix = " (current)"
-	}
-	output.DescribeKV("Name:", w, "%s%s", found.Name, suffix)
-	output.DescribeKV("Host:", w, "%s", found.Context.Host)
-	output.DescribeKV("Env-ID:", w, "%s", found.Context.EnvID)
-	output.DescribeKV("Token-Ref:", w, "%s", found.Context.TokenRef)
-	if found.Context.Description != "" {
-		output.DescribeKV("Description:", w, "%s", found.Context.Description)
-	}
-	output.DescribeKV("API URL:", w, "%s/v2/", found.Context.APIBaseURL())
-	return nil
-}
-
 func setContext(name, host, envID, tokenRef, description string) error {
 	cfg, err := loadConfigRaw()
 	if err != nil {
