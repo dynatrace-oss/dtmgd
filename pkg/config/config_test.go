@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -434,4 +435,52 @@ func TestFindLocalConfigNotFound(t *testing.T) {
 	// Just call FindLocalConfig — it may or may not find something (depending on
 	// whether there's a .dtmgd.yaml above the tmp dir). Just ensure no panic.
 	_ = FindLocalConfig()
+}
+
+func TestSaveToKeepsEnvPlaceholders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, LocalConfigName)
+	original := `apiVersion: dtmgd.io/v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      host: ${DT_MANAGED_HOST}
+      env-id: ${DT_ENV_ID}
+      token-ref: prod
+tokens:
+  - name: prod
+    token: ${DT_API_TOKEN}
+`
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("DT_MANAGED_HOST", "https://managed.example.com")
+	t.Setenv("DT_ENV_ID", "abc12345")
+	t.Setenv("DT_API_TOKEN", "dt0c01.SECRET.VALUE")
+
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Tokens[0].Token; got != "dt0c01.SECRET.VALUE" {
+		t.Fatalf("token = %q, want the expanded value", got)
+	}
+
+	if err := cfg.SaveTo(path); err == nil {
+		t.Error("SaveTo overwrote a config that references environment variables")
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != original {
+		t.Errorf("config file was rewritten:\n%s", after)
+	}
+	if strings.Contains(string(after), "dt0c01.SECRET.VALUE") {
+		t.Error("the expanded token was written into the config file")
+	}
 }
