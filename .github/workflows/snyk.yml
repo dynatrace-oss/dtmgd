@@ -33,4 +33,4 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_API_TOKEN }}
         with:
-          args: --severity-threshold=high --org=cf209dc7-eeb0-489a-822b-bcf09c4d1b8a
+          args: --severity-threshold=high --org=e16245a7-d909-49b0-b72d-52af7b45a469 --all-projects
