@@ -31,6 +31,6 @@ jobs:
       - name: Run Snyk to check for vulnerabilities
         uses: snyk/actions/golang@master
         env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+          SNYK_TOKEN: ${{ secrets.SNYK_API_TOKEN }}
         with:
           args: --severity-threshold=high --org=cf209dc7-eeb0-489a-822b-bcf09c4d1b8a
