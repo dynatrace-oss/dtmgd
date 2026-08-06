@@ -19,6 +19,18 @@ func HasPlaceholder(s string) bool {
 	return placeholderRe.MatchString(s)
 }
 
+// PlaceholderRefs returns the ${VAR} references found in s, in the order
+// they appear, as the literal "${VAR}" text rather than the bare name.
+//
+// This exists so callers that need to warn about a clobbered value — e.g.
+// "Replaced ${DT_API_TOKEN} in the config" — can echo just the matched
+// reference(s) instead of the whole raw string. A mixed value such as
+// "dt0c01.REAL${SUFFIX}" is half live secret, half placeholder; printing the
+// raw value to the terminal would leak the secret half.
+func PlaceholderRefs(s string) []string {
+	return placeholderRe.FindAllString(s, -1)
+}
+
 // BareRefs returns bare $VAR references in s that name a currently-set
 // environment variable, deduped and in first-appearance order.
 //

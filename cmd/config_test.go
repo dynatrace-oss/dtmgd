@@ -5,7 +5,23 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
+
+// TestMain swaps in an in-memory keyring provider for the whole test binary.
+//
+// Without this, TestSetCredentialsPreservesOtherPlaceholders calls
+// setCredentials with a token name ("prod-token") that matches the README
+// quick-start and cmd/config.go's set-context example: on a developer
+// machine with a real OS keyring, that call would silently overwrite a live
+// API token stored under that exact name. MockInit makes IsKeyringAvailable
+// report true against an in-memory store instead, so the test is hermetic
+// everywhere.
+func TestMain(m *testing.M) {
+	keyring.MockInit()
+	os.Exit(m.Run())
+}
 
 // withTempConfig points the cmd package at a temp config file for one test and
 // restores the previous value afterwards.
@@ -79,10 +95,10 @@ func TestUseContextPreservesPlaceholders(t *testing.T) {
 // TestSetCredentialsPreservesOtherPlaceholders is acceptance criterion 2: the
 // documented onboarding flow, which used to empty host and env-id.
 //
-// It deliberately does not assert on how the token itself was stored:
-// IsKeyringAvailable probes the real OS keyring, so that branch differs
-// between headless CI and a developer Mac. Host and env-id are unaffected by
-// the keyring either way.
+// It deliberately does not assert on how the token itself was stored: with
+// the mock keyring installed (see TestMain), setCredentials always takes the
+// keyring branch, storing "dt0c01.REAL" in the in-memory store rather than
+// the config file. Host and env-id are unaffected by the keyring either way.
 func TestSetCredentialsPreservesOtherPlaceholders(t *testing.T) {
 	path := withTempConfig(t, placeholderConfig)
 

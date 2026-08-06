@@ -1,9 +1,25 @@
 package config
 
 import (
+	"os"
 	"reflect"
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
+
+// TestMain swaps in an in-memory keyring provider for the whole test binary.
+//
+// Without this, any test that exercises SetToken/GetToken with a real OS
+// keyring available (IsKeyringAvailable() checks the real backend) would
+// read from or write to the developer's actual keyring. MockInit makes
+// IsKeyringAvailable() consistently report true for the rest of the run, so
+// every keyring-touching test below takes the keyring branch against the
+// mock store instead of the plaintext-config branch.
+func TestMain(m *testing.M) {
+	keyring.MockInit()
+	os.Exit(m.Run())
+}
 
 // TestMigrateTokensSkipsPlaceholders verifies the accounting without touching
 // the OS keyring: with every token either empty or a placeholder, SetToken is

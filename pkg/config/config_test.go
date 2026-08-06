@@ -94,10 +94,9 @@ func TestGetContextNotFound(t *testing.T) {
 // --- Config.GetToken ---
 
 func TestGetTokenFromConfig(t *testing.T) {
-	// Only works when keyring is unavailable; on CI without keyring this should fall through.
-	if IsKeyringAvailable() {
-		t.Skip("keyring available — token lookup behavior depends on keyring state")
-	}
+	// The mock keyring (see TestMain) has no "prod-token" entry, so
+	// GetToken falls through to the plaintext config branch exactly as it
+	// would with a real, but empty, keyring.
 	cfg := makeTestConfig()
 	token, err := cfg.GetToken("prod-token")
 	if err != nil {
@@ -109,9 +108,9 @@ func TestGetTokenFromConfig(t *testing.T) {
 }
 
 func TestGetTokenNotFound(t *testing.T) {
-	if IsKeyringAvailable() {
-		t.Skip("keyring available — GetToken may succeed from keyring")
-	}
+	// The mock keyring (see TestMain) has no "no-such-token" entry, so
+	// GetToken falls through to the plaintext config branch, where it is
+	// also absent.
 	cfg := makeTestConfig()
 	_, err := cfg.GetToken("no-such-token")
 	if err == nil {
@@ -283,10 +282,11 @@ func TestConfigDir(t *testing.T) {
 
 // --- SetToken ---
 
+// TestSetTokenCreatesNew exercises the keyring branch of SetToken: with the
+// mock keyring (see TestMain) reporting available, SetToken stores the
+// secret there and leaves an empty placeholder in the config, rather than
+// exercising the plaintext-config branch it used to test pre-mock.
 func TestSetTokenCreatesNew(t *testing.T) {
-	if IsKeyringAvailable() {
-		t.Skip("skipping: keyring available — plaintext path not exercised")
-	}
 	cfg := NewConfig()
 	if err := cfg.SetToken("mytoken", "secret"); err != nil {
 		t.Fatalf("SetToken failed: %v", err)
@@ -294,15 +294,22 @@ func TestSetTokenCreatesNew(t *testing.T) {
 	if len(cfg.Tokens) != 1 {
 		t.Errorf("expected 1 token, got %d", len(cfg.Tokens))
 	}
-	if cfg.Tokens[0].Token != "secret" {
-		t.Errorf("expected token 'secret', got %q", cfg.Tokens[0].Token)
+	if cfg.Tokens[0].Token != "" {
+		t.Errorf("expected empty placeholder in config (secret went to keyring), got %q", cfg.Tokens[0].Token)
+	}
+	got, err := NewTokenStore().GetToken("mytoken")
+	if err != nil {
+		t.Fatalf("GetToken from mock keyring failed: %v", err)
+	}
+	if got != "secret" {
+		t.Errorf("expected 'secret' in keyring, got %q", got)
 	}
 }
 
+// TestSetTokenUpdatesExisting is the update counterpart of
+// TestSetTokenCreatesNew — see its comment for why this now exercises the
+// keyring branch rather than the plaintext-config branch.
 func TestSetTokenUpdatesExisting(t *testing.T) {
-	if IsKeyringAvailable() {
-		t.Skip("skipping: keyring available — plaintext path not exercised")
-	}
 	cfg := NewConfig()
 	cfg.Tokens = []NamedToken{{Name: "mytoken", Token: "old-secret"}}
 	if err := cfg.SetToken("mytoken", "new-secret"); err != nil {
@@ -311,8 +318,15 @@ func TestSetTokenUpdatesExisting(t *testing.T) {
 	if len(cfg.Tokens) != 1 {
 		t.Errorf("expected 1 token, got %d", len(cfg.Tokens))
 	}
-	if cfg.Tokens[0].Token != "new-secret" {
-		t.Errorf("expected token 'new-secret', got %q", cfg.Tokens[0].Token)
+	if cfg.Tokens[0].Token != "" {
+		t.Errorf("expected empty placeholder in config (secret went to keyring), got %q", cfg.Tokens[0].Token)
+	}
+	got, err := NewTokenStore().GetToken("mytoken")
+	if err != nil {
+		t.Fatalf("GetToken from mock keyring failed: %v", err)
+	}
+	if got != "new-secret" {
+		t.Errorf("expected 'new-secret' in keyring, got %q", got)
 	}
 }
 

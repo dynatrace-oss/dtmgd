@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -182,7 +183,8 @@ func setContext(name, host, envID, tokenRef, description string) error {
 			{tokenRef, existing.Context.TokenRef, "token-ref"},
 		} {
 			if f.newValue != "" && config.HasPlaceholder(f.oldValue) {
-				output.PrintWarning("Replaced %s in the %s field — that environment variable no longer affects this context.", f.oldValue, f.label)
+				refs := strings.Join(config.PlaceholderRefs(f.oldValue), ", ")
+				output.PrintWarning("Replaced %s in the %s field — that environment variable no longer affects this context.", refs, f.label)
 			}
 		}
 	}

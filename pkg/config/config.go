@@ -19,8 +19,12 @@ type Config struct {
 	Preferences    Preferences       `yaml:"preferences"`
 	Aliases        map[string]string `yaml:"aliases,omitempty"`
 
-	// Set when the file this config was read from contained ${VAR} references,
-	// whose expansion must not be written back.
+	// expandedFrom is not set by any production code path: LoadFrom no longer
+	// expands ${VAR} references at load, so there is nothing left to guard
+	// against there. The field and the SaveTo check that reads it are kept
+	// as a backstop for a library caller that constructs a Config directly
+	// with already-expanded values — setting this field is how such a
+	// caller opts into SaveTo's refusal to overwrite the source file.
 	expandedFrom string
 }
 

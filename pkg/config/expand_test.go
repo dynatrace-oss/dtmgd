@@ -74,6 +74,31 @@ func TestHasPlaceholder(t *testing.T) {
 	}
 }
 
+func TestPlaceholderRefs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"single", "${DT_API_TOKEN}", []string{"${DT_API_TOKEN}"}},
+		{"none", "plain value", nil},
+		{"mixed literal and placeholder", "dt0c01.REAL${SUFFIX}", []string{"${SUFFIX}"}},
+		{"two distinct", "${A}-${B}", []string{"${A}", "${B}"}},
+		{"repeated same", "${A}${A}", []string{"${A}", "${A}"}},
+		{"bare ref not matched", "$BARE", nil},
+		{"unclosed brace", "${A", nil},
+		{"empty braces", "${}", nil},
+		{"password with dollars", "pa$$w0rd", nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := PlaceholderRefs(tt.input); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("PlaceholderRefs(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBareRefs(t *testing.T) {
 	t.Setenv("DT_API_TOKEN", "secret")
 	t.Setenv("SET_VAR", "VALUE")

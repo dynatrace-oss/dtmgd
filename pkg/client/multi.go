@@ -37,9 +37,13 @@ func MultiRequest(cfg *config.Config, envSpec string, apiCall func(c *Client) (i
 			defer wg.Done()
 			r := EnvResult{Name: nc.Name}
 
-			// EnvResult already carries Name, and the printer renders it as
-			// "eu-prod: ...", so the bare error form reads correctly here —
-			// no InContext wrapping needed.
+			// The bare error is deliberate: UnwrapSingle returns it as-is
+			// when there is exactly one result, so with a single-context
+			// config the user sees "✗ ${EU_HOST} is not set" with no
+			// context name — and none is needed, since there is no
+			// ambiguity about which context failed. With multiple
+			// contexts, EnvResult.Name (not this error text) identifies
+			// the context: UnwrapSingle keys the merged result map by it.
 			resolved, resolveErr := nc.Context.Resolve()
 			if resolveErr != nil {
 				r.Error = resolveErr

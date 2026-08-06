@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -181,7 +182,8 @@ func setCredentials(name, token string) error {
 	// without the new token ever appearing in the file.
 	for _, nt := range cfg.Tokens {
 		if nt.Name == name && config.HasPlaceholder(nt.Token) {
-			output.PrintWarning("Replaced %s in the config — that environment variable no longer affects this token.", nt.Token)
+			refs := strings.Join(config.PlaceholderRefs(nt.Token), ", ")
+			output.PrintWarning("Replaced %s in the config — that environment variable no longer affects this token.", refs)
 			break
 		}
 	}
