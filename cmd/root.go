@@ -173,19 +173,10 @@ func init() {
 
 // LoadConfig loads the configuration, respecting --config and --context flags.
 func LoadConfig() (*config.Config, error) {
-	var cfg *config.Config
-	var err error
-
-	if cfgFile != "" {
-		cfg, err = config.LoadFrom(cfgFile)
-	} else {
-		cfg, err = config.Load()
-	}
+	cfg, err := loadFromSource()
 	if err != nil {
 		return nil, err
 	}
-
-	warnBareRefs(cfg)
 
 	// Override current context from --context flag (single-env mode)
 	if contextName != "" {
@@ -204,18 +195,48 @@ func LoadConfig() (*config.Config, error) {
 // loadConfigRaw loads config without applying the --context override.
 // Used by config management commands.
 func loadConfigRaw() (*config.Config, error) {
-	var cfg *config.Config
-	var err error
-	if cfgFile != "" {
-		cfg, err = config.LoadFrom(cfgFile)
-	} else {
-		cfg, err = config.Load()
-	}
+	return loadFromSource()
+}
+
+// loadFromSource reads whichever config file ResolveSource selects, reporting
+// the choice when the user did not make it themselves.
+func loadFromSource() (*config.Config, error) {
+	src := config.ResolveSource(cfgFile)
+	reportConfigSource(src)
+
+	cfg, err := config.LoadFrom(src.Path)
 	if err != nil {
 		return nil, err
 	}
 	warnBareRefs(cfg)
 	return cfg, nil
+}
+
+// reportConfigSource names the config file in effect when that choice is not
+// visible to the user.
+//
+// FindLocalConfig walks upward from the working directory, so a .dtmgd.yaml
+// planted in any shared ancestor — /tmp, a group-writable project root, a CI
+// workspace — redirects every dtmgd run, host and token included, with
+// nothing on screen to show for it. Naming the file is what makes that
+// visible; it is the disclosure half of the fix, the other half being that
+// LoadFrom no longer expands ${VAR} into attacker-chosen fields.
+//
+// The remaining sources are announced only under -v. A .dtmgd.yaml in the
+// working directory is the documented project-local workflow that
+// `dtmgd config init` creates, and an explicit --config path was typed by the
+// user; warning on either would train people to ignore the warning that
+// matters.
+func reportConfigSource(src config.Source) {
+	if src.Invisible() {
+		output.PrintWarning(
+			"Using config %s — found in a parent directory, not %s. Check it before trusting this run.",
+			src.Path, config.DefaultConfigPath())
+		return
+	}
+	if verbosity > 0 {
+		output.PrintInfo("Using config %s", src.Path)
+	}
 }
 
 // warnBareRefs warns about bare $VAR references, which are no longer expanded.
