@@ -93,7 +93,7 @@ func init() {
 	skillsInstallCmd.Flags().String("for", "", "install for a specific agent (claude, copilot, cursor, junie, kiro, opencode)")
 	skillsInstallCmd.Flags().Bool("cross-client", false, "install to the shared .agents/skills/ directory (agentskills.io convention)")
 	skillsInstallCmd.Flags().Bool("global", false, "install to user-wide location instead of project directory")
-	skillsInstallCmd.Flags().Bool("force", false, "overwrite existing files without prompting")
+	skillsInstallCmd.Flags().Bool("force", false, "overwrite the skill's own files; anything else in the directory is left alone")
 	skillsInstallCmd.Flags().Bool("list", false, "list all supported agents and exit")
 
 	skillsUninstallCmd.Flags().String("for", "", "uninstall for a specific agent")
@@ -154,10 +154,11 @@ func runSkillsInstall(cmd *cobra.Command, _ []string) error {
 
 	if agentMode() {
 		return output.NewAgentPrinter("skills").Print(map[string]interface{}{
-			"action": map[bool]string{true: "updated", false: "installed"}[result.Replaced],
-			"agent":  result.Agent.Name,
-			"path":   result.Path,
-			"scope":  scope,
+			"action":    map[bool]string{true: "updated", false: "installed"}[result.Replaced],
+			"agent":     result.Agent.Name,
+			"path":      result.Path,
+			"scope":     scope,
+			"preserved": result.Preserved,
 		})
 	}
 
@@ -166,6 +167,13 @@ func runSkillsInstall(cmd *cobra.Command, _ []string) error {
 		verb = "Updated"
 	}
 	fmt.Printf("✓ %s %s skill: %s (%s)\n", verb, result.Agent.DisplayName, result.Path, scope)
+	// Say what was left alone. --force used to delete the whole directory, so
+	// anyone who kept notes or extra reference files beside SKILL.md lost them
+	// and only found out later.
+	if len(result.Preserved) > 0 {
+		output.PrintInfo("Left %d file(s) in place that are not part of the skill: %s",
+			len(result.Preserved), strings.Join(result.Preserved, ", "))
+	}
 	return nil
 }
 

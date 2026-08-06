@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	dtmgdskill "github.com/dynatrace-oss/dtmgd/skills/dtmgd"
@@ -92,6 +93,10 @@ type InstallResult struct {
 	Path     string
 	Global   bool
 	Replaced bool
+	// Preserved lists files that were already in the skill directory and are
+	// not part of the embedded skill, so they were left untouched. Install
+	// used to delete the whole directory on --force, taking these with it.
+	Preserved []string
 }
 
 // StatusResult describes the current installation state for an agent.
@@ -164,10 +169,21 @@ func Install(agent Agent, baseDir string, global bool, overwrite bool) (*Install
 		replaced = true
 	}
 
-	if replaced {
-		if err := os.RemoveAll(skillDir); err != nil {
-			return nil, fmt.Errorf("failed to remove existing skill directory %s: %w", skillDir, err)
-		}
+	// Deliberately no os.RemoveAll(skillDir) here.
+	//
+	// --force is documented as "overwrite existing files without prompting",
+	// but it used to delete the entire skill directory before writing — and
+	// the only output, printed after the fact, said "Updated". Anything the
+	// user had added or edited in there was gone with no warning, no
+	// confirmation, no dry-run and no way back short of their own version
+	// control.
+	//
+	// copyEmbeddedFS truncates the files it writes, so overwriting is all
+	// that --force ever needed. Files that are not part of the embedded skill
+	// are now left alone and reported.
+	preserved, err := unmanagedFiles(skillDir, dtmgdskill.Content)
+	if err != nil {
+		return nil, err
 	}
 
 	if err := copyEmbeddedFS(dtmgdskill.Content, skillDir); err != nil {
@@ -175,11 +191,59 @@ func Install(agent Agent, baseDir string, global bool, overwrite bool) (*Install
 	}
 
 	return &InstallResult{
-		Agent:    agent,
-		Path:     skillDir,
-		Global:   global,
-		Replaced: replaced,
+		Agent:     agent,
+		Path:      skillDir,
+		Global:    global,
+		Replaced:  replaced,
+		Preserved: preserved,
 	}, nil
+}
+
+// unmanagedFiles lists files already under dir that the embedded skill will
+// not overwrite — that is, whatever the user put there themselves.
+//
+// A missing directory is not an error: it is the ordinary first-install case
+// and simply has nothing to preserve.
+func unmanagedFiles(dir string, embeddedFS fs.FS) ([]string, error) {
+	managed := make(map[string]bool)
+	err := fs.WalkDir(embeddedFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) != ".go" {
+			managed[filepath.Clean(path)] = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading embedded skill: %w", err)
+	}
+
+	var extra []string
+	err = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(dir, path)
+		if relErr != nil {
+			return relErr
+		}
+		if !managed[filepath.Clean(rel)] {
+			extra = append(extra, rel)
+		}
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("inspecting %s: %w", dir, err)
+	}
+	sort.Strings(extra)
+	return extra, nil
 }
 
 // copyEmbeddedFS copies all files from the embedded filesystem to destDir,
