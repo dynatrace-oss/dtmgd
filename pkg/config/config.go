@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,7 +120,7 @@ func LoadFrom(path string) (*Config, error) {
 	// and Config.GetToken.
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+		return nil, parseError(path, err)
 	}
 	// Apply defaults for fields that may be absent in minimal configs.
 	if cfg.APIVersion == "" {
@@ -129,6 +130,27 @@ func LoadFrom(path string) (*Config, error) {
 		cfg.Kind = "Config"
 	}
 	return &cfg, nil
+}
+
+// parseError converts a yaml decode failure into a message safe to show.
+//
+// yaml.v3 quotes the offending value in type errors, truncated to ten
+// characters. Because --config accepts any readable path, forwarding that text
+// turns a config flag into a short read primitive: `dtmgd --config /etc/hostname`
+// printed the machine's hostname, and in agent mode the same text lands in the
+// JSON error.message that agent frameworks record. Ten characters with no way
+// to page through more is too constrained to be a security finding, but the
+// error has no reason to echo file content at all.
+//
+// Syntax errors are forwarded unchanged: they report a line number and a
+// structural problem ("did not find expected key") without quoting values, and
+// they are the errors a user most often needs to act on.
+func parseError(path string, err error) error {
+	var typeErr *yaml.TypeError
+	if errors.As(err, &typeErr) {
+		return fmt.Errorf("failed to parse config file at %s: it is not valid dtmgd configuration", path)
+	}
+	return fmt.Errorf("failed to parse config file at %s: %w", path, err)
 }
 
 // Save saves the config to the default path.

@@ -215,6 +215,7 @@ dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --
 | `-A, --agent` | Force AI agent envelope output (`{ok, result, context}`) |
 | `--no-agent` | Disable auto-detected agent mode |
 | `--max-pages <n>` | Maximum pages to fetch (0 = all, default). Pagination is automatic. |
+| `--concurrency <n>` | Maximum environments queried at once with `--env` (default: `10`) |
 | `--columns <cols>` | Comma-separated columns to show in table output |
 | `-w, --watch` | Re-run the command periodically |
 | `--watch-interval <d>` | Interval between watch refreshes (default: `5s`) |
@@ -245,6 +246,17 @@ dtmgd get problems --env "eu-prod;us-prod;ap-prod;dev" -o json
 
 The `--env` flag works with all `get`, `describe`, and `query` commands.
 
+Environments are queried in parallel, up to 10 at a time. Since a Managed
+cluster commonly hosts 20-50 environment IDs, firing them all at once draws
+`429 Too Many Requests`, and every request then retries on the same schedule —
+so each retry wave is as large as the original burst, and no output appears
+until the slowest one finishes. Raise the cap with `--concurrency` if your
+cluster is dedicated or you have only a few environments:
+
+```bash
+dtmgd get problems --env ALL_ENVIRONMENTS --concurrency 25
+```
+
 ## AI Agent Mode
 
 When running inside an AI agent (Claude Code, Cursor, GitHub Copilot, Kiro, etc.),
@@ -263,9 +275,13 @@ Errors are also wrapped:
 ```json
 {
   "ok": false,
-  "error": { "code": "error", "message": "API error 401: Unauthorized" }
+  "error": { "code": "error", "message": "API error 401" }
 }
 ```
+
+API error messages carry the status code and, when the cluster returns a
+recognised error envelope, its human-readable message — but not the rest of the
+response body. Run with `-vv` to see the full response.
 
 Force it on with `-A` / `--agent`, or disable auto-detection with `--no-agent`.
 
