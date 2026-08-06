@@ -55,33 +55,6 @@ type Preferences struct {
 	Output string `yaml:"output,omitempty"`
 }
 
-// APIBaseURL returns the environment API base URL for this context.
-// Format: {host}/e/{env-id}/api
-func (c *Context) APIBaseURL() string {
-	if c.Host == "" || c.EnvID == "" {
-		return ""
-	}
-	host := c.Host
-	// Ensure no trailing slash.
-	for len(host) > 0 && host[len(host)-1] == '/' {
-		host = host[:len(host)-1]
-	}
-	return fmt.Sprintf("%s/e/%s/api", host, c.EnvID)
-}
-
-// ClusterAPIBaseURL returns the cluster-level API base URL.
-// Format: {host}/api
-func (c *Context) ClusterAPIBaseURL() string {
-	if c.Host == "" {
-		return ""
-	}
-	host := c.Host
-	for len(host) > 0 && host[len(host)-1] == '/' {
-		host = host[:len(host)-1]
-	}
-	return fmt.Sprintf("%s/api", host)
-}
-
 // DefaultConfigPath returns the default config file path (~/.config/dtmgd/config).
 func DefaultConfigPath() string {
 	return filepath.Join(xdg.ConfigHome, "dtmgd", "config")
