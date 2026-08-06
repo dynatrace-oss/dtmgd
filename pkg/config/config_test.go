@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -29,84 +31,6 @@ func makeTestConfig() *Config {
 			{Name: "prod-token", Token: "api-token-prod"},
 			{Name: "staging-token", Token: "api-token-staging"},
 		},
-	}
-}
-
-// --- Context.APIBaseURL ---
-
-func TestAPIBaseURL(t *testing.T) {
-	tests := []struct {
-		name string
-		ctx  Context
-		want string
-	}{
-		{
-			name: "normal",
-			ctx:  Context{Host: "https://managed.company.com", EnvID: "abc12345"},
-			want: "https://managed.company.com/e/abc12345/api",
-		},
-		{
-			name: "trailing slash on host",
-			ctx:  Context{Host: "https://managed.company.com/", EnvID: "env1"},
-			want: "https://managed.company.com/e/env1/api",
-		},
-		{
-			name: "multiple trailing slashes",
-			ctx:  Context{Host: "https://managed.company.com///", EnvID: "env1"},
-			want: "https://managed.company.com/e/env1/api",
-		},
-		{
-			name: "empty host",
-			ctx:  Context{Host: "", EnvID: "env1"},
-			want: "",
-		},
-		{
-			name: "empty env-id",
-			ctx:  Context{Host: "https://managed.company.com", EnvID: ""},
-			want: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.ctx.APIBaseURL()
-			if got != tt.want {
-				t.Errorf("APIBaseURL() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-// --- Context.ClusterAPIBaseURL ---
-
-func TestClusterAPIBaseURL(t *testing.T) {
-	tests := []struct {
-		name string
-		ctx  Context
-		want string
-	}{
-		{
-			name: "normal",
-			ctx:  Context{Host: "https://managed.company.com"},
-			want: "https://managed.company.com/api",
-		},
-		{
-			name: "trailing slash",
-			ctx:  Context{Host: "https://managed.company.com/"},
-			want: "https://managed.company.com/api",
-		},
-		{
-			name: "empty host",
-			ctx:  Context{Host: ""},
-			want: "",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.ctx.ClusterAPIBaseURL()
-			if got != tt.want {
-				t.Errorf("ClusterAPIBaseURL() = %q, want %q", got, tt.want)
-			}
-		})
 	}
 }
 
@@ -170,10 +94,9 @@ func TestGetContextNotFound(t *testing.T) {
 // --- Config.GetToken ---
 
 func TestGetTokenFromConfig(t *testing.T) {
-	// Only works when keyring is unavailable; on CI without keyring this should fall through.
-	if IsKeyringAvailable() {
-		t.Skip("keyring available — token lookup behavior depends on keyring state")
-	}
+	// The mock keyring (see TestMain) has no "prod-token" entry, so
+	// GetToken falls through to the plaintext config branch exactly as it
+	// would with a real, but empty, keyring.
 	cfg := makeTestConfig()
 	token, err := cfg.GetToken("prod-token")
 	if err != nil {
@@ -185,9 +108,9 @@ func TestGetTokenFromConfig(t *testing.T) {
 }
 
 func TestGetTokenNotFound(t *testing.T) {
-	if IsKeyringAvailable() {
-		t.Skip("keyring available — GetToken may succeed from keyring")
-	}
+	// The mock keyring (see TestMain) has no "no-such-token" entry, so
+	// GetToken falls through to the plaintext config branch, where it is
+	// also absent.
 	cfg := makeTestConfig()
 	_, err := cfg.GetToken("no-such-token")
 	if err == nil {
@@ -359,10 +282,11 @@ func TestConfigDir(t *testing.T) {
 
 // --- SetToken ---
 
+// TestSetTokenCreatesNew exercises the keyring branch of SetToken: with the
+// mock keyring (see TestMain) reporting available, SetToken stores the
+// secret there and leaves an empty placeholder in the config, rather than
+// exercising the plaintext-config branch it used to test pre-mock.
 func TestSetTokenCreatesNew(t *testing.T) {
-	if IsKeyringAvailable() {
-		t.Skip("skipping: keyring available — plaintext path not exercised")
-	}
 	cfg := NewConfig()
 	if err := cfg.SetToken("mytoken", "secret"); err != nil {
 		t.Fatalf("SetToken failed: %v", err)
@@ -370,15 +294,22 @@ func TestSetTokenCreatesNew(t *testing.T) {
 	if len(cfg.Tokens) != 1 {
 		t.Errorf("expected 1 token, got %d", len(cfg.Tokens))
 	}
-	if cfg.Tokens[0].Token != "secret" {
-		t.Errorf("expected token 'secret', got %q", cfg.Tokens[0].Token)
+	if cfg.Tokens[0].Token != "" {
+		t.Errorf("expected empty placeholder in config (secret went to keyring), got %q", cfg.Tokens[0].Token)
+	}
+	got, err := NewTokenStore().GetToken("mytoken")
+	if err != nil {
+		t.Fatalf("GetToken from mock keyring failed: %v", err)
+	}
+	if got != "secret" {
+		t.Errorf("expected 'secret' in keyring, got %q", got)
 	}
 }
 
+// TestSetTokenUpdatesExisting is the update counterpart of
+// TestSetTokenCreatesNew — see its comment for why this now exercises the
+// keyring branch rather than the plaintext-config branch.
 func TestSetTokenUpdatesExisting(t *testing.T) {
-	if IsKeyringAvailable() {
-		t.Skip("skipping: keyring available — plaintext path not exercised")
-	}
 	cfg := NewConfig()
 	cfg.Tokens = []NamedToken{{Name: "mytoken", Token: "old-secret"}}
 	if err := cfg.SetToken("mytoken", "new-secret"); err != nil {
@@ -387,8 +318,15 @@ func TestSetTokenUpdatesExisting(t *testing.T) {
 	if len(cfg.Tokens) != 1 {
 		t.Errorf("expected 1 token, got %d", len(cfg.Tokens))
 	}
-	if cfg.Tokens[0].Token != "new-secret" {
-		t.Errorf("expected token 'new-secret', got %q", cfg.Tokens[0].Token)
+	if cfg.Tokens[0].Token != "" {
+		t.Errorf("expected empty placeholder in config (secret went to keyring), got %q", cfg.Tokens[0].Token)
+	}
+	got, err := NewTokenStore().GetToken("mytoken")
+	if err != nil {
+		t.Fatalf("GetToken from mock keyring failed: %v", err)
+	}
+	if got != "new-secret" {
+		t.Errorf("expected 'new-secret' in keyring, got %q", got)
 	}
 }
 
@@ -437,7 +375,10 @@ func TestFindLocalConfigNotFound(t *testing.T) {
 	_ = FindLocalConfig()
 }
 
-func TestSaveToKeepsEnvPlaceholders(t *testing.T) {
+// TestLoadFromDoesNotExpand is the regression test for the credential leak.
+// If this fails, expanded secrets are back in the in-memory config and every
+// save path can write them to disk.
+func TestLoadFromDoesNotExpand(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, LocalConfigName)
 	original := `apiVersion: dtmgd.io/v1
@@ -465,22 +406,139 @@ tokens:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.Tokens[0].Token; got != "dt0c01.SECRET.VALUE" {
-		t.Fatalf("token = %q, want the expanded value", got)
+
+	if got := cfg.Tokens[0].Token; got != "${DT_API_TOKEN}" {
+		t.Errorf("token = %q, want the literal placeholder", got)
+	}
+	if got := cfg.Contexts[0].Context.Host; got != "${DT_MANAGED_HOST}" {
+		t.Errorf("host = %q, want the literal placeholder", got)
+	}
+	if got := cfg.Contexts[0].Context.EnvID; got != "${DT_ENV_ID}" {
+		t.Errorf("env-id = %q, want the literal placeholder", got)
+	}
+}
+
+// TestSaveToPreservesPlaceholders replaces the refusal test added by PR #27.
+// Saving is now allowed because there is nothing expanded to leak.
+func TestSaveToPreservesPlaceholders(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, LocalConfigName)
+	original := `apiVersion: dtmgd.io/v1
+kind: Config
+current-context: prod
+contexts:
+  - name: prod
+    context:
+      host: ${DT_MANAGED_HOST}
+      env-id: ${DT_ENV_ID}
+      token-ref: prod
+  - name: staging
+    context:
+      host: https://staging.example.com
+      env-id: def67890
+      token-ref: prod
+tokens:
+  - name: prod
+    token: ${DT_API_TOKEN}
+`
+	if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+		t.Fatal(err)
 	}
 
-	if err := cfg.SaveTo(path); err == nil {
-		t.Error("SaveTo overwrote a config that references environment variables")
+	t.Setenv("DT_MANAGED_HOST", "https://managed.example.com")
+	t.Setenv("DT_ENV_ID", "abc12345")
+	t.Setenv("DT_API_TOKEN", "dt0c01.SECRET.VALUE")
+
+	cfg, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The mutation a real command would make.
+	cfg.CurrentContext = "staging"
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo() error = %v, want nil", err)
 	}
 
 	after, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(after) != original {
-		t.Errorf("config file was rewritten:\n%s", after)
+	got := string(after)
+
+	if strings.Contains(got, "dt0c01.SECRET.VALUE") {
+		t.Errorf("the expanded token was written into the config:\n%s", got)
 	}
-	if strings.Contains(string(after), "dt0c01.SECRET.VALUE") {
-		t.Error("the expanded token was written into the config file")
+	if strings.Contains(got, "https://managed.example.com") {
+		t.Errorf("the expanded host was written into the config:\n%s", got)
+	}
+	for _, want := range []string{"${DT_MANAGED_HOST}", "${DT_ENV_ID}", "${DT_API_TOKEN}"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("placeholder %s missing after save:\n%s", want, got)
+		}
+	}
+	if !strings.Contains(got, "current-context: staging") {
+		t.Errorf("the mutation was not persisted:\n%s", got)
+	}
+}
+
+// TestSaveToGuardStillRefuses covers the PR #27 backstop directly. Nothing
+// sets expandedFrom any more, so it is set by hand here to keep the guard
+// under test for direct pkg/config library use.
+func TestSaveToGuardStillRefuses(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, LocalConfigName)
+
+	cfg := makeTestConfig()
+	cfg.expandedFrom = path
+
+	if err := cfg.SaveTo(path); err == nil {
+		t.Error("SaveTo() succeeded, want refusal when expandedFrom is set")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("SaveTo() wrote the file despite refusing")
+	}
+}
+
+func TestGetTokenExpandsPlaceholder(t *testing.T) {
+	t.Setenv("DT_API_TOKEN", "dt0c01.SECRET.VALUE")
+
+	cfg := &Config{Tokens: []NamedToken{{Name: "prod", Token: "${DT_API_TOKEN}"}}}
+
+	got, err := cfg.GetToken("prod")
+	if err != nil {
+		t.Fatalf("GetToken() error = %v", err)
+	}
+	if got != "dt0c01.SECRET.VALUE" {
+		t.Errorf("GetToken() = %q, want the expanded value", got)
+	}
+}
+
+func TestGetTokenUnsetPlaceholder(t *testing.T) {
+	cfg := &Config{Tokens: []NamedToken{{Name: "prod", Token: "${MISSING_TOKEN_VAR}"}}}
+
+	_, err := cfg.GetToken("prod")
+	if err == nil {
+		t.Fatal("GetToken() succeeded with an unset variable")
+	}
+
+	var uerr *UnresolvedVarsError
+	if !errors.As(err, &uerr) {
+		t.Fatalf("error type = %T, want *UnresolvedVarsError", err)
+	}
+	if !reflect.DeepEqual(uerr.Vars, []string{"MISSING_TOKEN_VAR"}) {
+		t.Errorf("Vars = %v, want [MISSING_TOKEN_VAR]", uerr.Vars)
+	}
+}
+
+func TestGetTokenLiteralDollarPreserved(t *testing.T) {
+	cfg := &Config{Tokens: []NamedToken{{Name: "prod", Token: "pa$$w0rd"}}}
+
+	got, err := cfg.GetToken("prod")
+	if err != nil {
+		t.Fatalf("GetToken() error = %v", err)
+	}
+	if got != "pa$$w0rd" {
+		t.Errorf("GetToken() = %q, want the dollars preserved", got)
 	}
 }

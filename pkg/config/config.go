@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,8 +19,12 @@ type Config struct {
 	Preferences    Preferences       `yaml:"preferences"`
 	Aliases        map[string]string `yaml:"aliases,omitempty"`
 
-	// Set when the file this config was read from contained ${VAR} references,
-	// whose expansion must not be written back.
+	// expandedFrom is not set by any production code path: LoadFrom no longer
+	// expands ${VAR} references at load, so there is nothing left to guard
+	// against there. The field and the SaveTo check that reads it are kept
+	// as a backstop for a library caller that constructs a Config directly
+	// with already-expanded values — setting this field is how such a
+	// caller opts into SaveTo's refusal to overwrite the source file.
 	expandedFrom string
 }
 
@@ -53,33 +56,6 @@ type NamedToken struct {
 // Preferences holds user preferences.
 type Preferences struct {
 	Output string `yaml:"output,omitempty"`
-}
-
-// APIBaseURL returns the environment API base URL for this context.
-// Format: {host}/e/{env-id}/api
-func (c *Context) APIBaseURL() string {
-	if c.Host == "" || c.EnvID == "" {
-		return ""
-	}
-	host := c.Host
-	// Ensure no trailing slash.
-	for len(host) > 0 && host[len(host)-1] == '/' {
-		host = host[:len(host)-1]
-	}
-	return fmt.Sprintf("%s/e/%s/api", host, c.EnvID)
-}
-
-// ClusterAPIBaseURL returns the cluster-level API base URL.
-// Format: {host}/api
-func (c *Context) ClusterAPIBaseURL() string {
-	if c.Host == "" {
-		return ""
-	}
-	host := c.Host
-	for len(host) > 0 && host[len(host)-1] == '/' {
-		host = host[:len(host)-1]
-	}
-	return fmt.Sprintf("%s/api", host)
 }
 
 // DefaultConfigPath returns the default config file path (~/.config/dtmgd/config).
@@ -137,14 +113,13 @@ func LoadFrom(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	expanded := []byte(os.ExpandEnv(string(data)))
-
+	// Deliberately no os.ExpandEnv here. The in-memory Config is a faithful
+	// image of the file, so a save can never write an expanded secret back.
+	// ${VAR} references are expanded at the point of use — see Context.Resolve
+	// and Config.GetToken.
 	var cfg Config
-	if err := yaml.Unmarshal(expanded, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
-	if !bytes.Equal(data, expanded) {
-		cfg.expandedFrom = path
 	}
 	// Apply defaults for fields that may be absent in minimal configs.
 	if cfg.APIVersion == "" {
@@ -213,10 +188,16 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 	}
 	for _, nt := range c.Tokens {
 		if nt.Name == tokenRef {
-			if nt.Token != "" {
-				return nt.Token, nil
+			if nt.Token == "" {
+				return "", fmt.Errorf("token %q not found in keyring (may need to re-add credentials)", tokenRef)
 			}
-			return "", fmt.Errorf("token %q not found in keyring (may need to re-add credentials)", tokenRef)
+			// The stored value may be a ${VAR} reference. Expand it here, at
+			// the point of use, rather than at load.
+			token, unset := expand(nt.Token)
+			if len(unset) > 0 {
+				return "", &UnresolvedVarsError{Vars: unset}
+			}
+			return token, nil
 		}
 	}
 	return "", fmt.Errorf("token %q not found", tokenRef)

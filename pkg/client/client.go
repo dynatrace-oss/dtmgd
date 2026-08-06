@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,15 +32,23 @@ func NewFromConfig(cfg *config.Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	token, err := cfg.GetToken(ctx.TokenRef)
+	resolved, err := ctx.Resolve()
+	if err != nil {
+		var uerr *config.UnresolvedVarsError
+		if errors.As(err, &uerr) {
+			return nil, uerr.InContext(cfg.CurrentContext)
+		}
+		return nil, err
+	}
+	token, err := cfg.GetToken(resolved.TokenRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API token: %w", err)
 	}
-	c, err := New(ctx.Host, ctx.EnvID, token)
+	c, err := New(resolved.Host, resolved.EnvID, token)
 	if err != nil {
 		return nil, err
 	}
-	c.SetProxy(ctx.HTTPProxyURL, ctx.HTTPSProxyURL)
+	c.SetProxy(resolved.HTTPProxyURL, resolved.HTTPSProxyURL)
 	return c, nil
 }
 

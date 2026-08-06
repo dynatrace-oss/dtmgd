@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -146,8 +147,8 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		host, _ := cmd.Flags().GetString("host")
-		envID, _ := cmd.Flags().GetString("env-id")
-		tokenRef, _ := cmd.Flags().GetString("token-ref")
+		envID, _ := cmd.Flags().GetString(flagEnvID)
+		tokenRef, _ := cmd.Flags().GetString(flagTokenRef)
 		description, _ := cmd.Flags().GetString("description")
 
 		return setContext(args[0], host, envID, tokenRef, description)
@@ -165,26 +166,41 @@ var configSetCredentialsCmd = &cobra.Command{
 		if token == "" {
 			return fmt.Errorf("--token is required")
 		}
-
-		cfg, err := loadConfigRaw()
-		if err != nil {
-			cfg = config.NewConfig()
-		}
-
-		if err := cfg.SetToken(args[0], token); err != nil {
-			return err
-		}
-		if err := saveConfig(cfg); err != nil {
-			return err
-		}
-
-		if config.IsKeyringAvailable() {
-			output.PrintSuccess("Credential %q stored securely in %s", args[0], config.KeyringBackend())
-		} else {
-			output.PrintWarning("Credential %q saved (plaintext — keyring not available)", args[0])
-		}
-		return nil
+		return setCredentials(args[0], token)
 	},
+}
+
+// setCredentials stores an API token under the given name.
+func setCredentials(name, token string) error {
+	cfg, err := loadConfigRaw()
+	if err != nil {
+		cfg = config.NewConfig()
+	}
+
+	// Warn before the placeholder disappears. This matters most in the keyring
+	// case, where SetToken writes token: "" and the ${VAR} reference vanishes
+	// without the new token ever appearing in the file.
+	for _, nt := range cfg.Tokens {
+		if nt.Name == name && config.HasPlaceholder(nt.Token) {
+			refs := strings.Join(config.PlaceholderRefs(nt.Token), ", ")
+			output.PrintWarning("Replaced %s in the config — that environment variable no longer affects this token.", refs)
+			break
+		}
+	}
+
+	if err := cfg.SetToken(name, token); err != nil {
+		return err
+	}
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+
+	if config.IsKeyringAvailable() {
+		output.PrintSuccess("Credential %q stored securely in %s", name, config.KeyringBackend())
+	} else {
+		output.PrintWarning("Credential %q saved (plaintext — keyring not available)", name)
+	}
+	return nil
 }
 
 // configDeleteContextCmd removes a context.
@@ -210,9 +226,12 @@ var configMigrateTokensCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		migrated, err := config.MigrateTokensToKeyring(cfg)
+		migrated, skipped, err := config.MigrateTokensToKeyring(cfg)
 		if err != nil {
 			return err
+		}
+		for _, name := range skipped {
+			output.PrintWarning("Skipped %q: it resolves from an environment variable; migrating would freeze the current value", name)
 		}
 		if migrated == 0 {
 			output.PrintInfo("No tokens to migrate")
@@ -243,8 +262,8 @@ func init() {
 	configInitCmd.Flags().String("context", "", "context name to pre-fill in template")
 
 	configSetContextCmd.Flags().String("host", "", "Dynatrace Managed cluster URL (e.g. https://managed.company.com)")
-	configSetContextCmd.Flags().String("env-id", "", "Environment ID")
-	configSetContextCmd.Flags().String("token-ref", "", "credential name (see set-credentials)")
+	configSetContextCmd.Flags().String(flagEnvID, "", "Environment ID")
+	configSetContextCmd.Flags().String(flagTokenRef, "", "credential name (see set-credentials)")
 	configSetContextCmd.Flags().String("description", "", "human-readable description")
 
 	configSetCredentialsCmd.Flags().String("token", "", "API token value")

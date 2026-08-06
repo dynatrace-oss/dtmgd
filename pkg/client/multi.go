@@ -37,20 +37,34 @@ func MultiRequest(cfg *config.Config, envSpec string, apiCall func(c *Client) (i
 			defer wg.Done()
 			r := EnvResult{Name: nc.Name}
 
-			token, tokenErr := cfg.GetToken(nc.Context.TokenRef)
+			// The bare error is deliberate: UnwrapSingle returns it as-is
+			// when there is exactly one result, so with a single-context
+			// config the user sees "✗ ${EU_HOST} is not set" with no
+			// context name — and none is needed, since there is no
+			// ambiguity about which context failed. With multiple
+			// contexts, EnvResult.Name (not this error text) identifies
+			// the context: UnwrapSingle keys the merged result map by it.
+			resolved, resolveErr := nc.Context.Resolve()
+			if resolveErr != nil {
+				r.Error = resolveErr
+				results[idx] = r
+				return
+			}
+
+			token, tokenErr := cfg.GetToken(resolved.TokenRef)
 			if tokenErr != nil {
 				r.Error = fmt.Errorf("token error: %w", tokenErr)
 				results[idx] = r
 				return
 			}
 
-			c, clientErr := New(nc.Context.Host, nc.Context.EnvID, token)
+			c, clientErr := New(resolved.Host, resolved.EnvID, token)
 			if clientErr != nil {
 				r.Error = fmt.Errorf("client error: %w", clientErr)
 				results[idx] = r
 				return
 			}
-			c.SetProxy(nc.Context.HTTPProxyURL, nc.Context.HTTPSProxyURL)
+			c.SetProxy(resolved.HTTPProxyURL, resolved.HTTPSProxyURL)
 
 			data, callErr := apiCall(c)
 			r.Data = data
