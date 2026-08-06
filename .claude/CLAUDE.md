@@ -117,3 +117,17 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **When it applies**: Triaging red checks on a dtmgd PR before assuming the code is at fault
 - **Date**: 2026-08-06
 - **Ref**: impl: resolve config env vars at point of use (#29)
+
+### Snyk, Dependabot and govulncheck resolve different dependency sets
+- **Context**: Six Snyk-sourced Jira tickets (PRISM-14120..14125) reported `golang.org/x/crypto` v0.51.0 CVEs against dtmgd. Dependabot never alerted and govulncheck never mentioned the module, which looks like two scanners missing something. They did not.
+- **Insight**: All three answer different questions and all three were right. `x/crypto` was a *phantom* module-graph entry contributed by `golang.org/x/net`'s go.mod: present in `go list -m all`, but with **no `go.sum` entry**, so no package of it was ever downloaded or linked. Snyk resolves the MVS module graph, so it reported it. GitHub's dependency graph is built from go.mod + go.sum, so it excluded it — and Dependabot cannot alert on a package it does not think you have. (Not an advisory-coverage gap: all six CVEs were in GitHub's Advisory Database from 2026-06-25, correctly attributed. The advisories were there; the package was not.) govulncheck is build-and-call-graph based, so it was silent too.
+- **When it applies**: Triaging any Snyk Go finding before spending time on it. `grep '<module>' go.sum || echo "graph-only, not in the build"` settles reachability in one command; confirm with `go list -deps ./...`. Beware one trap there: `vendor/golang.org/x/crypto/...` entries are the Go toolchain's own internal copy inside `crypto/tls`, not your dependency.
+- **Date**: 2026-08-06
+- **Ref**: fix(deps): raise golang.org/x/crypto floor past the ssh CVEs (#32)
+
+### Dependabot does not bump indirect Go deps on schedule — only via alerts, to the minimum version
+- **Context**: Asked why Snyk filed vulnerability tickets when Dependabot runs weekly. Dependabot was working — 16 PRs — yet `x/net` sat at v0.55.0 for a month with v0.56.0 and v0.57.0 published, and `x/sys` at v0.45.0 with v0.47.0 published.
+- **Insight**: Both stale modules are `// indirect`. Scheduled `gomod` version updates cover direct dependencies; every direct dep and GitHub Action got a prompt PR over the same period. An indirect dep moves only when a Dependabot **security alert** fires, and then only to the **minimum safe version** — PR #20 bumped `x/net` to exactly v0.55.0, the `first_patched_version` of GHSA-5cv4-jp36-h3mw, while v0.57.0 already existed. So the indirect floor drifts upward-never, and Snyk keeps reporting transitive CVEs for which no PR will ever arrive.
+- **When it applies**: Any "why didn't Dependabot catch this?" question, and any Go transitive-CVE remediation here. Fix the cause by bumping the *real* dependency whose go.mod contributes the requirement — a direct `require` on a module no package imports is dropped again by the next `go mod tidy`. A scheduled `go get -u ./... && go mod tidy` PR is the only thing that keeps indirect deps current.
+- **Date**: 2026-08-06
+- **Ref**: fix(deps): raise golang.org/x/crypto floor past the ssh CVEs (#32)
