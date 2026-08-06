@@ -147,8 +147,8 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		host, _ := cmd.Flags().GetString("host")
-		envID, _ := cmd.Flags().GetString("env-id")
-		tokenRef, _ := cmd.Flags().GetString("token-ref")
+		envID, _ := cmd.Flags().GetString(flagEnvID)
+		tokenRef, _ := cmd.Flags().GetString(flagTokenRef)
 		description, _ := cmd.Flags().GetString("description")
 
 		return setContext(args[0], host, envID, tokenRef, description)
@@ -262,8 +262,8 @@ func init() {
 	configInitCmd.Flags().String("context", "", "context name to pre-fill in template")
 
 	configSetContextCmd.Flags().String("host", "", "Dynatrace Managed cluster URL (e.g. https://managed.company.com)")
-	configSetContextCmd.Flags().String("env-id", "", "Environment ID")
-	configSetContextCmd.Flags().String("token-ref", "", "credential name (see set-credentials)")
+	configSetContextCmd.Flags().String(flagEnvID, "", "Environment ID")
+	configSetContextCmd.Flags().String(flagTokenRef, "", "credential name (see set-credentials)")
 	configSetContextCmd.Flags().String("description", "", "human-readable description")
 
 	configSetCredentialsCmd.Flags().String("token", "", "API token value")

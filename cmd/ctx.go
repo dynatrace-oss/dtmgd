@@ -10,6 +10,12 @@ import (
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
+// Flag names shared between the `ctx set` and `config set-context` commands.
+const (
+	flagEnvID    = "env-id"
+	flagTokenRef = "token-ref"
+)
+
 // ContextListItem is the table row for context listings.
 type ContextListItem struct {
 	Current     string `table:"CURRENT"`
@@ -62,8 +68,8 @@ var ctxSetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		host, _ := cmd.Flags().GetString("host")
-		envID, _ := cmd.Flags().GetString("env-id")
-		tokenRef, _ := cmd.Flags().GetString("token-ref")
+		envID, _ := cmd.Flags().GetString(flagEnvID)
+		tokenRef, _ := cmd.Flags().GetString(flagTokenRef)
 		description, _ := cmd.Flags().GetString("description")
 		return setContext(args[0], host, envID, tokenRef, description)
 	},
@@ -148,6 +154,34 @@ func useContext(name string) error {
 	return nil
 }
 
+// warnClobberedContextRefs warns before a set-context call replaces a ${VAR}
+// reference with a literal value. The user gets no other signal that the
+// indirection is gone, and only the matched references are echoed — never the
+// surrounding value, which may hold a literal secret.
+//
+// Does nothing when the context does not exist yet: there is nothing to clobber.
+func warnClobberedContextRefs(cfg *config.Config, name, host, envID, tokenRef string) {
+	existing, err := cfg.GetContext(name)
+	if err != nil {
+		return
+	}
+	for _, f := range []struct {
+		newValue string
+		oldValue string
+		label    string
+	}{
+		{host, existing.Context.Host, "host"},
+		{envID, existing.Context.EnvID, flagEnvID},
+		{tokenRef, existing.Context.TokenRef, flagTokenRef},
+	} {
+		if f.newValue == "" || !config.HasPlaceholder(f.oldValue) {
+			continue
+		}
+		refs := strings.Join(config.PlaceholderRefs(f.oldValue), ", ")
+		output.PrintWarning("Replaced %s in the %s field — that environment variable no longer affects this context.", refs, f.label)
+	}
+}
+
 func setContext(name, host, envID, tokenRef, description string) error {
 	cfg, err := loadConfigRaw()
 	if err != nil {
@@ -169,25 +203,7 @@ func setContext(name, host, envID, tokenRef, description string) error {
 		return fmt.Errorf("--env-id is required for new contexts")
 	}
 
-	// Warn before overwriting a ${VAR} reference: the user gets no other
-	// signal that the indirection is gone.
-	if existing, lookupErr := cfg.GetContext(name); lookupErr == nil {
-		type field struct {
-			newValue string
-			oldValue string
-			label    string
-		}
-		for _, f := range []field{
-			{host, existing.Context.Host, "host"},
-			{envID, existing.Context.EnvID, "env-id"},
-			{tokenRef, existing.Context.TokenRef, "token-ref"},
-		} {
-			if f.newValue != "" && config.HasPlaceholder(f.oldValue) {
-				refs := strings.Join(config.PlaceholderRefs(f.oldValue), ", ")
-				output.PrintWarning("Replaced %s in the %s field — that environment variable no longer affects this context.", refs, f.label)
-			}
-		}
-	}
+	warnClobberedContextRefs(cfg, name, host, envID, tokenRef)
 
 	cfg.SetContext(name, host, envID, tokenRef, description)
 
@@ -229,7 +245,7 @@ func init() {
 	ctxCmd.AddCommand(ctxDeleteCmd)
 
 	ctxSetCmd.Flags().String("host", "", "Managed cluster host URL")
-	ctxSetCmd.Flags().String("env-id", "", "environment ID")
-	ctxSetCmd.Flags().String("token-ref", "", "credential name")
+	ctxSetCmd.Flags().String(flagEnvID, "", "environment ID")
+	ctxSetCmd.Flags().String(flagTokenRef, "", "credential name")
 	ctxSetCmd.Flags().String("description", "", "description")
 }
