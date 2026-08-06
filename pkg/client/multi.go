@@ -37,20 +37,30 @@ func MultiRequest(cfg *config.Config, envSpec string, apiCall func(c *Client) (i
 			defer wg.Done()
 			r := EnvResult{Name: nc.Name}
 
-			token, tokenErr := cfg.GetToken(nc.Context.TokenRef)
+			// EnvResult already carries Name, and the printer renders it as
+			// "eu-prod: ...", so the bare error form reads correctly here —
+			// no InContext wrapping needed.
+			resolved, resolveErr := nc.Context.Resolve()
+			if resolveErr != nil {
+				r.Error = resolveErr
+				results[idx] = r
+				return
+			}
+
+			token, tokenErr := cfg.GetToken(resolved.TokenRef)
 			if tokenErr != nil {
 				r.Error = fmt.Errorf("token error: %w", tokenErr)
 				results[idx] = r
 				return
 			}
 
-			c, clientErr := New(nc.Context.Host, nc.Context.EnvID, token)
+			c, clientErr := New(resolved.Host, resolved.EnvID, token)
 			if clientErr != nil {
 				r.Error = fmt.Errorf("client error: %w", clientErr)
 				results[idx] = r
 				return
 			}
-			c.SetProxy(nc.Context.HTTPProxyURL, nc.Context.HTTPSProxyURL)
+			c.SetProxy(resolved.HTTPProxyURL, resolved.HTTPSProxyURL)
 
 			data, callErr := apiCall(c)
 			r.Data = data

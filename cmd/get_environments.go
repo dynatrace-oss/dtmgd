@@ -39,7 +39,18 @@ Fetches the cluster version to confirm that the API token and network path are w
 				EnvID: nc.Context.EnvID,
 			}
 
-			token, tokenErr := cfg.GetToken(nc.Context.TokenRef)
+			resolved, resolveErr := nc.Context.Resolve()
+			if resolveErr != nil {
+				item.Version = "—"
+				item.Status = resolveErr.Error()
+				items = append(items, item)
+				continue
+			}
+			// Show what the context actually points at once resolved.
+			item.Host = resolved.Host
+			item.EnvID = resolved.EnvID
+
+			token, tokenErr := cfg.GetToken(resolved.TokenRef)
 			if tokenErr != nil {
 				item.Version = "—"
 				item.Status = fmt.Sprintf("no token: %v", tokenErr)
@@ -47,7 +58,7 @@ Fetches the cluster version to confirm that the API token and network path are w
 				continue
 			}
 
-			c, clientErr := NewClientWithHostEnv(nc.Context.Host, nc.Context.EnvID, token)
+			c, clientErr := NewClientWithHostEnv(resolved.Host, resolved.EnvID, token)
 			if clientErr != nil {
 				item.Version = "—"
 				item.Status = fmt.Sprintf("config error: %v", clientErr)
