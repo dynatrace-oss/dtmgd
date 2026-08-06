@@ -165,26 +165,40 @@ var configSetCredentialsCmd = &cobra.Command{
 		if token == "" {
 			return fmt.Errorf("--token is required")
 		}
-
-		cfg, err := loadConfigRaw()
-		if err != nil {
-			cfg = config.NewConfig()
-		}
-
-		if err := cfg.SetToken(args[0], token); err != nil {
-			return err
-		}
-		if err := saveConfig(cfg); err != nil {
-			return err
-		}
-
-		if config.IsKeyringAvailable() {
-			output.PrintSuccess("Credential %q stored securely in %s", args[0], config.KeyringBackend())
-		} else {
-			output.PrintWarning("Credential %q saved (plaintext — keyring not available)", args[0])
-		}
-		return nil
+		return setCredentials(args[0], token)
 	},
+}
+
+// setCredentials stores an API token under the given name.
+func setCredentials(name, token string) error {
+	cfg, err := loadConfigRaw()
+	if err != nil {
+		cfg = config.NewConfig()
+	}
+
+	// Warn before the placeholder disappears. This matters most in the keyring
+	// case, where SetToken writes token: "" and the ${VAR} reference vanishes
+	// without the new token ever appearing in the file.
+	for _, nt := range cfg.Tokens {
+		if nt.Name == name && config.HasPlaceholder(nt.Token) {
+			output.PrintWarning("Replaced %s in the config — that environment variable no longer affects this token.", nt.Token)
+			break
+		}
+	}
+
+	if err := cfg.SetToken(name, token); err != nil {
+		return err
+	}
+	if err := saveConfig(cfg); err != nil {
+		return err
+	}
+
+	if config.IsKeyringAvailable() {
+		output.PrintSuccess("Credential %q stored securely in %s", name, config.KeyringBackend())
+	} else {
+		output.PrintWarning("Credential %q saved (plaintext — keyring not available)", name)
+	}
+	return nil
 }
 
 // configDeleteContextCmd removes a context.

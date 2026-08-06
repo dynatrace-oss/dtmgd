@@ -185,6 +185,8 @@ func LoadConfig() (*config.Config, error) {
 		return nil, err
 	}
 
+	warnBareRefs(cfg)
+
 	// Override current context from --context flag (single-env mode)
 	if contextName != "" {
 		cfg.CurrentContext = contextName
@@ -202,10 +204,47 @@ func LoadConfig() (*config.Config, error) {
 // loadConfigRaw loads config without applying the --context override.
 // Used by config management commands.
 func loadConfigRaw() (*config.Config, error) {
+	var cfg *config.Config
+	var err error
 	if cfgFile != "" {
-		return config.LoadFrom(cfgFile)
+		cfg, err = config.LoadFrom(cfgFile)
+	} else {
+		cfg, err = config.Load()
 	}
-	return config.Load()
+	if err != nil {
+		return nil, err
+	}
+	warnBareRefs(cfg)
+	return cfg, nil
+}
+
+// warnBareRefs warns about bare $VAR references, which are no longer expanded.
+//
+// Without this the failure is silent and confusing: the literal string
+// "$DT_API_TOKEN" becomes the token and the user sees an unexplained 401.
+// BareRefs only reports names that are actually set, so incidental dollar
+// signs in passwords do not trigger it.
+func warnBareRefs(cfg *config.Config) {
+	seen := make(map[string]bool)
+	warn := func(s string) {
+		for _, name := range config.BareRefs(s) {
+			if seen[name] {
+				continue
+			}
+			seen[name] = true
+			output.PrintWarning("%q looks like an environment variable reference. Use ${%s}.", "$"+name, name)
+		}
+	}
+	for _, nc := range cfg.Contexts {
+		warn(nc.Context.Host)
+		warn(nc.Context.EnvID)
+		warn(nc.Context.TokenRef)
+		warn(nc.Context.HTTPProxyURL)
+		warn(nc.Context.HTTPSProxyURL)
+	}
+	for _, nt := range cfg.Tokens {
+		warn(nt.Token)
+	}
 }
 
 // saveConfig saves config, respecting the --config flag and local config presence.

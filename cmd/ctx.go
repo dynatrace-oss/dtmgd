@@ -168,6 +168,25 @@ func setContext(name, host, envID, tokenRef, description string) error {
 		return fmt.Errorf("--env-id is required for new contexts")
 	}
 
+	// Warn before overwriting a ${VAR} reference: the user gets no other
+	// signal that the indirection is gone.
+	if existing, lookupErr := cfg.GetContext(name); lookupErr == nil {
+		type field struct {
+			newValue string
+			oldValue string
+			label    string
+		}
+		for _, f := range []field{
+			{host, existing.Context.Host, "host"},
+			{envID, existing.Context.EnvID, "env-id"},
+			{tokenRef, existing.Context.TokenRef, "token-ref"},
+		} {
+			if f.newValue != "" && config.HasPlaceholder(f.oldValue) {
+				output.PrintWarning("Replaced %s in the %s field — that environment variable no longer affects this context.", f.oldValue, f.label)
+			}
+		}
+	}
+
 	cfg.SetContext(name, host, envID, tokenRef, description)
 
 	if cfg.CurrentContext == "" || len(cfg.Contexts) == 1 {
