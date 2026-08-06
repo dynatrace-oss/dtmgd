@@ -49,7 +49,12 @@ completions/
 .api-spec/
 
 # AI Agentic data
-/.claude
+# CLAUDE.md is shared: it carries the project knowledge base. Everything else
+# under .claude/ stays local — settings.local.json is per-machine, and
+# skills/ is a generated copy of the tracked skills/ directory written by
+# `dtmgd skills install`.
+/.claude/*
+!/.claude/CLAUDE.md
 /.ai-containers
 
 # Snapshot data
