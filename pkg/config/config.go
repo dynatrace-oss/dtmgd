@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -110,14 +109,13 @@ func LoadFrom(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	expanded := []byte(os.ExpandEnv(string(data)))
-
+	// Deliberately no os.ExpandEnv here. The in-memory Config is a faithful
+	// image of the file, so a save can never write an expanded secret back.
+	// ${VAR} references are expanded at the point of use — see Context.Resolve
+	// and Config.GetToken.
 	var cfg Config
-	if err := yaml.Unmarshal(expanded, &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
-	if !bytes.Equal(data, expanded) {
-		cfg.expandedFrom = path
 	}
 	// Apply defaults for fields that may be absent in minimal configs.
 	if cfg.APIVersion == "" {
@@ -186,10 +184,16 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 	}
 	for _, nt := range c.Tokens {
 		if nt.Name == tokenRef {
-			if nt.Token != "" {
-				return nt.Token, nil
+			if nt.Token == "" {
+				return "", fmt.Errorf("token %q not found in keyring (may need to re-add credentials)", tokenRef)
 			}
-			return "", fmt.Errorf("token %q not found in keyring (may need to re-add credentials)", tokenRef)
+			// The stored value may be a ${VAR} reference. Expand it here, at
+			// the point of use, rather than at load.
+			token, unset := expand(nt.Token)
+			if len(unset) > 0 {
+				return "", &UnresolvedVarsError{Vars: unset}
+			}
+			return token, nil
 		}
 	}
 	return "", fmt.Errorf("token %q not found", tokenRef)
