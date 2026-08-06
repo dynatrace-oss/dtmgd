@@ -210,9 +210,12 @@ var configMigrateTokensCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		migrated, err := config.MigrateTokensToKeyring(cfg)
+		migrated, skipped, err := config.MigrateTokensToKeyring(cfg)
 		if err != nil {
 			return err
+		}
+		for _, name := range skipped {
+			output.PrintWarning("Skipped %q: it resolves from an environment variable; migrating would freeze the current value", name)
 		}
 		if migrated == 0 {
 			output.PrintInfo("No tokens to migrate")
