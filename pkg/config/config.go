@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,10 @@ type Config struct {
 	Tokens         []NamedToken      `yaml:"tokens"`
 	Preferences    Preferences       `yaml:"preferences"`
 	Aliases        map[string]string `yaml:"aliases,omitempty"`
+
+	// Set when the file this config was read from contained ${VAR} references,
+	// whose expansion must not be written back.
+	expandedFrom string
 }
 
 // NamedContext holds a named context entry.
@@ -138,6 +143,9 @@ func LoadFrom(path string) (*Config, error) {
 	if err := yaml.Unmarshal(expanded, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
+	if !bytes.Equal(data, expanded) {
+		cfg.expandedFrom = path
+	}
 	// Apply defaults for fields that may be absent in minimal configs.
 	if cfg.APIVersion == "" {
 		cfg.APIVersion = "dtmgd.io/v1"
@@ -155,6 +163,9 @@ func (c *Config) Save() error {
 
 // SaveTo saves the config to a specific path.
 func (c *Config) SaveTo(path string) error {
+	if c.expandedFrom != "" && sameFile(c.expandedFrom, path) {
+		return fmt.Errorf("refusing to overwrite %s: it references environment variables, and saving would replace them with their current values. Edit the file directly instead", path)
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -281,4 +292,14 @@ func NewConfig() *Config {
 		Tokens:      []NamedToken{},
 		Preferences: Preferences{Output: "table"},
 	}
+}
+
+// sameFile reports whether two paths point at the same config file.
+func sameFile(a, b string) bool {
+	if a == b {
+		return true
+	}
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && absA == absB
 }
