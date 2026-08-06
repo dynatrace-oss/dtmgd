@@ -152,7 +152,11 @@ dtmgd config set-context <context-name> \
   --env-id abc12345 \
   --token-ref <context-name>-token
 
-dtmgd config set-credentials <context-name>-token --token <api-token>
+# Store the token. Prompts for it with echo disabled; use --token-stdin when
+# scripting. Avoid --token: it leaves the token in the process list and shell
+# history.
+dtmgd config set-credentials <context-name>-token
+echo "$DT_API_TOKEN" | dtmgd config set-credentials <context-name>-token --token-stdin
 
 # Delete context
 dtmgd ctx delete <name>

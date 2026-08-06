@@ -22,13 +22,51 @@ var configCmd = &cobra.Command{
 var configViewCmd = &cobra.Command{
 	Use:   "view",
 	Short: "Display the current configuration",
+	Long: `Display the current configuration.
+
+Token values are masked. Pass --show-tokens to print them verbatim.
+
+Masking matters only where the OS keyring is unavailable — headless Linux,
+containers, CI runners — because that is where SetToken falls back to writing
+the token into the config file rather than leaving an empty placeholder. That
+is also where the output of this command is most likely to be captured in a
+build log.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := LoadConfig()
 		if err != nil {
 			return err
 		}
+		showTokens, _ := cmd.Flags().GetBool("show-tokens")
+		if !showTokens {
+			cfg = withMaskedTokens(cfg)
+		}
 		return NewPrinter().Print(cfg)
 	},
+}
+
+// tokenMask replaces a stored token value in displayed output.
+const tokenMask = "*** (use --show-tokens to reveal)"
+
+// withMaskedTokens returns a copy of cfg with literal token values masked.
+//
+// The copy is what keeps this safe to call from a command that shares the
+// loaded Config: masking in place would put the mask string one saveConfig
+// away from replacing the real credential on disk.
+//
+// A ${VAR} placeholder is left alone. It is a reference to a value, not the
+// value, and showing it is how a user confirms which variable a context reads
+// — masking it would hide configuration while protecting nothing.
+func withMaskedTokens(cfg *config.Config) *config.Config {
+	masked := *cfg
+	masked.Tokens = make([]config.NamedToken, len(cfg.Tokens))
+	copy(masked.Tokens, cfg.Tokens)
+	for i, nt := range masked.Tokens {
+		if nt.Token == "" || config.HasPlaceholder(nt.Token) {
+			continue
+		}
+		masked.Tokens[i].Token = tokenMask
+	}
+	return &masked
 }
 
 // configInitCmd creates a .dtmgd.yaml template in the current directory.
@@ -160,11 +198,26 @@ var configSetCredentialsCmd = &cobra.Command{
 	Use:     "set-credentials <name>",
 	Short:   "Store an API token credential",
 	Aliases: []string{"set-creds"},
-	Args:    cobra.ExactArgs(1),
+	Long: `Store an API token under a name that contexts refer to with --token-ref.
+
+The token is read from the terminal by default, with echo disabled, so it
+reaches neither the screen nor your shell history:
+
+  dtmgd config set-credentials prod-token
+
+For scripts and CI, pipe it in on stdin:
+
+  echo "$DT_API_TOKEN" | dtmgd config set-credentials prod-token --token-stdin
+  dtmgd config set-credentials prod-token --token-stdin < /run/secrets/dt-token
+
+--token is still accepted, but a value passed there is copied into the process
+argument vector by the kernel and is readable from /proc/<pid>/cmdline by any
+process running as you, as well as being recorded in your shell history.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		token, _ := cmd.Flags().GetString("token")
-		if token == "" {
-			return fmt.Errorf("--token is required")
+		token, err := tokenInputFromCmd(cmd).resolve()
+		if err != nil {
+			return err
 		}
 		return setCredentials(args[0], token)
 	},
@@ -266,5 +319,8 @@ func init() {
 	configSetContextCmd.Flags().String(flagTokenRef, "", "credential name (see set-credentials)")
 	configSetContextCmd.Flags().String("description", "", "human-readable description")
 
-	configSetCredentialsCmd.Flags().String("token", "", "API token value")
+	configViewCmd.Flags().Bool("show-tokens", false, "print token values instead of masking them")
+
+	configSetCredentialsCmd.Flags().String(flagToken, "", "API token value (exposed in the process list — prefer --token-stdin)")
+	configSetCredentialsCmd.Flags().Bool(flagTokenStdin, false, "read the API token from stdin")
 }

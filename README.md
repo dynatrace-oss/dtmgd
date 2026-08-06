@@ -65,8 +65,9 @@ dtmgd config set-context prod \
   --env-id abc12345 \
   --token-ref prod-token
 
-# 2. Store your API token (saved securely in OS keyring when available)
-dtmgd config set-credentials prod-token --token <your-api-token>
+# 2. Store your API token. You are prompted for it, with echo disabled, so it
+#    stays out of your shell history. Saved to the OS keyring when available.
+dtmgd config set-credentials prod-token
 
 # 3. Verify connectivity
 dtmgd get environments
@@ -86,6 +87,28 @@ for cross-context fan-out.
 > a keyring daemon, the token is stored in plaintext in the config file
 > (`~/.config/dtmgd/config`, mode 0600). Run
 > `dtmgd config migrate-tokens` any time after a keyring becomes available.
+
+### Supplying the token in scripts and CI
+
+Pipe the token in rather than passing it as a flag:
+
+```bash
+echo "$DT_API_TOKEN" | dtmgd config set-credentials prod-token --token-stdin
+dtmgd config set-credentials prod-token --token-stdin < /run/secrets/dt-token
+```
+
+`--token <value>` still works, but the kernel copies command-line arguments
+into the process image at `execve(2)`, so the value is readable from
+`/proc/<pid>/cmdline` by any process running as you, and your shell records the
+whole line in its history. Nothing dtmgd does after startup can undo that,
+which is why it warns when you use the flag.
+
+In CI, prefer skipping stored credentials altogether: reference the variable
+from the config with `${DT_API_TOKEN}` (see
+[Environment variables in the config](#environment-variables-in-the-config)) and let
+the secret live only in the environment. On headless runners there is no
+keyring, so a stored token is written to the config file in plaintext — a
+`${VAR}` reference never is.
 
 ## Authentication
 
@@ -117,13 +140,15 @@ Your API token must include the following scopes for full functionality:
 
 ```
 dtmgd config set-context <name> --host <url> --env-id <id> --token-ref <ref>
-dtmgd config set-credentials <name> --token <api-token>
+dtmgd config set-credentials <name>              # prompts for the token
+dtmgd config set-credentials <name> --token-stdin  # reads the token from stdin
 dtmgd config get-contexts          # list all contexts
 dtmgd config current-context       # show active context name
 dtmgd config use-context <name>    # switch active context
 dtmgd config delete-context <name> # remove a context
 dtmgd config migrate-tokens        # move plaintext tokens to OS keyring
-dtmgd config view                  # dump full config
+dtmgd config view                  # dump full config (token values masked)
+dtmgd config view --show-tokens    # ... including token values
 dtmgd config init                  # create .dtmgd.yaml in current directory
 dtmgd ctx                          # shortcut: list or switch contexts
 dtmgd ctx [context-name]           # switch context
@@ -367,13 +392,41 @@ alone.
 References are resolved when a value is used, not when the file is read. Config
 commands (`use-context`, `set-context`, `set-credentials`, `delete-context`) preserve
 them, so `${DT_API_TOKEN}` stays in the file rather than being replaced by the token
-it currently resolves to. `dtmgd config view` shows the reference for the same reason.
+it currently resolves to. `dtmgd config view` shows the reference for the same reason —
+a `${VAR}` reference names a secret without being one, so it is printed as written,
+while a literal token value is masked unless you pass `--show-tokens`.
 
 If a referenced variable is unset, the command that needs it fails and names it. Other
 contexts are unaffected, so a multi-context config still works when you hold
 credentials for only one of them.
 
-A project-local `.dtmgd.yaml` takes precedence over the global `~/.config/dtmgd/config`.
+### Which config file is used
+
+`dtmgd` picks the first of these that exists:
+
+1. the path given to `--config`
+2. a `.dtmgd.yaml` found by searching the working directory and then each
+   parent directory in turn, up to the filesystem root
+3. the global `~/.config/dtmgd/config`
+
+Step 2 is worth knowing about on shared machines. Anyone who can write to a
+directory above the one you work in — `/tmp`, a group-writable project root, a
+CI workspace — can leave a `.dtmgd.yaml` there, and it will take precedence
+over your global config on your next `dtmgd` run. Because such a file sets
+`host`, it also chooses where your API token is sent.
+
+When the config in use comes from a parent directory rather than the one you
+are in, `dtmgd` says so on stderr:
+
+```
+⚠ Using config /tmp/.dtmgd.yaml — found in a parent directory, not
+  /home/you/.config/dtmgd/config. Check it before trusting this run.
+```
+
+A `.dtmgd.yaml` in your working directory is the intended project-local
+workflow (`dtmgd config init` creates one) and is not announced; run with `-v`
+to print the active config path whatever its source. Use `--config` to pin the
+file explicitly and bypass the search.
 
 ## Building
 
