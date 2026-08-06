@@ -350,7 +350,28 @@ preferences:
   output: table
 ```
 
-Environment variables are expanded in the config file: `${DT_MANAGED_HOST}`.
+### Environment variables in the config
+
+Values can reference environment variables with `${VAR_NAME}`:
+
+```yaml
+host: ${DT_MANAGED_HOST}
+env-id: ${DT_ENV_ID}
+token: ${DT_API_TOKEN}
+```
+
+Only the braced `${VAR_NAME}` form is expanded. A bare `$VAR_NAME` is treated as
+literal text, so dollar signs in values — a proxy password, for example — are left
+alone.
+
+References are resolved when a value is used, not when the file is read. Config
+commands (`use-context`, `set-context`, `set-credentials`, `delete-context`) preserve
+them, so `${DT_API_TOKEN}` stays in the file rather than being replaced by the token
+it currently resolves to. `dtmgd config view` shows the reference for the same reason.
+
+If a referenced variable is unset, the command that needs it fails and names it. Other
+contexts are unaffected, so a multi-context config still works when you hold
+credentials for only one of them.
 
 A project-local `.dtmgd.yaml` takes precedence over the global `~/.config/dtmgd/config`.
 
