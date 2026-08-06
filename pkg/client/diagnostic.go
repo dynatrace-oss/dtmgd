@@ -1,6 +1,7 @@
 package client
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -10,17 +11,32 @@ func DiagnoseError(err error) string {
 	if err == nil {
 		return ""
 	}
+
+	// An *ErrAPI carries the status code as a number, so it is answered from
+	// the code alone and the text is never consulted. Part of that text comes
+	// from the server: a 400 whose message reads "see RFC 404 for details"
+	// was previously diagnosed as a missing resource. An unrecognised status
+	// yields no hint, which is correct — falling through to substring
+	// matching is exactly the bug.
+	var apiErr *ErrAPI
+	if errors.As(err, &apiErr) {
+		return diagnoseStatus(apiErr.StatusCode)
+	}
+
 	msg := err.Error()
 
 	switch {
+	// The status-substring cases remain for errors that are not *ErrAPI —
+	// notably ones rebuilt from text, which the tests and older call paths
+	// still produce.
 	case strings.Contains(msg, "401"):
-		return "Authentication failed. Check your API token and ensure it hasn't expired.\n  Run: dtmgd config set-credentials <token-ref> --token <new-token>"
+		return diagnoseStatus(401)
 	case strings.Contains(msg, "403"):
-		return "Permission denied. Your API token may be missing required scopes.\n  Required scopes: DataExport, ReadConfig, ReadLogContent, ReadEvents, ReadProblems, ReadSecurityProblems, ReadSLO"
+		return diagnoseStatus(403)
 	case strings.Contains(msg, "404"):
-		return "Resource not found. Check the ID and ensure you're using the correct environment."
+		return diagnoseStatus(404)
 	case strings.Contains(msg, "429"):
-		return "Rate limited by the Dynatrace API. Wait a moment and retry, or reduce request frequency."
+		return diagnoseStatus(429)
 	case strings.Contains(msg, "connection refused"):
 		return "Connection refused. Check that the host URL is correct and the cluster is reachable.\n  Run: dtmgd get environments"
 	case strings.Contains(msg, "no such host"):
@@ -33,6 +49,22 @@ func DiagnoseError(err error) string {
 		return "Token reference not found. Store it with:\n  dtmgd config set-credentials <token-ref> --token <api-token>"
 	case strings.Contains(msg, "no current context"):
 		return "No context configured. Set one up with:\n  dtmgd config set-context <name> --host <url> --env-id <id> --token-ref <ref>"
+	}
+	return ""
+}
+
+// diagnoseStatus maps an HTTP status code to its hint, so the structured and
+// text-matched paths above cannot drift apart.
+func diagnoseStatus(code int) string {
+	switch code {
+	case 401:
+		return "Authentication failed. Check your API token and ensure it hasn't expired.\n  Run: dtmgd config set-credentials <token-ref>"
+	case 403:
+		return "Permission denied. Your API token may be missing required scopes.\n  Required scopes: DataExport, ReadConfig, ReadLogContent, ReadEvents, ReadProblems, ReadSecurityProblems, ReadSLO"
+	case 404:
+		return "Resource not found. Check the ID and ensure you're using the correct environment."
+	case 429:
+		return "Rate limited by the Dynatrace API. Wait a moment and retry, or reduce request frequency."
 	}
 	return ""
 }

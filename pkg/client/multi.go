@@ -15,26 +15,56 @@ type EnvResult struct {
 	Error error
 }
 
+// DefaultConcurrency caps how many environments are queried at once.
+//
+// The fan-out used to be unbounded: one goroutine per context, each with its
+// own resty client and connection pool, all launched at the same instant. A
+// realistic Managed deployment hosts 20-50 environment IDs on one cluster, so
+// `--env ALL_ENVIRONMENTS` sent that many simultaneous requests to a single
+// endpoint. The cluster answers 429, and because every goroutine is retrying
+// on the same 1-second schedule, each retry wave is as large as the original
+// burst — three times over before anything fails. wg.Wait then holds all
+// output until the slowest of them finishes.
+//
+// Ten is low enough to stay under typical rate limits and high enough that
+// small configurations see no serialisation at all.
+const DefaultConcurrency = 10
+
 // MultiRequest fans out an API call to one or more environments in parallel.
 // envSpec can be:
 //   - "" (empty) → current context only
 //   - "ALL_ENVIRONMENTS" → all configured contexts
 //   - "prod;staging" → semicolon-separated context names
 //
+// maxConcurrency caps simultaneous requests; values below 1 mean
+// DefaultConcurrency.
+//
 // The apiCall function receives a Client and should perform the request.
-func MultiRequest(cfg *config.Config, envSpec string, apiCall func(c *Client) (interface{}, error)) ([]EnvResult, error) {
+func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, apiCall func(c *Client) (interface{}, error)) ([]EnvResult, error) {
 	contexts, err := resolveContexts(cfg, envSpec)
 	if err != nil {
 		return nil, err
+	}
+
+	if maxConcurrency < 1 {
+		maxConcurrency = DefaultConcurrency
 	}
 
 	results := make([]EnvResult, len(contexts))
 	var wg sync.WaitGroup
 	wg.Add(len(contexts))
 
+	// A buffered channel is the semaphore. Acquiring inside the goroutine
+	// rather than before launching it keeps this non-blocking for the caller:
+	// all goroutines start, and the channel decides how many are in flight.
+	sem := make(chan struct{}, maxConcurrency)
+
 	for i, nc := range contexts {
 		go func(idx int, nc config.NamedContext) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			r := EnvResult{Name: nc.Name}
 
 			// The bare error is deliberate: UnwrapSingle returns it as-is

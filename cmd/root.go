@@ -22,6 +22,7 @@ var (
 	noAgentFlag  bool
 	maxPages     int
 	columns      string
+	concurrency  int
 )
 
 // agentMode returns true if agent envelope output should be used.
@@ -169,6 +170,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&noAgentFlag, "no-agent", false, "disable auto-detected agent mode")
 	rootCmd.PersistentFlags().IntVar(&maxPages, "max-pages", 0, "maximum number of pages to fetch (0 = all pages)")
 	rootCmd.PersistentFlags().StringVar(&columns, "columns", "", "comma-separated list of columns to show in table output")
+	rootCmd.PersistentFlags().IntVar(&concurrency, "concurrency", client.DefaultConcurrency,
+		"maximum environments queried at once with --env")
 }
 
 // LoadConfig loads the configuration, respecting --config and --context flags.
@@ -349,7 +352,7 @@ func multiExec(cfg *config.Config, apiCall func(c *client.Client) (interface{}, 
 		}
 		return apiCall(c)
 	}
-	results, err := client.MultiRequest(cfg, spec, apiCall)
+	results, err := client.MultiRequest(cfg, spec, concurrency, apiCall)
 	if err != nil {
 		return nil, err
 	}

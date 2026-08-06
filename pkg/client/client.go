@@ -18,12 +18,24 @@ import (
 
 // Client is the HTTP client for the Dynatrace Managed API.
 type Client struct {
-	http         *resty.Client
+	http *resty.Client
+	// cluster targets the cluster-level API. It is built alongside http and
+	// carries the same proxy, retry, header and debug-hook configuration:
+	// GetCluster used to call resty.New() for every request, which silently
+	// bypassed all of it — most consequentially the proxy, so `get
+	// environments` escaped corporate egress controls that every other
+	// command respected.
+	cluster      *resty.Client
 	apiBaseURL   string // {host}/e/{env-id}/api
 	clusterURL   string // {host}/api
 	dashboardURL string // {host}/e/{env-id}
 	token        string
-	logger       *logrus.Logger
+	// proxyURL is the proxy actually in effect, retained so that it can be
+	// named in verbose output and in connection errors. Without it, "proxy
+	// configured and working", "proxy configured and ignored", and "no proxy"
+	// are indistinguishable from anything dtmgd prints.
+	proxyURL string
+	logger   *logrus.Logger
 }
 
 // NewFromConfig creates a Client from the current config context.
@@ -74,27 +86,41 @@ func New(host, envID, token string) (*Client, error) {
 	logger := logrus.New()
 	logger.SetLevel(logrus.WarnLevel)
 
-	ua := fmt.Sprintf("dtmgd/%s", version.Version)
-
-	httpClient := resty.New().
-		SetBaseURL(apiBaseURL).
-		SetHeader("Authorization", fmt.Sprintf("Api-Token %s", token)).
-		SetHeader("Content-Type", "application/json").
-		SetHeader("User-Agent", ua).
-		SetRetryCount(3).
-		SetRetryWaitTime(1 * time.Second).
-		SetRetryMaxWaitTime(10 * time.Second).
-		AddRetryCondition(isRetryable).
-		SetTimeout(60 * time.Second)
-
 	return &Client{
-		http:         httpClient,
+		http:         newRestyClient(apiBaseURL, token, 60*time.Second),
+		cluster:      newRestyClient(clusterURL, token, 30*time.Second),
 		apiBaseURL:   apiBaseURL,
 		clusterURL:   clusterURL,
 		dashboardURL: dashboardURL,
 		token:        token,
 		logger:       logger,
 	}, nil
+}
+
+// newRestyClient builds a resty client with the settings every dtmgd request
+// is expected to carry.
+//
+// It exists so the environment and cluster clients cannot drift apart: the
+// cluster client was previously constructed inline in GetCluster with none of
+// the retry, User-Agent or proxy configuration, which made `get environments`
+// behave unlike every other command.
+func newRestyClient(baseURL, token string, timeout time.Duration) *resty.Client {
+	return resty.New().
+		SetBaseURL(baseURL).
+		SetHeader("Authorization", fmt.Sprintf("Api-Token %s", token)).
+		SetHeader("Content-Type", "application/json").
+		SetHeader("User-Agent", fmt.Sprintf("dtmgd/%s", version.Version)).
+		SetRetryCount(3).
+		SetRetryWaitTime(1 * time.Second).
+		SetRetryMaxWaitTime(10 * time.Second).
+		AddRetryCondition(isRetryable).
+		SetTimeout(timeout)
+}
+
+// clients returns every resty client this Client owns, so configuration
+// applied after construction reaches all of them.
+func (c *Client) clients() []*resty.Client {
+	return []*resty.Client{c.http, c.cluster}
 }
 
 // isRetryable decides whether a failed request should be retried.
@@ -118,41 +144,76 @@ func (c *Client) SetVerbosity(level int) {
 		DisableLevelTruncation: true,
 	})
 
-	c.http.SetPreRequestHook(func(_ *resty.Client, req *http.Request) error {
-		fmt.Fprintf(os.Stderr, "==> %s %s\n", req.Method, req.URL)
-		if level >= 2 {
-			for k, v := range req.Header {
-				if strings.EqualFold(k, "authorization") {
-					fmt.Fprintf(os.Stderr, "    %s: [REDACTED]\n", k)
-				} else {
-					fmt.Fprintf(os.Stderr, "    %s: %s\n", k, strings.Join(v, ", "))
+	for _, rc := range c.clients() {
+		rc.SetPreRequestHook(func(_ *resty.Client, req *http.Request) error {
+			// Naming the proxy on the request line is what makes an active
+			// proxy distinguishable from none at all. Previously no verbosity
+			// level printed it, so a user who suspected their proxy was being
+			// bypassed had to reach for tcpdump to find out.
+			via := ""
+			if c.proxyURL != "" {
+				via = fmt.Sprintf(" (via proxy %s)", c.proxyURL)
+			}
+			fmt.Fprintf(os.Stderr, "==> %s %s%s\n", req.Method, req.URL, via)
+			if level >= 2 {
+				for k, v := range req.Header {
+					if strings.EqualFold(k, "authorization") {
+						fmt.Fprintf(os.Stderr, "    %s: [REDACTED]\n", k)
+					} else {
+						fmt.Fprintf(os.Stderr, "    %s: %s\n", k, strings.Join(v, ", "))
+					}
 				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
 
-	c.http.OnAfterResponse(func(_ *resty.Client, resp *resty.Response) error {
-		fmt.Fprintf(os.Stderr, "<== %d %s (%s)\n", resp.StatusCode(), resp.Status(), resp.Time())
-		if level >= 2 {
-			fmt.Fprintf(os.Stderr, "%s\n", resp.String())
-		}
-		return nil
-	})
+		rc.OnAfterResponse(func(_ *resty.Client, resp *resty.Response) error {
+			fmt.Fprintf(os.Stderr, "<== %d %s (%s)\n", resp.StatusCode(), resp.Status(), resp.Time())
+			if level >= 2 {
+				fmt.Fprintf(os.Stderr, "%s\n", resp.String())
+			}
+			return nil
+		})
+	}
 }
 
 // APIBaseURL returns the environment API base URL.
 func (c *Client) APIBaseURL() string { return c.apiBaseURL }
 
 // SetProxy configures HTTP/HTTPS proxy on the client.
+//
+// The proxy is applied to the cluster client too. It previously was not, so
+// `get environments` connected directly while every other command went
+// through the proxy — leaving proxy audit logs with an incomplete picture of
+// dtmgd activity, and bypassing egress controls in environments that require
+// them.
 func (c *Client) SetProxy(httpProxy, httpsProxy string) {
 	proxy := httpsProxy
 	if proxy == "" {
 		proxy = httpProxy
 	}
-	if proxy != "" {
-		c.http.SetProxy(proxy)
+	if proxy == "" {
+		return
 	}
+	c.proxyURL = proxy
+	for _, rc := range c.clients() {
+		rc.SetProxy(proxy)
+	}
+}
+
+// requestError annotates a transport failure with the proxy it went through.
+//
+// A wrong proxy address otherwise surfaces as a bare "dial tcp: lookup
+// bad-proxy.internal: no such host", which names a host the user never typed
+// into their context and does not say why dtmgd was trying to reach it.
+//
+// The underlying error is wrapped rather than replaced, so DiagnoseError still
+// matches on "no such host", "connection refused" and the rest.
+func (c *Client) requestError(what string, err error) error {
+	if c.proxyURL != "" {
+		return fmt.Errorf("%s failed (via proxy %s): %w", what, c.proxyURL, err)
+	}
+	return fmt.Errorf("%s failed: %w", what, err)
 }
 
 // ClusterURL returns the cluster-level API base URL.
@@ -170,7 +231,7 @@ func (c *Client) GetV2(path string, params map[string]string, result interface{}
 	}
 	resp, err := req.Get("/v2" + path)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return c.requestError("request", err)
 	}
 	if resp.IsError() {
 		return APIError(resp.StatusCode(), resp.String())
@@ -185,7 +246,7 @@ func (c *Client) GetV2WithValues(path string, params url.Values, result interfac
 	req.SetQueryParamsFromValues(params)
 	resp, err := req.Get("/v2" + path)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return c.requestError("request", err)
 	}
 	if resp.IsError() {
 		return APIError(resp.StatusCode(), resp.String())
@@ -201,7 +262,7 @@ func (c *Client) GetV1(path string, params map[string]string, result interface{}
 	}
 	resp, err := req.Get("/v1" + path)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return c.requestError("request", err)
 	}
 	if resp.IsError() {
 		return APIError(resp.StatusCode(), resp.String())
@@ -210,21 +271,17 @@ func (c *Client) GetV1(path string, params map[string]string, result interface{}
 }
 
 // GetCluster performs a GET against the cluster-level API (/api/v1.0/onpremise/...).
-// Uses a temporary resty client rooted at clusterURL.
+//
+// It uses the cluster client built in New, which shares the environment
+// client's proxy, retry policy, User-Agent and verbosity hooks.
 func (c *Client) GetCluster(path string, params map[string]string, result interface{}) error {
-	tmpClient := resty.New().
-		SetBaseURL(c.clusterURL).
-		SetHeader("Authorization", fmt.Sprintf("Api-Token %s", c.token)).
-		SetHeader("Content-Type", "application/json").
-		SetTimeout(30 * time.Second)
-
-	req := tmpClient.R().SetResult(result)
+	req := c.cluster.R().SetResult(result)
 	for k, v := range params {
 		req.SetQueryParam(k, v)
 	}
 	resp, err := req.Get(path)
 	if err != nil {
-		return fmt.Errorf("cluster request failed: %w", err)
+		return c.requestError("cluster request", err)
 	}
 	if resp.IsError() {
 		return APIError(resp.StatusCode(), resp.String())

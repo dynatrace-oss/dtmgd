@@ -107,8 +107,14 @@ func TestAPIError(t *testing.T) {
 	if apiErr.StatusCode != 401 {
 		t.Errorf("expected 401, got %d", apiErr.StatusCode)
 	}
-	if apiErr.Error() != "API error 401: Unauthorized" {
+	// "Unauthorized" is not a Dynatrace error envelope, so no message is
+	// extracted and the status code stands alone. The body remains on the
+	// struct for the -vv dump and for programmatic callers.
+	if apiErr.Error() != "API error 401" {
 		t.Errorf("unexpected error message: %s", apiErr.Error())
+	}
+	if apiErr.Body != "Unauthorized" {
+		t.Errorf("Body = %q, want it preserved on the struct", apiErr.Body)
 	}
 }
 
