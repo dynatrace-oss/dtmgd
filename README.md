@@ -4,6 +4,10 @@
 
 It gives you terminal access to problems, entities, events, logs, metrics, SLOs, and security vulnerabilities via the Dynatrace Managed classic API — with the same feature set as the [Dynatrace Managed MCP Server](https://github.com/dynatrace-oss/dynatrace-managed-mcp).
 
+> [!NOTE]
+> This open source product is supported by the community.
+> For feature requests, questions, or assistance, please use [GitHub Issues](https://github.com/dynatrace-oss/dtmgd/issues).
+
 ## Architecture
 
 ![dtmgd architecture — a local CLI fanning out across any number of Dynatrace Managed environments](assets/architecture.png)
