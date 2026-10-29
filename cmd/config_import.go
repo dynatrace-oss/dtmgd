@@ -328,13 +328,16 @@ func planMCPImport(cfg *config.Config, envs []mcpEnvironment, overwrite bool) []
 //
 // The token name is checked as well as the context name. A token another
 // context uses is never replaced, even with --overwrite: that would silently
-// change the other context's credential.
+// change the other context's credential. Nor is it reused by an environment
+// without an apiToken: that would send the other context's credential to
+// this environment's host.
 func importConflict(cfg *config.Config, env mcpEnvironment, exists, overwrite bool) string {
 	tokenName := importTokenName(env.Alias)
-	if env.APIToken != "" {
-		if others := otherContextsUsingToken(cfg, tokenName, env.Alias); len(others) > 0 {
-			return fmt.Sprintf("its token %q is also used by context(s) %s; importing would change their credential", tokenName, strings.Join(others, ", "))
+	if others := otherContextsUsingToken(cfg, tokenName, env.Alias); len(others) > 0 {
+		if env.APIToken == "" {
+			return fmt.Sprintf("it has no apiToken, and its token name %q belongs to context(s) %s; the new context would send their credential to its own host", tokenName, strings.Join(others, ", "))
 		}
+		return fmt.Sprintf("its token %q is also used by context(s) %s; importing would change their credential", tokenName, strings.Join(others, ", "))
 	}
 	if overwrite {
 		return ""

@@ -407,3 +407,35 @@ func TestImportDryRunMasksProxyPasswords(t *testing.T) {
 		}
 	}
 }
+
+// TestImportWithoutTokenNeverReusesAnotherContextsToken pins that an MCP
+// environment without an apiToken is skipped, with --overwrite too, when its
+// token name already belongs to another context: the new context would
+// otherwise send that context's credential to its own host.
+func TestImportWithoutTokenNeverReusesAnotherContextsToken(t *testing.T) {
+	cfgPath := withTempConfig(t, `apiVersion: dtmgd.io/v1
+kind: Config
+current-context: production
+contexts:
+  - name: production
+    context:
+      host: https://prod.example.com
+      env-id: p
+      token-ref: prod-token
+tokens:
+  - name: prod-token
+    token: dt0c01.PRODSECRET
+`)
+	src := writeImportSource(t, "dt-config.yaml", `
+- {apiEndpointUrl: https://other.example.com/, environmentId: o1, alias: prod}
+`)
+	for _, extra := range [][]string{nil, {"--overwrite"}} {
+		r := runCLI(t, cfgPath, append([]string{"config", "import", src}, extra...)...)
+		if !strings.Contains(r.Stderr, `Skipped "prod"`) || !strings.Contains(r.Stderr, `"production"`) {
+			t.Errorf("%v: code %d, want a skip naming production, stderr %q", extra, r.Code, r.Stderr)
+		}
+		if _, err := loadImported(t, cfgPath).GetContext("prod"); err == nil {
+			t.Errorf("%v: context prod was created with production's token", extra)
+		}
+	}
+}
