@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
@@ -70,7 +71,8 @@ build log.`,
 // tokenMask replaces a stored token value in displayed output.
 const tokenMask = "*** (use --show-tokens to reveal)"
 
-// withMaskedTokens returns a copy of cfg with literal token values masked.
+// withMaskedTokens returns a copy of cfg with literal token values and proxy
+// passwords masked.
 //
 // The copy is what keeps this safe to call from a command that shares the
 // loaded Config: masking in place would put the mask string one saveConfig
@@ -89,7 +91,28 @@ func withMaskedTokens(cfg *config.Config) *config.Config {
 		}
 		masked.Tokens[i].Token = tokenMask
 	}
+	masked.Contexts = make([]config.NamedContext, len(cfg.Contexts))
+	copy(masked.Contexts, cfg.Contexts)
+	for i := range masked.Contexts {
+		c := &masked.Contexts[i].Context
+		c.HTTPProxyURL = maskProxyPassword(c.HTTPProxyURL)
+		c.HTTPSProxyURL = maskProxyPassword(c.HTTPSProxyURL)
+	}
 	return &masked
+}
+
+// maskProxyPassword masks the password in a proxy URL (user:xxxxx@host) and
+// keeps the rest, so the output still shows which proxy and user a context
+// uses. A ${VAR} reference, or a value that is not a URL, is left as is.
+func maskProxyPassword(proxy string) string {
+	if proxy == "" || config.HasPlaceholder(proxy) {
+		return proxy
+	}
+	u, err := url.Parse(proxy)
+	if err != nil {
+		return proxy
+	}
+	return u.Redacted()
 }
 
 // newConfigInitCmd builds `config init`, which creates a .dtmgd.yaml template
