@@ -59,13 +59,17 @@ Examples:
 				to = "now"
 			}
 
+			// Newest first unless --sort says otherwise: the API's and the
+			// MCP server's default, sent explicitly.
+			sort := opts.sort
+			if sort == "" {
+				sort = "-timestamp"
+			}
 			params := map[string]string{
 				"query": opts.query,
 				"from":  opts.from,
 				"to":    to,
-			}
-			if opts.sort != "" {
-				params["sort"] = opts.sort
+				"sort":  sort,
 			}
 			if opts.entity != "" {
 				params["entitySelector"] = opts.entity
@@ -85,8 +89,8 @@ Examples:
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (required), e.g. now-1h")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records, at most 1000 (default: 100)")
-	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. -timestamp for newest first)")
-	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag(\"env:prod\")')")
+	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order: -timestamp (newest first, the default) or +timestamp")
+	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag(\"env:prod\")'); not a documented /logs/search parameter, so check results against an unscoped search")
 	return withScopes(cmd, scopeLogsRead)
 }
 
