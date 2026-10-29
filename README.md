@@ -122,19 +122,20 @@ For more information about creating API tokens in Managed deployments, refer to 
 
 ### Required API Token Scopes
 
-Your API token must include the following scopes for full functionality:
+Your API token needs these scopes for every command to work. Each command
+declares the scopes it uses, and a permission error names the ones the failed
+command needs; a test keeps this list identical to those declarations.
 
-- Access problem and event feed, metrics, and topology (`DataExport`) — required for `dtmgd get environments`
-- Read cluster configuration (`ReadConfig`)
-- Read audit logs (`auditLogs.read`)
-- Read entities (`entities.read`)
-- Read events (`events.read`)
-- Read logs (`logs.read`)
-- Read metrics (`metrics.read`)
-- Read network zones (`networkZones.read`)
-- Read problems (`problems.read`)
-- Read security problems (`securityProblems.read`)
-- Read SLO (`slo.read`)
+<!-- scopes:start -->
+- Access problem and event feed, metrics, and topology (`DataExport`): `get environments`
+- Read entities (`entities.read`): entities, entity types and relations; name lookups in `query metrics` and `query log-counts`
+- Read events (`events.read`): events
+- Read logs (`logs.read`): `query logs`, `query log-counts`
+- Read metrics (`metrics.read`): metrics, `query metrics`
+- Read problems (`problems.read`): problems
+- Read security problems (`securityProblems.read`): security problems
+- Read SLO (`slo.read`): SLOs
+<!-- scopes:end -->
 
 > **Note:** API token scopes in Managed deployments differ from SaaS Platform tokens. Ensure you select the correct scopes for your Managed cluster version.
 

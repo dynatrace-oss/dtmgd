@@ -50,5 +50,5 @@ func newDescribeEventCmd(a *App) *cobra.Command {
 			return a.printer("event").Print(result)
 		},
 	}
-	return cmd
+	return withScopes(cmd, "events.read")
 }

@@ -193,5 +193,5 @@ automatically — no special syntax or "--" separator is required.`,
 			return nil
 		},
 	}
-	return cmd
+	return withScopes(cmd, "problems.read")
 }

@@ -130,6 +130,7 @@ Multi-environment:
 		newVersionCmd(a),
 		newCompletionCmd(a),
 	)
+	fillScopeHelp(cmd)
 	return cmd
 }
 

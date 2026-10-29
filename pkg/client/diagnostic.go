@@ -61,7 +61,7 @@ func diagnoseStatus(code int) string {
 	case 401:
 		return "Authentication failed. Check your API token and ensure it hasn't expired.\n  Run: dtmgd config set-credentials <token-ref>"
 	case 403:
-		return "Permission denied. Your API token may be missing required scopes.\n  Required scopes: DataExport, ReadConfig, ReadLogContent, ReadEvents, ReadProblems, ReadSecurityProblems, ReadSLO"
+		return "Permission denied. Your API token may be missing required scopes."
 	case 404:
 		return "Resource not found. Check the ID and ensure you're using the correct environment."
 	case 429:

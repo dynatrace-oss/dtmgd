@@ -128,5 +128,5 @@ Examples:
 	cmd.Flags().StringVar(&opts.search, "search", "", "text search in metric names/descriptions")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter metrics")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of metrics")
-	return cmd
+	return withScopes(cmd, "metrics.read")
 }

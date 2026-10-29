@@ -128,7 +128,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.resolution, "resolution", "", "data resolution (e.g. 5m, 1h, 1d)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter metric data")
-	return cmd
+	return withScopes(cmd, "metrics.read", "entities.read")
 }
 
 // MetricEntitySummaryRow is a table row for per-entity single-value metric results.

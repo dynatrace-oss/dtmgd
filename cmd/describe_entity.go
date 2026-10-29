@@ -51,7 +51,7 @@ func newDescribeEntityCmd(a *App) *cobra.Command {
 			return a.printer("entity").Print(result)
 		},
 	}
-	return cmd
+	return withScopes(cmd, "entities.read")
 }
 
 func newDescribeEntityTypeCmd(a *App) *cobra.Command {
@@ -95,7 +95,7 @@ func newDescribeEntityTypeCmd(a *App) *cobra.Command {
 			return a.printer("entityType").Print(result)
 		},
 	}
-	return cmd
+	return withScopes(cmd, "entities.read")
 }
 
 func newDescribeEntityRelationsCmd(a *App) *cobra.Command {
@@ -154,5 +154,5 @@ func newDescribeEntityRelationsCmd(a *App) *cobra.Command {
 			return a.printer("entityRelationships").Print(extractRels(result))
 		},
 	}
-	return cmd
+	return withScopes(cmd, "entities.read")
 }

@@ -147,7 +147,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN, RESOLVED, MUTED")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("BookStore")`)
-	return cmd
+	return withScopes(cmd, "securityProblems.read")
 }
 
 // securityEntryToListItem converts a SecurityProblemEntry to a table row.

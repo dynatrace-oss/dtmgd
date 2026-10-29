@@ -154,7 +154,7 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records (default: 100)")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. -timestamp for newest first)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
-	return cmd
+	return withScopes(cmd, "logs.read")
 }
 
 // resolveLogContent returns the log content from a LogEntry.

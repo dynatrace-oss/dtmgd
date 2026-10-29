@@ -110,7 +110,7 @@ func newGetEntityTypesCmd(a *App) *cobra.Command {
 			return a.printer("").PrintList(items)
 		},
 	}
-	return cmd
+	return withScopes(cmd, "entities.read")
 }
 
 func newGetEntitiesCmd(a *App) *cobra.Command {
@@ -232,5 +232,5 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of entities")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (name or -name)")
 	cmd.Flags().StringVar(&opts.mz, "mz", "", "management zone selector")
-	return cmd
+	return withScopes(cmd, "entities.read")
 }

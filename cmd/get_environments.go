@@ -86,5 +86,5 @@ Fetches the cluster version to confirm that the API token and network path are w
 			return a.printer("environments").PrintList(items)
 		},
 	}
-	return cmd
+	return withScopes(cmd, "DataExport")
 }

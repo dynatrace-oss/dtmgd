@@ -55,5 +55,5 @@ Example:
 			return a.printer("metric").Print(result)
 		},
 	}
-	return cmd
+	return withScopes(cmd, "metrics.read")
 }

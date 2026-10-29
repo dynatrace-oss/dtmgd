@@ -193,11 +193,14 @@ func exitCode(err error) int {
 // do about it: a human error and hint on stderr, or one error envelope on
 // stdout in agent mode. cmd is the command that failed (the root when parsing
 // failed).
-func (a *App) reportError(_ *cobra.Command, err error) {
+func (a *App) reportError(cmd *cobra.Command, err error) {
 	if errors.Is(err, errReported) {
 		return
 	}
 	hint := client.Diagnose(err)
+	if scopes := requiredScopes(cmd); len(scopes) > 0 && isPermissionDenied(err) {
+		hint += "\n  This command needs the token scope(s): " + strings.Join(scopes, ", ") + "."
+	}
 	var usage *UsageError
 	agent := a.agentMode()
 	if errors.As(err, &usage) {
@@ -260,4 +263,21 @@ func errorDetail(err error, hint string) *agentmode.ErrorDetail {
 		d.Suggestions = append([]string{hint}, d.Suggestions...)
 	}
 	return d
+}
+
+// isPermissionDenied reports whether err is, or includes, an HTTP 403.
+func isPermissionDenied(err error) bool {
+	var apiErr *client.ErrAPI
+	if errors.As(err, &apiErr) {
+		return apiErr.StatusCode == 403
+	}
+	var partial *client.PartialFailureError
+	if errors.As(err, &partial) {
+		for _, r := range partial.Failed {
+			if isPermissionDenied(r.Error) {
+				return true
+			}
+		}
+	}
+	return false
 }

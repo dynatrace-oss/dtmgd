@@ -3,4 +3,4 @@
 == stderr
 Error: 2 of 2 environments failed: a: API error 403: Token is missing required scope; b: API error 403: Token is missing required scope
 Hint: Permission denied. Your API token may be missing required scopes.
-  Required scopes: DataExport, ReadConfig, ReadLogContent, ReadEvents, ReadProblems, ReadSecurityProblems, ReadSLO
+  This command needs the token scope(s): problems.read.

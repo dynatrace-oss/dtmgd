@@ -223,7 +223,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (default: now-1h), e.g. now-2h")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().IntVar(&opts.maxServices, "max-services", 100, "maximum number of services to return per level (max: 100)")
-	return cmd
+	return withScopes(cmd, "logs.read", "entities.read")
 }
 
 // cleanPGName extracts a short service name from a Dynatrace process group display name.

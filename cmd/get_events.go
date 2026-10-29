@@ -154,5 +154,5 @@ Examples:
 	cmd.Flags().StringVar(&opts.eventType, "type", "", "filter by event type (e.g. CUSTOM_DEPLOYMENT)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter events")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of events")
-	return cmd
+	return withScopes(cmd, "events.read")
 }

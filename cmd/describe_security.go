@@ -204,5 +204,5 @@ or the internal UUID. Display IDs are resolved automatically.`,
 			return nil
 		},
 	}
-	return cmd
+	return withScopes(cmd, "securityProblems.read")
 }

@@ -188,7 +188,7 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results to show")
 	cmd.Flags().BoolVar(&opts.evaluate, "evaluate", false, "evaluate SLO percentages (slower; max 25 per page, auto-paged)")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", "sloSelector DSL to filter SLOs (e.g. 'managementZone(\"bookstore\")')")
-	return cmd
+	return withScopes(cmd, "slo.read")
 }
 
 // formatEvaluatedPct formats the SLO evaluated percentage for display.

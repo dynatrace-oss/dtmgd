@@ -217,8 +217,7 @@ A context stores three things:
   --token-ref  Name of the API token credential (see set-credentials)
 
 Required API token scopes:
-  DataExport, ReadConfig, ReadSyntheticData, ReadLogContent,
-  ReadEvents, ReadProblems, ReadSecurityProblems, ReadSLO
+  %SCOPES%
 
 Examples:
   dtmgd config set-context prod \
