@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/adrg/xdg"
 	"github.com/zalando/go-keyring"
@@ -216,7 +217,8 @@ func (c *Config) SaveTo(path string) error {
 // is followed, so a config kept elsewhere (a dotfiles repo) stays linked.
 // The data is synced before the rename, so a crash cannot leave the new name
 // pointing at unwritten blocks. When the directory refuses the temporary
-// file, the file is rewritten in place instead (writeFileInPlace).
+// file, or the file is a mount point rename cannot replace, the file is
+// rewritten in place instead (writeFileInPlace).
 func writeFileAtomic(path string, data []byte) error {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
@@ -249,7 +251,14 @@ func writeFileAtomic(path string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	err = renameFile(tmp, path)
+	if errors.Is(err, syscall.EBUSY) {
+		// path is a mount point, such as a single config file bind-mounted
+		// into a container, and cannot be replaced; the deferred cleanup
+		// removes the temporary file.
+		return writeFileInPlace(path, data)
+	}
+	if err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	tmp = ""
@@ -275,8 +284,12 @@ func writeFileInPlace(path string, data []byte) error {
 	return nil
 }
 
-// chmodFile is os.Chmod; tests replace it to make it fail.
-var chmodFile = os.Chmod
+// chmodFile and renameFile are os.Chmod and os.Rename; tests replace them to
+// make them fail.
+var (
+	chmodFile  = os.Chmod
+	renameFile = os.Rename
+)
 
 // CurrentContextObj returns the current context.
 func (c *Config) CurrentContextObj() (*Context, error) {
