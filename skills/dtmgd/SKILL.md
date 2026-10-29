@@ -64,6 +64,14 @@ Errors are also wrapped: `{"ok": false, "error": {"code": "error", "message": ".
 
 Force with `-A`/`--agent`, disable with `--no-agent`.
 
+When agent mode is auto-detected, dtmgd also prints one line to **stderr**
+(`Agent mode is on because CLAUDECODE is set. …`). Don't merge stderr into
+stdout (`2>&1`) before parsing JSON — or pass `-A` explicitly, which
+suppresses the line.
+
+To install this skill from an agent's shell (no terminal), name the agent:
+`dtmgd skills install --for claude`.
+
 **Tip for AI agents**: prefer `-o json` or `-A` when parsing results:
 
 ```bash

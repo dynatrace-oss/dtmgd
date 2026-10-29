@@ -486,11 +486,13 @@ The body:
 Run:
 
 ```bash
-run=$(gh run list --branch fix/phase1-security-safety --workflow security.yml --limit 1 --json databaseId --jq '.[0].databaseId')
-gh run view "$run" --log | grep -m1 -E 'go1\.26\.[0-9]+'
+for wf in security.yml test.yml; do
+  run=$(gh run list --branch fix/phase1-security-safety --workflow "$wf" --limit 1 --json databaseId --jq '.[0].databaseId')
+  gh run view "$run" --log | grep -m1 -E 'Setup go version spec|go1\.26\.[0-9]+'
+done
 ```
 
-Expected: `go1.26.10`. If it shows `go1.26.0`, setup-go is ignoring the `toolchain` line. In that case, put `go-version: '1.26.10'` in every workflow and record the decision in the PR.
+Expected: `1.26.10` for both workflows. setup-go v7 reads the `toolchain` line only when `GOTOOLCHAIN` is not preset to `local` (`src/installer.ts:652-662` at the pinned SHA). That is why test.yml's job-level `GOTOOLCHAIN: local` was removed. If either workflow still shows `1.26.0`, put `go-version: '1.26.10'` in every workflow and record the decision in the PR.
 
 - [ ] **Step 4: All checks green**
 

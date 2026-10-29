@@ -12,8 +12,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      GOTOOLCHAIN: local
+    # No GOTOOLCHAIN preset here: setup-go only honours go.mod's toolchain
+    # line when GOTOOLCHAIN is not "local", and after installing that version
+    # it exports GOTOOLCHAIN=local itself, so go test cannot switch mid-run.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 

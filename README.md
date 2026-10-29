@@ -288,6 +288,10 @@ recognised error envelope, its human-readable message — but not the rest of th
 response body. Run with `-vv` to see the full response.
 
 Force it on with `-A` / `--agent`, or disable auto-detection with `--no-agent`.
+When agent mode was switched on by auto-detection, dtmgd prints one line to
+stderr saying which variable did it. An explicit `-A` or `--no-agent` suppresses
+that line, so keep stderr separate (no `2>&1`) when piping envelopes to `jq`,
+or pass `-A`.
 
 ### Install the dtmgd Skill for Your AI Agent
 
@@ -296,10 +300,13 @@ coding assistant how to use the CLI effectively — including command patterns,
 output formats, and gotchas specific to Dynatrace Managed Classic.
 
 Install it with one command — the target agent is auto-detected from your
-environment, or you can pick it explicitly:
+environment, or you can pick it explicitly. Outside an interactive terminal
+(CI, scripts, an agent's own shell tool) auto-detection is not used and
+`--for` is required, so an environment variable alone never decides where
+files are written:
 
 ```bash
-# Auto-detect the current AI agent and install
+# Auto-detect the current AI agent and install (interactive terminal only)
 dtmgd skills install
 
 # Install for a specific agent (claude, copilot, cursor, junie, kiro, opencode)

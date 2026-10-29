@@ -46,7 +46,9 @@ the Dynatrace Open Source Community, except where needed to fix the issue.
    Manager); the config file keeps only an empty placeholder.
 2. **Headless systems.** Containers, CI runners and SSH-only servers usually
    have no keyring. There, the token is written to the config file in
-   **plaintext**, with mode 0600, and a warning is printed. For CI prefer a
+   **plaintext**, and a warning is printed. A config file dtmgd creates gets
+   mode 0600; an existing file keeps its permissions, so check a hand-written
+   one with `ls -l` and `chmod 600` it. For CI prefer a
    `${VAR}` reference in the config (`token: ${DT_API_TOKEN}`), so the secret
    lives only in the environment, and use short-lived tokens. Run
    `dtmgd config migrate-tokens` once a keyring becomes available.
