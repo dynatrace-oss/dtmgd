@@ -189,3 +189,30 @@ func TestWatchFlagOnlyOnWatchableCommands(t *testing.T) {
 		t.Errorf("code %d, stderr %q", r.Code, r.Stderr)
 	}
 }
+
+// TestMultiEnvAgentTruncationVisible pins that a multi-environment agent
+// result says when an environment's list was cut short: the merged envelope
+// used to drop each environment's has_more, so an agent took 50 of 60 for
+// the whole story.
+func TestMultiEnvAgentTruncationVisible(t *testing.T) {
+	cfg := withFakeEnvs(t,
+		fakeEnv{"a", newFakeAPI(t, problemPages(60, 10))},
+		fakeEnv{"b", newFakeAPI(t, problemPages(60, 10))})
+	r := runCLI(t, cfg, "get", "problems", "--env", "a;b", "-A")
+	if r.Code != 0 {
+		t.Fatalf("code %d, stderr %q", r.Code, r.Stderr)
+	}
+	var resp agentmode.Response
+	if err := json.Unmarshal([]byte(r.Stdout), &resp); err != nil {
+		t.Fatalf("%v\n%s", err, r.Stdout)
+	}
+	if resp.Context == nil || !resp.Context.HasMore {
+		t.Fatalf("context = %+v; want has_more", resp.Context)
+	}
+	warnings := strings.Join(resp.Context.Warnings, "\n")
+	for _, env := range []string{"a", "b"} {
+		if !strings.Contains(warnings, env+": Showing 50 of 60 problems") {
+			t.Errorf("warnings %q do not say %s was truncated", resp.Context.Warnings, env)
+		}
+	}
+}

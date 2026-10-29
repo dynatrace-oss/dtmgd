@@ -115,9 +115,16 @@ func (a *App) renderMulti(s fetchSpec, results []client.EnvResult) error {
 	}
 
 	if a.agentMode() {
+		// The merged envelope has no per-environment context, so failures
+		// and truncated lists are named in its warnings, in config order.
 		ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource}
-		for _, r := range failed {
-			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
+		for _, r := range results {
+			if r.Error != nil {
+				ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
+			} else if f := r.Data.(fetched); f.HasMore {
+				ctx.HasMore = true
+				ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %s", r.Name, truncationNote(s, f)))
+			}
 		}
 		if partial == nil {
 			return output.NewAgentPrinter(a.Out, ctx).Print(merged)
@@ -209,6 +216,20 @@ func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext
 		}
 	}
 	return ctx
+}
+
+// truncationNote says that f holds only part of the result: how many of how
+// many when Rows can count the items, otherwise only that more exist.
+func truncationNote(s fetchSpec, f fetched) string {
+	if s.Rows != nil {
+		if _, n, err := s.Rows(f.Body); err == nil {
+			return showing(n, f.Total, s.Resource)
+		}
+	}
+	if f.Total >= 0 {
+		return fmt.Sprintf("Showing part of %d %s", f.Total, s.Resource)
+	}
+	return fmt.Sprintf("More %s are available", s.Resource)
 }
 
 // humanOutput reports whether results go to a person: table or wide output,
