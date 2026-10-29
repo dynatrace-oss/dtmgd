@@ -357,15 +357,23 @@ func (c *Client) GetCluster(path string, params map[string]string, result interf
 }
 
 // ClusterVersion fetches the cluster version.
-// Tries the cluster-level API first, falls back to the environment v1 API.
+// Tries the cluster-level API first, and falls back to the environment v1 API
+// when the cluster answered without a version or with an HTTP error (a token
+// without cluster scopes gets 401/403 there). After a transport error it does
+// not: the fallback is on the same host and would fail the same way, after
+// another full timeout.
 func (c *Client) ClusterVersion() (string, error) {
 	var result struct {
 		Version string `json:"version"`
 	}
-	if err := c.GetCluster("/v1.0/onpremise/cluster", nil, &result); err == nil && result.Version != "" {
+	err := c.GetCluster("/v1.0/onpremise/cluster", nil, &result)
+	if err == nil && result.Version != "" {
 		return result.Version, nil
 	}
-	// Fallback to environment-level v1 endpoint
+	var apiErr *ErrAPI
+	if err != nil && !errors.As(err, &apiErr) {
+		return "", err
+	}
 	if err := c.GetV1("/config/clusterversion", nil, &result); err != nil {
 		return "", err
 	}

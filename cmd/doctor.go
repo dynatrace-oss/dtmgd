@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/spf13/cobra"
@@ -76,14 +77,12 @@ func (a *App) runDoctor() error {
 		return errors.New("no contexts configured. Run 'dtmgd config set-context' to add one")
 	}
 
-	rows := make([]DoctorRow, 0, len(contexts))
+	rows := a.checkContexts(cfg, contexts)
 	var failed []string
-	for _, nc := range contexts {
-		row := a.checkContext(cfg, nc)
+	for _, row := range rows {
 		if row.Status == doctorFail {
 			failed = append(failed, row.Context)
 		}
-		rows = append(rows, row)
 	}
 	if err := a.printDoctor(rows, failed); err != nil {
 		return err
@@ -93,6 +92,30 @@ func (a *App) runDoctor() error {
 		return fmt.Errorf("%w: one or more contexts failed", errReported)
 	}
 	return nil
+}
+
+// checkContexts runs checkContext on each context, at most --concurrency at
+// once, and returns the rows in the contexts' order. Checked one after the
+// other, a config of hung hosts took one full timeout per context.
+func (a *App) checkContexts(cfg *config.Config, contexts []config.NamedContext) []DoctorRow {
+	limit := a.Opts.Concurrency
+	if limit < 1 {
+		limit = client.DefaultConcurrency
+	}
+	rows := make([]DoctorRow, len(contexts))
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for i, nc := range contexts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			rows[i] = a.checkContext(cfg, nc)
+		}()
+	}
+	wg.Wait()
+	return rows
 }
 
 // printDoctor prints doctor's rows for the chosen format. In agent mode a

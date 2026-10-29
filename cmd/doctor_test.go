@@ -2,9 +2,14 @@ package cmd
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // The paths ClusterVersion tries, in order, and doctor's fallback.
@@ -214,5 +219,52 @@ func TestDoctorMissingTokenFails(t *testing.T) {
 	a := rows["a"]
 	if r.Code != 1 || a.Status != "fail" || !strings.Contains(a.Detail, "no token") || !strings.Contains(a.Detail, "dtmgd config set-credentials") {
 		t.Errorf("code %d, a = %+v", r.Code, a)
+	}
+}
+
+// TestDoctorChecksContextsConcurrently pins that doctor checks contexts in
+// parallel, so a config of hung hosts takes one timeout rather than one per
+// context. The version endpoint answers only once both contexts' requests
+// have arrived; checked one after the other, the first gives up at the
+// barrier and fails.
+func TestDoctorChecksContextsConcurrently(t *testing.T) {
+	var mu sync.Mutex
+	arrived := 0
+	both := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if "GET "+r.URL.Path != clusterVersionPath {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":{"code":404,"message":"not found"}}`)
+			return
+		}
+		mu.Lock()
+		arrived++
+		if arrived == 2 {
+			close(both)
+		}
+		mu.Unlock()
+		select {
+		case <-both:
+			_, _ = io.WriteString(w, `{"version":"1.330.0.20251017-120000"}`)
+		case <-time.After(3 * time.Second):
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"code":400,"message":"the other context never arrived"}}`)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	api := &fakeAPI{URL: srv.URL}
+
+	rows, r := doctorRows(t, withFakeEnvs(t, fakeEnv{"a", api}, fakeEnv{"b", api}))
+	if r.Code != 0 {
+		t.Errorf("code %d, stderr %q", r.Code, r.Stderr)
+	}
+	for _, name := range []string{"a", "b"} {
+		if rows[name].Status != "ok" {
+			t.Errorf("%s: %+v, want ok", name, rows[name])
+		}
+	}
+	if !strings.Contains(r.Stdout, `"context": "a"`) || strings.Index(r.Stdout, `"context": "a"`) > strings.Index(r.Stdout, `"context": "b"`) {
+		t.Errorf("rows not in config order:\n%s", r.Stdout)
 	}
 }

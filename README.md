@@ -243,8 +243,9 @@ oldest version the Dynatrace Managed MCP server supports. It prints one row per
 context (`CONTEXT HOST ENV-ID STATUS VERSION DETAIL`) with status `ok`, `warn`
 or `fail`. When the token cannot read the cluster version (401 or 403), doctor
 tries `GET /api/v2/metrics?pageSize=1` instead, as the MCP server does; if that
-works, the context is a `warn` with version `unknown`. `doctor` exits 1 when any
-context fails.
+works, the context is a `warn` with version `unknown`. Contexts are checked in
+parallel, up to `--concurrency` (default 10) at a time. `doctor` exits 1 when
+any context fails.
 
 ### Commands (machine-readable catalog)
 
