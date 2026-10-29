@@ -135,11 +135,18 @@ func (a *App) importMCPConfig(opts importOptions) error {
 		output.PrintInfo("Nothing imported.")
 		return nil
 	}
-	if err := applyMCPImport(cfg, plan); err != nil {
+	keyringDeletes, err := applyMCPImport(cfg, plan)
+	if err != nil {
 		return err
 	}
+	// Stale keyring entries go only once the config no longer relies on them.
 	if err := a.saveConfig(cfg); err != nil {
 		return err
+	}
+	for _, del := range keyringDeletes {
+		if err := del(); err != nil {
+			return err
+		}
 	}
 	for _, act := range plan {
 		reportImported(cfg, act)
@@ -377,19 +384,25 @@ func importedContext(env mcpEnvironment) config.NamedContext {
 	}
 }
 
-// applyMCPImport writes the planned contexts and tokens into cfg. The first
-// imported context becomes current when none is set.
-func applyMCPImport(cfg *config.Config, plan []importAction) error {
+// applyMCPImport writes the planned contexts and tokens into cfg, and returns
+// the keyring deletions to run once cfg is saved (see storeImportedToken). The
+// first imported context becomes current when none is set.
+func applyMCPImport(cfg *config.Config, plan []importAction) ([]func() error, error) {
+	var keyringDeletes []func() error
 	for _, act := range plan {
 		putContext(cfg, importedContext(act.env))
-		if err := storeImportedToken(cfg, importTokenName(act.env.Alias), act.env.APIToken); err != nil {
-			return err
+		del, err := storeImportedToken(cfg, importTokenName(act.env.Alias), act.env.APIToken)
+		if err != nil {
+			return nil, err
+		}
+		if del != nil {
+			keyringDeletes = append(keyringDeletes, del)
 		}
 	}
 	if cfg.CurrentContext == "" {
 		cfg.CurrentContext = plan[0].env.Alias
 	}
-	return nil
+	return keyringDeletes, nil
 }
 
 // putContext replaces the context of the same name in place, or appends nc.
@@ -407,22 +420,25 @@ func putContext(cfg *config.Config, nc config.NamedContext) {
 //
 // A ${VAR} reference is written into the config's tokens list as written,
 // never expanded and never sent to the keyring. Any keyring entry already
-// under that name is deleted first: GetToken reads the keyring before the
-// config, so a stale value there would be used instead of the reference.
-// A literal token takes the set-credentials path, cfg.SetToken. An empty one
-// leaves any existing token alone.
-func storeImportedToken(cfg *config.Config, name, token string) error {
+// under that name must go, because GetToken reads the keyring before the
+// config, so a stale value there would be used instead of the reference; the
+// returned function deletes it, and the caller runs it once the config is
+// saved, so a failed save loses nothing. A literal token takes the
+// set-credentials path, cfg.SetToken. An empty one leaves any existing token
+// alone.
+func storeImportedToken(cfg *config.Config, name, token string) (deleteFromKeyring func() error, err error) {
 	switch {
 	case token == "":
-		return nil
+		return nil, nil
 	case config.HasPlaceholder(token):
-		if err := cfg.DeleteToken(name); err != nil && !errors.Is(err, config.ErrTokenNotFound) {
-			return err
+		deleteFromKeyring, err := cfg.DeleteToken(name)
+		if err != nil && !errors.Is(err, config.ErrTokenNotFound) {
+			return nil, err
 		}
 		cfg.Tokens = append(cfg.Tokens, config.NamedToken{Name: name, Token: token})
-		return nil
+		return deleteFromKeyring, nil
 	default:
-		return cfg.SetToken(name, token)
+		return nil, cfg.SetToken(name, token)
 	}
 }
 
