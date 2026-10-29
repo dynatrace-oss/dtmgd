@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/zalando/go-keyring"
 )
@@ -31,11 +33,40 @@ func (ts *TokenStore) DeleteToken(name string) error {
 	return keyring.Delete(keyringService, name)
 }
 
-// IsKeyringAvailable returns true if the OS keyring is accessible.
+// probe caches whether the OS keyring works, so it is asked once per process
+// rather than on every token lookup (concurrently, during --env fan-out).
+var probe struct {
+	sync.Mutex
+	done bool
+	err  error
+}
+
+// keyringStatus reports nil when the OS keyring is usable, or why it is not.
+func keyringStatus() error {
+	probe.Lock()
+	defer probe.Unlock()
+	if !probe.done {
+		_, err := keyring.Get(keyringService, "__probe__")
+		// ErrNotFound means the keyring works and the key doesn't exist.
+		if errors.Is(err, keyring.ErrNotFound) {
+			err = nil
+		}
+		probe.err, probe.done = err, true
+	}
+	return probe.err
+}
+
+// resetKeyringProbe forgets the cached probe result. Tests that swap the
+// keyring backend call it.
+func resetKeyringProbe() {
+	probe.Lock()
+	probe.done, probe.err = false, nil
+	probe.Unlock()
+}
+
+// IsKeyringAvailable reports whether the OS keyring can store tokens.
 func IsKeyringAvailable() bool {
-	_, err := keyring.Get(keyringService, "__probe__")
-	// ErrNotFound means keyring works but the key doesn't exist — that's fine.
-	return err == nil || err == keyring.ErrNotFound
+	return keyringStatus() == nil
 }
 
 // KeyringBackend returns a human-readable name for the current keyring backend.

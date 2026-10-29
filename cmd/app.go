@@ -179,6 +179,11 @@ func (a *App) loadConfig() (*config.Config, error) {
 		return nil, err
 	}
 
+	// Context precedence: --env naming one context, then --context, then
+	// DTMGD_CONTEXT, then the file's current-context.
+	if ctx := os.Getenv("DTMGD_CONTEXT"); ctx != "" {
+		cfg.CurrentContext = ctx
+	}
 	// Override current context from --context flag (single-env mode)
 	if a.Opts.Context != "" {
 		cfg.CurrentContext = a.Opts.Context
@@ -214,7 +219,7 @@ func (a *App) loadConfigForUpdate() (*config.Config, error) {
 // loadFromSource reads whichever config file ResolveSource selects, reporting
 // the choice when the user did not make it themselves.
 func (a *App) loadFromSource() (*config.Config, error) {
-	src := config.ResolveSource(a.Opts.ConfigPath)
+	src := config.ResolveSource(a.configPath())
 	a.reportConfigSource(src)
 
 	cfg, err := config.LoadFrom(src.Path)
@@ -252,10 +257,19 @@ func (a *App) reportConfigSource(src config.Source) {
 	}
 }
 
+// configPath is the config file the user named: --config, else
+// DTMGD_CONFIG, else "" (discover a local .dtmgd.yaml or use the default).
+func (a *App) configPath() string {
+	if a.Opts.ConfigPath != "" {
+		return a.Opts.ConfigPath
+	}
+	return os.Getenv("DTMGD_CONFIG")
+}
+
 // saveConfig saves config, respecting the --config flag and local config presence.
 func (a *App) saveConfig(cfg *config.Config) error {
-	if a.Opts.ConfigPath != "" {
-		return cfg.SaveTo(a.Opts.ConfigPath)
+	if p := a.configPath(); p != "" {
+		return cfg.SaveTo(p)
 	}
 	if local := config.FindLocalConfig(); local != "" {
 		return cfg.SaveTo(local)

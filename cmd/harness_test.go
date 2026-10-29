@@ -152,7 +152,8 @@ func (r cliResult) String() string {
 
 var fakeURL = regexp.MustCompile(`http://127\.0\.0\.1:\d+`)
 
-// runCLI runs dtmgd with args against the config at cfgPath and captures
+// runCLI runs dtmgd with args against the config at cfgPath (passed as
+// --config; "" passes none) and captures
 // stdout, stderr and the exit code. Agent detection is cleared so output is
 // human unless a test opts in, and fake server URLs are normalised to
 // http://FAKE so goldens are stable.
@@ -188,7 +189,11 @@ func runCLIWithEnv(t *testing.T, env map[string]string, cfgPath string, args ...
 
 	origOut, origErr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = outW, errW
-	code := Run(append(append([]string(nil), args...), "--config", cfgPath), outW, errW)
+	full := append([]string(nil), args...)
+	if cfgPath != "" {
+		full = append(full, "--config", cfgPath)
+	}
+	code := Run(full, outW, errW)
 	os.Stdout, os.Stderr = origOut, origErr
 
 	_ = outW.Close()

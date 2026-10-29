@@ -151,6 +151,8 @@ dtmgd config get-contexts          # list all contexts
 dtmgd config current-context       # show active context name
 dtmgd config use-context <name>    # switch active context
 dtmgd config delete-context <name> # remove a context
+dtmgd config delete-context <name> --delete-credentials  # ... and its token, unless shared
+dtmgd config delete-credentials <name>  # delete a token from the keyring and the config
 dtmgd config migrate-tokens        # move plaintext tokens to OS keyring
 dtmgd config view                  # dump full config (token values masked)
 dtmgd config view --show-tokens    # ... including token values
@@ -376,6 +378,17 @@ Both relative and absolute times are accepted:
 | Relative | `now-1h`, `now-24h`, `now-7d`, `now-30m` |
 | ISO 8601 | `2024-01-01T10:00:00Z` |
 | Unix ms | `1640995200000` |
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `DTMGD_CONFIG` | Config file to use when `--config` is not given. |
+| `DTMGD_CONTEXT` | Context to use when neither `--context` nor a single `--env` name is given; overrides the file's `current-context`. |
+| `NO_COLOR` | Plain output: no symbols or screen control (same as `--plain`). |
+| `FORCE_COLOR` | Keep symbols even when stdout is not a terminal. |
+
+Flags always win over environment variables, which win over the config file.
 
 ## Configuration File Format
 

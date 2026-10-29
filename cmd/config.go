@@ -27,6 +27,7 @@ func newConfigCmd(a *App) *cobra.Command {
 		newConfigSetContextCmd(a),
 		newConfigSetCredentialsCmd(a),
 		newConfigDeleteContextCmd(a),
+		newConfigDeleteCredentialsCmd(a),
 		newConfigMigrateTokensCmd(a),
 	)
 	return cmd
@@ -311,16 +312,51 @@ func (a *App) setCredentials(name, token string) error {
 // newConfigDeleteContextCmd builds `config delete-context`, which removes a
 // context.
 func newConfigDeleteContextCmd(a *App) *cobra.Command {
+	var deleteCreds bool
 	cmd := &cobra.Command{
 		Use:     "delete-context <context-name>",
 		Short:   "Delete a context from the config",
 		Aliases: []string{"rm-ctx"},
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.deleteContext(args[0])
+			return a.deleteContext(args[0], deleteCreds)
 		},
 	}
+	cmd.Flags().BoolVar(&deleteCreds, "delete-credentials", false, "also delete the context's token, unless another context uses it")
 	return cmd
+}
+
+// newConfigDeleteCredentialsCmd builds `config delete-credentials`, which
+// removes a stored token from the OS keyring and the config.
+func newConfigDeleteCredentialsCmd(a *App) *cobra.Command {
+	return &cobra.Command{
+		Use:   "delete-credentials <token-name>",
+		Short: "Delete a stored API token from the keyring and the config",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.deleteCredentials(args[0])
+		},
+	}
+}
+
+// deleteCredentials deletes a token and names the contexts that still
+// point at it, which will fail until they get a new one.
+func (a *App) deleteCredentials(name string) error {
+	cfg, err := a.loadConfigRaw()
+	if err != nil {
+		return err
+	}
+	if err := cfg.DeleteToken(name); err != nil {
+		return err
+	}
+	if users := contextsUsingToken(cfg, name); len(users) > 0 {
+		output.PrintWarning("Context(s) %s still use token-ref %q; they need a new credential.", strings.Join(users, ", "), name)
+	}
+	if err := a.saveConfig(cfg); err != nil {
+		return err
+	}
+	output.PrintSuccess("Credential %q deleted", name)
+	return nil
 }
 
 // newConfigMigrateTokensCmd builds `config migrate-tokens`, which migrates

@@ -108,21 +108,3 @@ func (c *Context) Resolve() (*ResolvedContext, error) {
 	}
 	return r, nil
 }
-
-// APIBaseURL returns the environment API base URL for this context.
-// Format: {host}/e/{env-id}/api
-func (r *ResolvedContext) APIBaseURL() string {
-	if r.Host == "" || r.EnvID == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s/e/%s/api", strings.TrimRight(r.Host, "/"), r.EnvID)
-}
-
-// ClusterAPIBaseURL returns the cluster-level API base URL.
-// Format: {host}/api
-func (r *ResolvedContext) ClusterAPIBaseURL() string {
-	if r.Host == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s/api", strings.TrimRight(r.Host, "/"))
-}

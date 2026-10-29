@@ -556,3 +556,34 @@ func TestLoadFromMissingIsNotExist(t *testing.T) {
 		t.Errorf("message changed: %v", err)
 	}
 }
+
+// TestSaveToIsAtomicAnd0600 pins that a save replaces the file in one step
+// (no half-written config if dtmgd is interrupted) and always leaves it
+// readable by the owner only, even when it was looser before: it can hold a
+// plaintext token.
+func TestSaveToIsAtomicAnd0600(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("kind: Config\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewConfig().SaveTo(path); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mode := info.Mode().Perm(); mode != 0o600 {
+			t.Errorf("mode = %o, want 600", mode)
+		}
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("leftover files in %s: %v", dir, entries)
+	}
+}

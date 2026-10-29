@@ -165,8 +165,3 @@ func UnwrapSingle(results []EnvResult) (interface{}, error) {
 	}
 	return merged, nil
 }
-
-// IsSingleEnv returns true if the results are from a single environment.
-func IsSingleEnv(results []EnvResult) bool {
-	return len(results) == 1
-}
