@@ -32,5 +32,5 @@ Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		newGetSecurityProblemsCmd(a),
 		newGetSLOsCmd(a),
 	)
-	return cmd
+	return asGroup(cmd)
 }

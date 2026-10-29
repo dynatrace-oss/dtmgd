@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strings"
-	"time"
 
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
@@ -19,9 +20,7 @@ import (
 type GlobalOptions struct {
 	ConfigPath, Context, Output, Env, Columns string
 	Verbose, MaxPages, Concurrency            int
-	Agent, NoAgent                            bool
-	Watch                                     bool          // moves to get problems/events in Task 7
-	WatchInterval                             time.Duration // same
+	Agent, NoAgent, Plain                     bool
 }
 
 // App is one dtmgd invocation: where its output goes and the global flags it
@@ -30,25 +29,34 @@ type GlobalOptions struct {
 type App struct {
 	Out, Err io.Writer
 	Opts     GlobalOptions
+
+	// args are the raw arguments, for decisions that must be made even when
+	// flag parsing failed (see rawAgentMode).
+	args []string
 }
 
 // Run executes dtmgd with args (without the program name), writing to stdout
 // and stderr, and returns the process exit code. main passes os.Args[1:];
 // tests pass their own arguments and writers.
 func Run(args []string, stdout, stderr io.Writer) int {
-	a := &App{Out: stdout, Err: stderr}
+	a := &App{Out: stdout, Err: stderr, args: args}
+	// Until flags are parsed, plain mode follows the environment alone; the
+	// persistent pre-run applies --plain once it is known.
+	output.SetStderr(stderr)
+	output.SetPlain(a.plain())
+	defer func() {
+		output.SetStderr(nil)
+		output.SetPlain(false)
+	}()
 	root := newRootCmd(a)
 	root.SetArgs(rewriteNegativeArgs(args))
-	if err := root.Execute(); err != nil {
-		err = client.WrapWithDiagnosis(err)
-		if a.agentMode() {
-			output.PrintAgentError(err)
-		} else {
-			output.PrintHumanError("%s", err)
-		}
-		return 1
+	cmd, err := root.ExecuteC()
+	if err != nil {
+		err = classifyCobraError(err)
+		a.reportError(cmd, err)
+		return exitCode(err)
 	}
-	return 0
+	return client.ExitSuccess
 }
 
 // newRootCmd builds the dtmgd command tree over a, binding the global flags
@@ -59,10 +67,18 @@ func newRootCmd(a *App) *cobra.Command {
 		Short:         "Dynatrace Managed CLI",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			output.SetPlain(a.plain())
+			f, err := output.ParseFormat(a.Opts.Output)
+			if err != nil {
+				return &UsageError{Err: err}
+			}
+			// Normalised, so every format check below sees "yaml" for yml.
+			a.Opts.Output = string(f)
 			if n := a.agentNotice(); n != "" {
 				output.PrintInfo("%s", n)
 			}
+			return nil
 		},
 		Long: `dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
 
@@ -84,6 +100,7 @@ Multi-environment:
 	}
 	cmd.SetOut(a.Out)
 	cmd.SetErr(a.Err)
+	cmd.SetFlagErrorFunc(flagError)
 
 	f := cmd.PersistentFlags()
 	f.StringVar(&a.Opts.ConfigPath, "config", "", "config file (default: ~/.config/dtmgd/config)")
@@ -93,11 +110,11 @@ Multi-environment:
 	f.StringVarP(&a.Opts.Env, "env", "e", "", `environment(s): context name, "prod;staging", or ALL_ENVIRONMENTS`)
 	f.BoolVarP(&a.Opts.Agent, "agent", "A", false, "force agent envelope output mode")
 	f.BoolVar(&a.Opts.NoAgent, "no-agent", false, "disable auto-detected agent mode")
+	f.BoolVar(&a.Opts.Plain, "plain", false, "plain output: no symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)")
 	f.IntVar(&a.Opts.MaxPages, "max-pages", 0, "maximum number of pages to fetch (0 = all pages)")
 	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table output")
 	f.IntVar(&a.Opts.Concurrency, "concurrency", client.DefaultConcurrency,
 		"maximum environments queried at once with --env")
-	a.addWatchFlags(cmd)
 
 	cmd.AddCommand(
 		newGetCmd(a),
@@ -106,10 +123,29 @@ Multi-environment:
 		newConfigCmd(a),
 		newCtxCmd(a),
 		newSkillsCmd(a),
+		newDoctorCmd(a),
+		newCommandsCmd(a),
 		newVersionCmd(a),
 		newCompletionCmd(a),
 	)
+	fillScopeHelp(cmd)
 	return cmd
+}
+
+// plain reports whether output should avoid glyphs and terminal control
+// sequences: when asked with --plain or NO_COLOR, or when stdout is not a
+// terminal (a pipe, a file, an agent's shell) unless FORCE_COLOR is set.
+func (a *App) plain() bool {
+	if a.Opts.Plain || os.Getenv("NO_COLOR") != "" {
+		return true
+	}
+	return !output.IsTerminal(a.Out) && os.Getenv("FORCE_COLOR") == ""
+}
+
+// format returns the validated --output value.
+func (a *App) format() output.Format {
+	f, _ := output.ParseFormat(a.Opts.Output)
+	return f
 }
 
 // agentMode returns true if agent envelope output should be used.
@@ -131,11 +167,11 @@ func (a *App) agentNotice() string {
 	if a.Opts.Agent || a.Opts.NoAgent {
 		return ""
 	}
-	v := output.DetectedAgentVar()
-	if v == "" {
+	info := agentmode.Detect()
+	if !info.Detected {
 		return ""
 	}
-	return fmt.Sprintf("Agent mode is on because %s is set. Use --no-agent for human-readable output.", v)
+	return fmt.Sprintf("Agent mode is on (detected %s). Use --no-agent for human-readable output.", info.Name)
 }
 
 // loadConfig loads the configuration, respecting --config and --context flags.
@@ -145,6 +181,11 @@ func (a *App) loadConfig() (*config.Config, error) {
 		return nil, err
 	}
 
+	// Context precedence: --env naming one context, then --context, then
+	// DTMGD_CONTEXT, then the file's current-context.
+	if ctx := os.Getenv("DTMGD_CONTEXT"); ctx != "" {
+		cfg.CurrentContext = ctx
+	}
 	// Override current context from --context flag (single-env mode)
 	if a.Opts.Context != "" {
 		cfg.CurrentContext = a.Opts.Context
@@ -180,7 +221,7 @@ func (a *App) loadConfigForUpdate() (*config.Config, error) {
 // loadFromSource reads whichever config file ResolveSource selects, reporting
 // the choice when the user did not make it themselves.
 func (a *App) loadFromSource() (*config.Config, error) {
-	src := config.ResolveSource(a.Opts.ConfigPath)
+	src := config.ResolveSource(a.configPath())
 	a.reportConfigSource(src)
 
 	cfg, err := config.LoadFrom(src.Path)
@@ -218,10 +259,19 @@ func (a *App) reportConfigSource(src config.Source) {
 	}
 }
 
+// configPath is the config file the user named: --config, else
+// DTMGD_CONFIG, else "" (discover a local .dtmgd.yaml or use the default).
+func (a *App) configPath() string {
+	if a.Opts.ConfigPath != "" {
+		return a.Opts.ConfigPath
+	}
+	return os.Getenv("DTMGD_CONFIG")
+}
+
 // saveConfig saves config, respecting the --config flag and local config presence.
 func (a *App) saveConfig(cfg *config.Config) error {
-	if a.Opts.ConfigPath != "" {
-		return cfg.SaveTo(a.Opts.ConfigPath)
+	if p := a.configPath(); p != "" {
+		return cfg.SaveTo(p)
 	}
 	if local := config.FindLocalConfig(); local != "" {
 		return cfg.SaveTo(local)
@@ -229,24 +279,9 @@ func (a *App) saveConfig(cfg *config.Config) error {
 	return cfg.Save()
 }
 
-// newClient creates an API client from the current config.
-func (a *App) newClient(cfg *config.Config) (*client.Client, error) {
-	c, err := client.NewFromConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-	c.SetVerbosity(a.Opts.Verbose)
-	return c, nil
-}
-
-// newClientWithHostEnv creates an API client for a specific host/env/token.
-func (a *App) newClientWithHostEnv(host, envID, token string) (*client.Client, error) {
-	c, err := client.New(host, envID, token)
-	if err != nil {
-		return nil, err
-	}
-	c.SetVerbosity(a.Opts.Verbose)
-	return c, nil
+// clientOptions are the client settings this invocation's flags ask for.
+func (a *App) clientOptions() client.Options {
+	return client.Options{Verbosity: a.Opts.Verbose}
 }
 
 // printer returns a Printer writing to a.Out, chosen by the --output flag and
@@ -254,7 +289,7 @@ func (a *App) newClientWithHostEnv(host, envID, token string) (*client.Client, e
 // envelope.
 func (a *App) printer(resource string) output.Printer {
 	if a.agentMode() {
-		return output.NewAgentPrinterTo(a.Out, resource)
+		return output.NewAgentPrinter(a.Out, &agentmode.ResponseContext{Resource: resource})
 	}
 	format := a.Opts.Output
 	if format == "" {
@@ -282,37 +317,4 @@ func (a *App) columns() []string {
 // isMultiEnv returns true if the --env flag specifies multiple environments.
 func (a *App) isMultiEnv() bool {
 	return a.Opts.Env == "ALL_ENVIRONMENTS" || strings.Contains(a.Opts.Env, ";")
-}
-
-// maxPagesFor returns the page limit. When --limit is set, fetch only 1 page
-// (the API's pageSize already limits results). Otherwise use --max-pages.
-func (a *App) maxPagesFor(hasLimit bool) int {
-	if hasLimit {
-		return 1
-	}
-	return a.Opts.MaxPages
-}
-
-// effectiveEnvSpec returns the env spec from the --env flag.
-func (a *App) effectiveEnvSpec() string {
-	return a.Opts.Env
-}
-
-// multiExec runs an API call against one or more environments based on --env flag.
-// Returns the unwrapped result (single value or map of name→value).
-func (a *App) multiExec(cfg *config.Config, apiCall func(c *client.Client) (interface{}, error)) (interface{}, error) {
-	spec := a.effectiveEnvSpec()
-	if spec == "" {
-		// Single environment — use current context directly
-		c, err := a.newClient(cfg)
-		if err != nil {
-			return nil, err
-		}
-		return apiCall(c)
-	}
-	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, apiCall)
-	if err != nil {
-		return nil, err
-	}
-	return client.UnwrapSingle(results)
 }

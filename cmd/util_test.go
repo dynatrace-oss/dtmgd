@@ -105,11 +105,3 @@ func TestAgentMode(t *testing.T) {
 		t.Error("--agent should return true")
 	}
 }
-
-// TestEffectiveEnvSpec checks effectiveEnvSpec reads --env.
-func TestEffectiveEnvSpec(t *testing.T) {
-	a := &App{Opts: GlobalOptions{Env: "prod;staging"}}
-	if got := a.effectiveEnvSpec(); got != "prod;staging" {
-		t.Errorf("expected 'prod;staging', got %q", got)
-	}
-}

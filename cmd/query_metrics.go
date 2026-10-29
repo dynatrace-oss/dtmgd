@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 
@@ -51,19 +51,14 @@ Examples:
   dtmgd query metrics --env ALL_ENVIRONMENTS --metric builtin:host.cpu.usage --from now-1h`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.metric == "" {
-				return fmt.Errorf("--metric is required (e.g. builtin:service.response.time)")
+				return &UsageError{Err: fmt.Errorf("--metric is required (e.g. builtin:service.response.time)")}
 			}
 			if opts.from == "" {
-				return fmt.Errorf("--from is required")
+				return &UsageError{Err: fmt.Errorf("--from is required (e.g. now-1h)")}
 			}
 			to := opts.to
 			if to == "" {
 				to = "now"
-			}
-
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
 			}
 
 			params := map[string]string{
@@ -78,49 +73,36 @@ Examples:
 				params["entitySelector"] = opts.entity
 			}
 
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					var resp MetricQueryResponse
-					if err := c.GetV2("/metrics/query", params, &resp); err != nil {
-						return nil, err
+			return a.runFetch(fetchSpec{
+				Verb:     "query",
+				Resource: "metrics",
+				Fetch: func(c *client.Client, _ int) (fetched, error) {
+					var body map[string]interface{}
+					if err := c.GetV2("/metrics/query", params, &body); err != nil {
+						return fetched{}, err
 					}
-					return resp, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("metrics").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			var resp MetricQueryResponse
-			if err := c.GetV2("/metrics/query", params, &resp); err != nil {
-				return err
-			}
-
-			if a.agentMode() {
-				return a.printer("metrics").Print(resp)
-			}
-			if a.Opts.Output == "yaml" {
-				return a.printer("").Print(resp)
-			}
-			if a.Opts.Output == "table" || a.Opts.Output == "wide" || a.Opts.Output == "" {
-				resolveMetricEntityNames(c, &resp)
-				a.printMetricQuerySummary(resp)
-				return nil
-			}
-
-			// json
-			out, err := json.MarshalIndent(resp, "", "  ")
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintln(a.Out, string(out))
-			return nil
+					if !a.humanOutput() {
+						return fetched{Body: body, Total: -1}, nil
+					}
+					// A table names the entities behind each series. The
+					// names come from a second request, so json, yaml and
+					// agent output (the API's own object) never pay for it,
+					// and a failed lookup leaves the IDs rather than failing.
+					// Only Human sees this Body, so it is the typed form.
+					var resp MetricQueryResponse
+					if err := client.DecodePaged(body, &resp); err != nil {
+						return fetched{}, err
+					}
+					var warnings []string
+					if err := resolveMetricEntityNames(c, &resp); err != nil {
+						warnings = append(warnings, fmt.Sprintf("Could not look up entity names (%v); showing entity IDs.", err))
+					}
+					return fetched{Body: resp, Total: -1, Warnings: warnings}, nil
+				},
+				Human: func(w io.Writer, body interface{}) error {
+					return a.printMetricQuerySummary(w, body.(MetricQueryResponse))
+				},
+			})
 		},
 	}
 	cmd.Flags().StringVar(&opts.metric, "metric", "", "metric selector (required), e.g. builtin:service.response.time")
@@ -128,7 +110,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.resolution, "resolution", "", "data resolution (e.g. 5m, 1h, 1d)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter metric data")
-	return cmd
+	return withScopes(cmd, "metrics.read", "entities.read")
 }
 
 // MetricEntitySummaryRow is a table row for per-entity single-value metric results.
@@ -172,8 +154,9 @@ func extractEntityLabel(dimMap map[string]string) (name, id string) {
 
 // resolveMetricEntityNames enriches every DimensionMap in resp with
 // "dt.entity.X.name" entries by fetching display names from /api/v2/entities.
-// Missing or failed lookups are silently ignored so output is always printed.
-func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) {
+// An entity the lookup does not return keeps its ID alone; a failed lookup is
+// returned, leaving resp unchanged.
+func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) error {
 	// Collect unique entity IDs and their dimension key prefix.
 	seen := map[string]string{} // entityID -> dimKey (e.g. "dt.entity.service")
 	for _, res := range resp.Result {
@@ -186,7 +169,7 @@ func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) {
 		}
 	}
 	if len(seen) == 0 {
-		return
+		return nil
 	}
 
 	// Build entitySelector: entityId("id1","id2",...)
@@ -207,7 +190,7 @@ func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) {
 		"pageSize":       "500",
 	}
 	if err := c.GetV2("/entities", params, &entResp); err != nil {
-		return // silently ignore; entity IDs will still be shown
+		return err
 	}
 
 	// Build ID → name map.
@@ -217,6 +200,7 @@ func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) {
 	}
 
 	injectEntityNames(resp, nameMap)
+	return nil
 }
 
 // injectEntityNames writes "dt.entity.X.name" keys into every DimensionMap in resp
@@ -236,21 +220,26 @@ func injectEntityNames(resp *MetricQueryResponse, nameMap map[string]string) {
 	}
 }
 
-func (a *App) printMetricQuerySummary(resp MetricQueryResponse) {
-	output.PrintInfo("Resolution: %s", resp.Resolution)
+// printMetricQuerySummary writes a metric query result for a person: a table
+// of single values per entity, or each series' timestamps and values.
+func (a *App) printMetricQuerySummary(w io.Writer, resp MetricQueryResponse) error {
+	_, _ = fmt.Fprintf(w, "Resolution: %s\n", resp.Resolution)
 	for _, res := range resp.Result {
-		output.PrintInfo("\nMetric: %s", res.MetricID)
+		_, _ = fmt.Fprintf(w, "\nMetric: %s\n", res.MetricID)
 		if isSingleValueResult(res.Data) {
-			a.printEntitySummaryTable(res.Data)
-		} else {
-			for _, dp := range res.Data {
-				a.printTimeSeriesDataPoint(dp)
+			if err := a.printEntitySummaryTable(w, res.Data); err != nil {
+				return err
 			}
+			continue
+		}
+		for _, dp := range res.Data {
+			printTimeSeriesDataPoint(w, dp)
 		}
 	}
+	return nil
 }
 
-func (a *App) printEntitySummaryTable(data []MetricQueryDataPoints) {
+func (a *App) printEntitySummaryTable(w io.Writer, data []MetricQueryDataPoints) error {
 	type row struct {
 		name  string
 		id    string
@@ -282,7 +271,7 @@ func (a *App) printEntitySummaryTable(data []MetricQueryDataPoints) {
 		}
 		return rows[i].id < rows[j].id
 	})
-	var tableRows []MetricEntitySummaryRow
+	tableRows := make([]MetricEntitySummaryRow, 0, len(rows))
 	for _, r := range rows {
 		val := "null"
 		if r.value != nil {
@@ -294,10 +283,10 @@ func (a *App) printEntitySummaryTable(data []MetricQueryDataPoints) {
 			Value:  val,
 		})
 	}
-	_ = a.printer("").PrintList(tableRows)
+	return output.NewPrinterToWithColumns(string(a.format()), w, a.columns()).PrintList(tableRows)
 }
 
-func (a *App) printTimeSeriesDataPoint(dp MetricQueryDataPoints) {
+func printTimeSeriesDataPoint(w io.Writer, dp MetricQueryDataPoints) {
 	name, id := extractEntityLabel(dp.DimensionMap)
 	label := ""
 	if name != "" {
@@ -313,18 +302,19 @@ func (a *App) printTimeSeriesDataPoint(dp MetricQueryDataPoints) {
 				parts = append(parts, k+"="+v)
 			}
 		}
+		sort.Strings(parts)
 		label = strings.Join(parts, " ")
 	}
 	if label != "" {
-		output.PrintInfo("  Entity: %s", label)
+		_, _ = fmt.Fprintf(w, "  Entity: %s\n", label)
 	}
-	_, _ = fmt.Fprintf(a.Out, "  %-26s  %s\n", "TIMESTAMP (UTC)", "VALUE")
-	_, _ = fmt.Fprintf(a.Out, "  %-26s  %s\n", "-------------------", "-----")
+	_, _ = fmt.Fprintf(w, "  %-26s  %s\n", "TIMESTAMP (UTC)", "VALUE")
+	_, _ = fmt.Fprintf(w, "  %-26s  %s\n", "-------------------", "-----")
 	for i, ts := range dp.Timestamps {
 		val := "null"
 		if i < len(dp.Values) && dp.Values[i] != nil {
 			val = fmt.Sprintf("%.4f", *dp.Values[i])
 		}
-		_, _ = fmt.Fprintf(a.Out, "  %-26s  %s\n", msToTime(ts), val)
+		_, _ = fmt.Fprintf(w, "  %-26s  %s\n", msToTime(ts), val)
 	}
 }

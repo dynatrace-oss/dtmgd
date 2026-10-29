@@ -39,7 +39,7 @@ brew install dynatrace-oss/tap/dtmgd
 brew upgrade dtmgd
 ```
 
-**Option 2 — go install (requires Go 1.25+)**
+**Option 2 — go install (requires Go 1.26+)**
 
 ```bash
 go install github.com/dynatrace-oss/dtmgd@latest
@@ -73,8 +73,8 @@ dtmgd config set-context prod \
 #    stays out of your shell history. Saved to the OS keyring when available.
 dtmgd config set-credentials prod-token
 
-# 3. Verify connectivity
-dtmgd get environments
+# 3. Verify connectivity, token and cluster version
+dtmgd doctor
 
 # 4. List open problems
 dtmgd get problems --status OPEN
@@ -122,19 +122,20 @@ For more information about creating API tokens in Managed deployments, refer to 
 
 ### Required API Token Scopes
 
-Your API token must include the following scopes for full functionality:
+Your API token needs these scopes for every command to work. Each command
+declares the scopes it uses, and a permission error names the ones the failed
+command needs; a test keeps this list identical to those declarations.
 
-- Access problem and event feed, metrics, and topology (`DataExport`) — required for `dtmgd get environments`
-- Read cluster configuration (`ReadConfig`)
-- Read audit logs (`auditLogs.read`)
-- Read entities (`entities.read`)
-- Read events (`events.read`)
-- Read logs (`logs.read`)
-- Read metrics (`metrics.read`)
-- Read network zones (`networkZones.read`)
-- Read problems (`problems.read`)
-- Read security problems (`securityProblems.read`)
-- Read SLO (`slo.read`)
+<!-- scopes:start -->
+- Access problem and event feed, metrics, and topology (`DataExport`): `get environments`
+- Read entities (`entities.read`): entities, entity types and relations; name lookups in `query metrics` and `query log-counts`
+- Read events (`events.read`): events
+- Read logs (`logs.read`): `query logs`, `query log-counts`
+- Read metrics (`metrics.read`): metrics, `query metrics`
+- Read problems (`problems.read`): problems
+- Read security problems (`securityProblems.read`): security problems
+- Read SLO (`slo.read`): SLOs
+<!-- scopes:end -->
 
 > **Note:** API token scopes in Managed deployments differ from SaaS Platform tokens. Ensure you select the correct scopes for your Managed cluster version.
 
@@ -150,6 +151,8 @@ dtmgd config get-contexts          # list all contexts
 dtmgd config current-context       # show active context name
 dtmgd config use-context <name>    # switch active context
 dtmgd config delete-context <name> # remove a context
+dtmgd config delete-context <name> --delete-credentials  # ... and its token, unless shared
+dtmgd config delete-credentials <name>  # delete a token from the keyring and the config
 dtmgd config migrate-tokens        # move plaintext tokens to OS keyring
 dtmgd config view                  # dump full config (token values masked)
 dtmgd config view --show-tokens    # ... including token values
@@ -163,15 +166,20 @@ dtmgd ctx delete <name>            # delete context
 ### Get (list resources)
 
 ```
-dtmgd get environments       # verify connectivity and cluster version
-dtmgd get problems           # --from, --to, --status, --impact, --selector, --entity, --limit, --sort
+dtmgd get environments       # configured contexts and cluster version (connectivity check: use dtmgd doctor)
+dtmgd get problems           # --from, --to, --status, --impact, --selector, --entity, --limit, --sort, --watch
 dtmgd get entities           # --selector (required), --from, --to, --limit, --sort, --mz
-dtmgd get entity-types       # list all entity types
-dtmgd get events             # --from (required), --to, --type, --entity, --limit
+dtmgd get entity-types       # list all entity types; --limit
+dtmgd get events             # --from (required), --to, --type, --entity, --limit, --watch
 dtmgd get metrics            # --search, --entity, --limit
 dtmgd get slos               # --enabled, --limit, --evaluate, --selector (sloSelector DSL)
 dtmgd get security-problems  # --risk, --status, --selector, --limit
 ```
+
+`get environments` still runs its per-context connectivity check, and prints a
+note on stderr pointing to `dtmgd doctor`. That role has moved to `doctor`; in a
+coming release `get environments` will list environments from the Cluster API
+instead.
 
 > `describe problem` accepts the UUID from the `PROBLEM-ID` column, **not** the
 > short `P-XXXXX` display ID shown in the `DISPLAY-ID` column.
@@ -182,7 +190,7 @@ dtmgd get security-problems  # --risk, --status, --selector, --limit
 > dtmgd describe problem -- -6546711275898328738_1776193140000V2
 > ```
 
-### Describe (detail view, outputs JSON by default)
+### Describe (detail view)
 
 ```
 dtmgd describe problem <problem-id>
@@ -191,9 +199,15 @@ dtmgd describe entity-type <type>
 dtmgd describe entity-relations <entity-id>
 dtmgd describe event <event-id>
 dtmgd describe metric <metric-id>
-dtmgd describe slo <slo-id>  [--timeframe CURRENT|GTF --from ... --to ...]
+dtmgd describe slo <slo-id>  [--timeframe CURRENT|GTF] [--from ... --to ...]
 dtmgd describe security-problem <security-problem-id>
 ```
+
+By default `describe problem`, `describe slo` and `describe security-problem`
+print a readable summary, and the other describe commands print the API object
+as YAML. `-o json` or `-o yaml` prints the API object as it is. For
+`describe slo`, `--from`/`--to` imply `--timeframe GTF` when `--timeframe` is
+not given, so the dates are honoured.
 
 ### Query (time-range data)
 
@@ -202,11 +216,49 @@ dtmgd query metrics --metric builtin:service.response.time --from now-1h --to no
 dtmgd query metrics --metric builtin:host.cpu.usage --from now-24h --resolution 1h
 dtmgd query logs --query "error" --from now-1h --to now
 dtmgd query logs --query "timeout" --from now-30m --limit 50
-dtmgd query logs --query "error" --from now-1h --entity 'type(PROCESS_GROUP),tag("[Environment]BookStore")'
-dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-1h
+dtmgd query logs --query "error" --from now-1h --entity 'type(PROCESS_GROUP),tag("[Environment]Production")'
+dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]Production")' --from now-1h
 # Note: type(SERVICE) is auto-converted to type(PROCESS_GROUP) internally (logs are attributed
 # to process groups on DT Managed Classic). Services with ERROR-only log level show 0 INFO/WARN.
 ```
+
+`query log-counts` is computed by dtmgd, so its json, yaml and agent output is
+its own shape rather than an API response:
+`{"logCounts": [{"service": …, "info": …, "warn": …, "error": …, "total": …}]}`.
+A count is `null` (`-` in the table) when the process group fell outside the
+API's top-N aggregation window for that level (`--max-services`, at most 100),
+so its true count is unknown rather than 0.
+
+### Doctor (connectivity check)
+
+```
+dtmgd doctor                 # check every configured context
+dtmgd doctor -c prod         # check one context
+dtmgd doctor -o json         # rows as JSON (also -o yaml, or -A for an agent envelope)
+```
+
+For each context, `doctor` checks that it resolves, that its token is stored,
+that the cluster answers, and that the cluster version is at least 1.328.0, the
+oldest version the Dynatrace Managed MCP server supports. It prints one row per
+context (`CONTEXT HOST ENV-ID STATUS VERSION DETAIL`) with status `ok`, `warn`
+or `fail`. When the token cannot read the cluster version (401 or 403), doctor
+tries `GET /api/v2/metrics?pageSize=1` instead, as the MCP server does; if that
+works, the context is a `warn` with version `unknown`. Contexts are checked in
+parallel, up to `--concurrency` (default 10) at a time. `doctor` exits 1 when
+any context fails.
+
+### Commands (machine-readable catalog)
+
+```
+dtmgd commands               # full catalog: paths, aliases, flags, required token scopes
+dtmgd commands --brief       # just the resources of get, describe and query
+dtmgd commands -o yaml       # the same as YAML
+```
+
+The catalog is JSON by default and is never wrapped in an agent envelope, even
+with `-A`. Global flags are listed once, under `global_flags`; each command lists
+only its own flags. AI agents can start with `dtmgd commands --brief` to learn
+what exists.
 
 ## Global Flags
 
@@ -215,16 +267,51 @@ dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --
 | `--config <file>` | Config file path (default: `~/.config/dtmgd/config`) |
 | `-c, --context <name>` | Override current context |
 | `-e, --env <spec>` | Target environment(s): context name, `"prod;staging"`, or `ALL_ENVIRONMENTS` |
-| `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` |
+| `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` (or `yml`); any other value is a usage error (exit 2) before any request is made |
 | `-A, --agent` | Force AI agent envelope output (`{ok, result, context}`) |
 | `--no-agent` | Disable auto-detected agent mode |
+| `--plain` | Words instead of symbols on stderr, no screen control (automatic when stdout is not a terminal) |
 | `--max-pages <n>` | Maximum pages to fetch (0 = all, default). Pagination is automatic. |
 | `--concurrency <n>` | Maximum environments queried at once with `--env` (default: `10`) |
 | `--columns <cols>` | Comma-separated columns to show in table output |
-| `-w, --watch` | Re-run the command periodically |
-| `--watch-interval <d>` | Interval between watch refreshes (default: `5s`) |
 | `-v` | Verbose: show HTTP request/response summaries |
 | `-vv` | Extra verbose: full headers and body |
+
+`--watch` and `--watch-interval` are flags of `get problems` and `get events`
+only; see [Watch Mode](#watch-mode).
+
+## Output
+
+stdout carries only data. Everything meant for a person — "No problems found",
+"Showing 10 of 15 problems", warnings, errors and hints — goes to stderr, so
+`dtmgd get problems -o json | jq` never sees it.
+
+For every `get`, `describe` and `query` command except `get environments` and
+`query log-counts`, `-o json`, `-o yaml` and the agent envelope's `result` are
+the API's own response, with its camelCase keys (`problemId`, `totalCount`, `nextPageKey`),
+not the table's columns. An empty result prints that object with an empty list
+(`"problems": []`) rather than nothing.
+
+`--plain` replaces the stderr symbols (`⚠ ✗ 💡`) with words (`Warning:`,
+`Error:`, `Hint:`) and stops `--watch` from clearing the screen. It is on
+automatically when stdout is not a terminal or `NO_COLOR` is set, unless
+`FORCE_COLOR` is set.
+
+## Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Any other error |
+| `2` | Usage error: unknown command, resource or flag, a missing argument or required flag |
+| `3` | Authentication failed (HTTP 401) |
+| `4` | Not found (HTTP 404) |
+| `5` | Permission denied (HTTP 403) |
+
+The codes are the ones `dtctl` uses. A multi-environment (`--env`) call exits
+non-zero if any environment fails: with the shared code when every environment
+failed the same way (all 403 → `5`), otherwise `1`. The environments that
+answered are still printed.
 
 ## Multi-Environment Queries
 
@@ -248,7 +335,17 @@ dtmgd get problems --env "eu-prod;us-prod;ap-prod;dev" -o json
 # Multi env result   → { "<context-1>": {...}, "<context-2>": {...} }
 ```
 
-The `--env` flag works with all `get`, `describe`, and `query` commands.
+With several environments, `-o json`, `-o yaml` and agent output are one map
+keyed by context name, and an environment that failed holds
+`{"error": "..."}` in place of its result. A table prints a `== <name> ==`
+section per environment, with a failed environment's error on stderr. Either
+way every environment that answered is printed, and the call still exits
+non-zero if any failed (see [Exit Codes](#exit-codes)).
+
+The `--env` flag works with every `get`, `describe` and `query` command except
+`get environments`, which always checks every configured context. `config`,
+`ctx`, `skills`, `doctor` and `commands` ignore it; `doctor` takes `-c` to
+check a single context.
 
 Environments are queried in parallel, up to 10 at a time. Since a Managed
 cluster commonly hosts 20-50 environment IDs, firing them all at once draws
@@ -263,25 +360,45 @@ dtmgd get problems --env ALL_ENVIRONMENTS --concurrency 25
 
 ## AI Agent Mode
 
-When running inside an AI agent (Claude Code, Cursor, GitHub Copilot, Kiro, etc.),
-dtmgd auto-detects the environment and wraps all output in a structured JSON envelope:
+When running inside an AI agent (Claude Code, Cursor, GitHub Copilot, Codex, Gemini
+CLI, Kiro, and others), dtmgd auto-detects the environment and wraps all output in a
+structured JSON envelope. The envelope is the one dtctl uses (its `sdk/agentmode`
+package), so an agent that drives both CLIs parses one shape:
 
 ```json
 {
   "ok": true,
   "result": { "problems": [...], "totalCount": 5 },
-  "context": { "resource": "problems" }
+  "context": { "verb": "get", "resource": "problems", "total": 5 }
 }
 ```
 
-Errors are also wrapped:
+`result` is the API's own response. In agent mode a list returns at most 50
+items when `--limit` is not given; `context.total` says how many exist (when
+the API reports it) and `context.has_more` is `true` when there are more than
+`result` holds. Pass `--limit` to get more or fewer.
+
+Errors are also wrapped, with a classified `code`, the HTTP `status_code` when
+there is one, and what to do next in `suggestions`:
 
 ```json
 {
   "ok": false,
-  "error": { "code": "error", "message": "API error 401" }
+  "result": null,
+  "error": {
+    "code": "auth_required",
+    "message": "API error 401: Token Authentication failed",
+    "status_code": 401,
+    "suggestions": ["Authentication failed. Check your API token and ensure it hasn't expired. …"]
+  }
 }
 ```
+
+Error codes: `auth_required` (401), `permission_denied` (403), `not_found` (404),
+`bad_request` (400), `rate_limited` (429), `server_error` (5xx), `config_error`,
+`timeout`, `partial_failure` (some environments of an `--env` call failed),
+`validation_error` and `unknown_command` (usage errors), and `error` for
+anything else.
 
 API error messages carry the status code and, when the cluster returns a
 recognised error envelope, its human-readable message — but not the rest of the
@@ -289,7 +406,7 @@ response body. Run with `-vv` to see the full response.
 
 Force it on with `-A` / `--agent`, or disable auto-detection with `--no-agent`.
 When agent mode was switched on by auto-detection, dtmgd prints one line to
-stderr saying which variable did it. An explicit `-A` or `--no-agent` suppresses
+stderr naming the agent it detected (`Agent mode is on (detected claude-code). …`). An explicit `-A` or `--no-agent` suppresses
 that line, so keep stderr separate (no `2>&1`) when piping envelopes to `jq`,
 or pass `-A`.
 
@@ -337,12 +454,18 @@ existing installation.
 ## Pagination
 
 All list commands (`get problems`, `get entities`, etc.) automatically follow
-`nextPageKey` to fetch all pages. Use `--limit` to cap results to a single page,
-or `--max-pages` to limit the number of pages fetched.
+`nextPageKey` to fetch all pages. `--limit <n>` returns at most `n` items in
+every output format and stops paging as soon as it has them, so a small limit
+costs one or two requests. Use `--max-pages` to limit the number of pages
+fetched. When the result is truncated, `-o json` and `-o yaml` keep the API's
+`nextPageKey`, and a table is followed by a `Showing n of m` note on stderr.
+In agent mode, lists return at most 50 items unless you pass `--limit` (see
+[AI Agent Mode](#ai-agent-mode)).
 
 ## Watch Mode
 
-Monitor resources in real-time with `--watch`:
+Monitor resources in real-time with `--watch`, a flag of `get problems` and
+`get events` only:
 
 ```bash
 dtmgd get problems --status OPEN --watch
@@ -361,6 +484,17 @@ Both relative and absolute times are accepted:
 | Relative | `now-1h`, `now-24h`, `now-7d`, `now-30m` |
 | ISO 8601 | `2024-01-01T10:00:00Z` |
 | Unix ms | `1640995200000` |
+
+### Environment variables
+
+| Variable | Effect |
+|---|---|
+| `DTMGD_CONFIG` | Config file to use when `--config` is not given. |
+| `DTMGD_CONTEXT` | Context to use when neither `--context` nor a single `--env` name is given; overrides the file's `current-context`. |
+| `NO_COLOR` | Plain output: no symbols or screen control (same as `--plain`). |
+| `FORCE_COLOR` | Keep symbols even when stdout is not a terminal. |
+
+Flags always win over environment variables, which win over the config file.
 
 ## Configuration File Format
 
@@ -458,7 +592,7 @@ file explicitly and bypass the search.
 ## Building
 
 ```bash
-# Requires Go 1.25+
+# Requires Go 1.26+
 make build        # produces ./dtmgd
 make install      # installs to $GOPATH/bin (or $HOME/go/bin)
 make vet          # run go vet
@@ -483,12 +617,11 @@ dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
 
 | MCP Tool | dtmgd command |
 |---|---|
-| `get_environments_info` | `dtmgd get environments` |
+| `get_environments_info` | `dtmgd doctor` |
 | `list_available_metrics` | `dtmgd get metrics` |
 | `get_metric_details` | `dtmgd describe metric <id>` |
 | `query_metrics_data` | `dtmgd query metrics` |
 | `query_logs` | `dtmgd query logs --query <text> --from <t> --to <t>` |
-| `aggregate_logs` | `dtmgd query log-counts --entity <sel> --from <t> --to <t>` |
 | `list_events` | `dtmgd get events` |
 | `get_event_details` | `dtmgd describe event <id>` |
 | `list_entity_types` | `dtmgd get entity-types` |
@@ -502,3 +635,6 @@ dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
 | `get_security_problem_details` | `dtmgd describe security-problem <id>` |
 | `list_slos` | `dtmgd get slos` |
 | `get_slo_details` | `dtmgd describe slo <id>` |
+
+`dtmgd query log-counts` (log counts per process group and level) has no MCP
+server counterpart.

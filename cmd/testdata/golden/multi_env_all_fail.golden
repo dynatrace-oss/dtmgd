@@ -1,0 +1,14 @@
+== exit code: 5
+== stdout
+{
+  "a": {
+    "error": "API error 403: Token is missing required scope"
+  },
+  "b": {
+    "error": "API error 403: Token is missing required scope"
+  }
+}
+== stderr
+Error: 2 of 2 environments failed: a: API error 403: Token is missing required scope; b: API error 403: Token is missing required scope
+Hint: Permission denied. Your API token may be missing required scopes.
+  This command needs the token scope(s): problems.read.

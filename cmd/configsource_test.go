@@ -74,7 +74,8 @@ func TestReportConfigSourceVerboseNamesFile(t *testing.T) {
 // together: standing in a subdirectory of a planted config must both load that
 // file and say so.
 func TestLoadFromSourceWarnsEndToEnd(t *testing.T) {
-	// No --config, so the discovery path runs.
+	// No --config and no DTMGD_CONFIG, so the discovery path runs.
+	t.Setenv("DTMGD_CONFIG", "")
 	a := newTestApp("")
 	a.Opts.Verbose = 0
 

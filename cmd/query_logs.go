@@ -1,8 +1,9 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
+	"io"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -48,19 +49,14 @@ Examples:
   dtmgd query logs --env ALL_ENVIRONMENTS --query "error" --from now-1h`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.query == "" {
-				return fmt.Errorf("--query is required (e.g. \"error\")")
+				return &UsageError{Err: fmt.Errorf("--query is required (e.g. \"error\")")}
 			}
 			if opts.from == "" {
-				return fmt.Errorf("--from is required (e.g. now-1h)")
+				return &UsageError{Err: fmt.Errorf("--from is required (e.g. now-1h)")}
 			}
 			to := opts.to
 			if to == "" {
 				to = "now"
-			}
-
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
 			}
 
 			params := map[string]string{
@@ -68,11 +64,6 @@ Examples:
 				"from":  opts.from,
 				"to":    to,
 			}
-			limit := 100
-			if opts.limit > 0 {
-				limit = opts.limit
-			}
-			params["limit"] = fmt.Sprintf("%d", limit)
 			if opts.sort != "" {
 				params["sort"] = opts.sort
 			}
@@ -80,81 +71,103 @@ Examples:
 				params["entitySelector"] = opts.entity
 			}
 
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					raw, err := c.GetV2Paged("/logs/search", params, a.maxPagesFor(opts.limit > 0))
-					if err != nil {
-						return nil, err
+			return a.runFetch(fetchSpec{
+				Verb:     "query",
+				Resource: "logs",
+				Fetch: func(c *client.Client, limit int) (fetched, error) {
+					p := make(map[string]string, len(params)+1)
+					for k, v := range params {
+						p[k] = v
 					}
-					return raw, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("logs").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			raw, err := c.GetV2Paged("/logs/search", params, a.maxPagesFor(opts.limit > 0))
-			if err != nil {
-				return err
-			}
-
-			var resp LogsResponse
-			if err := client.DecodePaged(raw, &resp); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.agentMode() {
-				if a.agentMode() {
-					return a.printer("logs").Print(resp)
-				}
-				out, err := json.MarshalIndent(resp, "", "  ")
-				if err != nil {
-					return err
-				}
-				_, _ = fmt.Fprintln(a.Out, string(out))
-				return nil
-			}
-			if a.Opts.Output == "yaml" {
-				return a.printer("").Print(resp)
-			}
-
-			// Human-readable text output
-			if len(resp.Results) == 0 {
-				output.PrintInfo("No log records found.")
-				return nil
-			}
-
-			output.PrintInfo("Found %d log records:", len(resp.Results))
-			_, _ = fmt.Fprintln(a.Out)
-			for _, entry := range resp.Results {
-				ts := msToTime(entry.Timestamp)
-				content := resolveLogContent(entry)
-				status := resolveLogStatus(entry)
-				if status != "" {
-					_, _ = fmt.Fprintf(a.Out, "[%s] [%s] %s\n", ts, status, content)
-				} else {
-					_, _ = fmt.Fprintf(a.Out, "[%s] %s\n", ts, content)
-				}
-			}
-			if resp.TotalCount > 0 && resp.TotalCount > len(resp.Results) {
-				output.PrintInfo("\nShowing %d of %d records. Use --limit to retrieve more.", len(resp.Results), resp.TotalCount)
-			}
-			return nil
+					p["limit"] = strconv.Itoa(logSearchLimit(limit))
+					var body map[string]interface{}
+					if err := c.GetV2("/logs/search", p, &body); err != nil {
+						return fetched{}, err
+					}
+					return logsFetched(body), nil
+				},
+				Human: printLogRecords,
+				Limit: opts.limit,
+				List:  true,
+			})
 		},
 	}
 	cmd.Flags().StringVar(&opts.query, "query", "", "text to search for in log content (required)")
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (required), e.g. now-1h")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
-	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records (default: 100)")
+	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records, at most 1000 (default: 100)")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. -timestamp for newest first)")
-	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
-	return cmd
+	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag(\"env:prod\")')")
+	return withScopes(cmd, "logs.read")
+}
+
+// Default and largest limit of one /logs/search request.
+const (
+	logSearchDefaultLimit = 100
+	logSearchMaxLimit     = 1000
+)
+
+// logSearchLimit is the limit sent to /logs/search for an effective item
+// limit (0 = none): the default without one, and never above the API's cap.
+func logSearchLimit(limit int) int {
+	switch {
+	case limit <= 0:
+		return logSearchDefaultLimit
+	case limit > logSearchMaxLimit:
+		return logSearchMaxLimit
+	}
+	return limit
+}
+
+// logsFetched wraps a /logs/search body. The endpoint pages by slice, so a
+// nextSliceKey means more records match than the body holds. An absent
+// results list becomes an empty one, so an empty result still prints it.
+func logsFetched(body map[string]interface{}) fetched {
+	results, ok := body["results"].([]interface{})
+	if !ok {
+		results = []interface{}{}
+		body["results"] = results
+	}
+	key, _ := body["nextSliceKey"].(string)
+	more := key != ""
+	total := -1
+	if tc, ok := body["totalCount"].(float64); ok {
+		total = int(tc)
+	} else if !more {
+		total = len(results)
+	}
+	if total > len(results) {
+		more = true
+	}
+	return fetched{Body: body, Total: total, HasMore: more}
+}
+
+// printLogRecords writes one "[time] [STATUS] content" line per record, with
+// the record count and any truncation note on stderr.
+func printLogRecords(w io.Writer, body interface{}) error {
+	m := body.(map[string]interface{})
+	var resp LogsResponse
+	if err := client.DecodePaged(m, &resp); err != nil {
+		return err
+	}
+	if len(resp.Results) == 0 {
+		output.PrintInfo("No log records found.")
+		return nil
+	}
+	output.PrintInfo("Found %d log records:", len(resp.Results))
+	for _, entry := range resp.Results {
+		ts := msToTime(entry.Timestamp)
+		content := resolveLogContent(entry)
+		if status := resolveLogStatus(entry); status != "" {
+			_, _ = fmt.Fprintf(w, "[%s] [%s] %s\n", ts, status, content)
+		} else {
+			_, _ = fmt.Fprintf(w, "[%s] %s\n", ts, content)
+		}
+	}
+	if f := logsFetched(m); f.HasMore {
+		output.PrintInfo("%s. Use --limit or narrower filters.", showing(len(resp.Results), f.Total, "log records"))
+	}
+	return nil
 }
 
 // resolveLogContent returns the log content from a LogEntry.

@@ -6,16 +6,9 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 
 ## Knowledge Base
 
-### Go coverage: reach 40% without touching RunE functions
-- **Context**: `cmd` package has low coverage (11%) because `RunE` functions require real API calls; `pkg/config` had 0%
-- **Insight**: Focus coverage work on pure-function helpers: `APIBaseURL()`, `ClusterAPIBaseURL()`, `CurrentContextObj()`, `GetContext()`, `SetContext()`, `DeleteContext()`, config round-trip (SaveTo/LoadFrom), and cmd package helpers (`parseColumns`, `effectiveMaxPages`, `isMultiEnv`). These alone lift coverage to ~44.7%.
-- **When it applies**: Any Go CLI project where command handlers need a live external API and cannot be unit-tested without heavy mocking
-- **Date**: 2026-04-15
-- **Ref**: impl: update README/SKILL and add tests covering changes since v0.0.1
-
 ### GetV2Paged is a method, not a standalone generic function
 - **Context**: Tried `GetV2Paged[T](c, path, params, pages)` standalone generic syntax — doesn't exist
-- **Insight**: `GetV2Paged` is `(c *Client) GetV2Paged(path, params, maxPages) (map[string]interface{}, error)` — returns raw map; use `DecodePaged(raw, &result)` for typed decode
+- **Insight**: `GetV2Paged` is `(c *Client) GetV2Paged(path, params, client.Paging{MaxPages, Limit, ListKey}) (map[string]interface{}, error)` — returns raw map; use `DecodePaged(raw, &result)` for typed decode
 - **When it applies**: Writing tests for pagination in `pkg/client`
 - **Date**: 2025-07-14
 - **Ref**: increase test coverage to 60%, make release v0.0.14
@@ -28,7 +21,7 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **Ref**: increase test coverage to 60%, make release v0.0.14
 
 ### Use 400/403 for error cases in HTTP tests, never 5xx
-- **Context**: resty client has `SetRetryCount(3)` + retry on 5xx; using 500 in httptest adds 3-second waits
+- **Context**: resty client has `SetRetryCount(2)` + retry on 429/5xx with waits of 1–5s; using 500 in httptest adds seconds of retry waits
 - **Insight**: Always use 400 (Bad Request) or 403 (Forbidden) for error test cases — they are NOT retried
 - **When it applies**: Any test using `httptest.NewServer` to simulate errors
 - **Date**: 2025-07-14
@@ -99,7 +92,7 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 
 ### pkg/skills tests fail locally but pass on CI — not a real failure
 - **Context**: `go test ./...` fails `TestInstallAndStatusAndUninstall` and `TestStatusAll` with "expected not installed in fresh dir" on any machine that has dtmgd skills installed. Reproduces on clean `main`, so it looks like a regression when it is not.
-- **Insight**: The tests pass a `t.TempDir()` as `baseDir`, but `Status()` also consults `os.UserHomeDir()` (`pkg/skills/installer.go:234`), so the "fresh dir" is not fresh once you have run `dtmgd skills install`. CI runners have no skills installed, which is why every check is green. Use `go test ./pkg/config/... ./pkg/client/... ./cmd/... ./pkg/output/...` for a clean local signal, and do not "fix" it as part of unrelated work.
+- **Insight**: The tests pass a `t.TempDir()` as `baseDir`, but `Status()` also consults `os.UserHomeDir()` (`pkg/skills/installer.go:327`), so the "fresh dir" is not fresh once you have run `dtmgd skills install`. CI runners have no skills installed, which is why every check is green. Use `go test ./pkg/config/... ./pkg/client/... ./cmd/... ./pkg/output/...` for a clean local signal, and do not "fix" it as part of unrelated work.
 - **When it applies**: Any local full-suite run, especially before concluding that a change broke something
 - **Date**: 2026-08-06
 - **Ref**: impl: resolve config env vars at point of use (#29)
@@ -111,12 +104,12 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **Date**: 2026-08-06
 - **Ref**: impl: resolve config env vars at point of use (#29)
 
-### The `sonar` job always fails and does not gate; `snyk` does gate
+### The `sonar` job always fails and does not gate; `snyk` does not gate either
 - **Context**: PR checks show three similarly named entries — `sonar`, `SonarCloud`, and `SonarCloud Code Analysis`. The `sonar` job fails on every run with "Not authorized or project not found".
-- **Insight**: `sonar.yml` sets `continue-on-error: true` because SONAR_TOKEN lacks Execute Analysis permission, so the *job* shows failed while the *workflow run* succeeds — it does not block merges, and it never actually analyses the code. Real Sonar findings arrive via the `SonarCloud Code Analysis` app integration, which posts to the PR. By contrast `snyk` has no `continue-on-error` (removed in 8b31961) and genuinely gates, so even an infrastructure flake there blocks until re-run.
+- **Insight**: `sonar.yml` sets `continue-on-error: true` because SONAR_TOKEN lacks Execute Analysis permission, so the *job* shows failed while the *workflow run* succeeds — it does not block merges, and it never actually analyses the code. Real Sonar findings arrive via the `SonarCloud Code Analysis` app integration, which posts to the PR. `snyk` is skipped with a `::notice::` when `SNYK_API_TOKEN` is unavailable (Dependabot and fork PRs cannot read repository secrets) and is **not** a required check. What gates a merge is the `main` ruleset's required checks: `test` on ubuntu, macOS and Windows, `lint`, `golangci-lint` and `vulncheck`.
 - **When it applies**: Triaging red checks on a dtmgd PR before assuming the code is at fault
-- **Date**: 2026-08-06
-- **Ref**: impl: resolve config env vars at point of use (#29)
+- **Date**: 2026-08-06 (snyk and required checks updated 2026-10-29)
+- **Ref**: impl: resolve config env vars at point of use (#29); Phase 1/Phase 2 catch-up (#49, #50)
 
 ### Snyk, Dependabot and govulncheck resolve different dependency sets
 - **Context**: Six Snyk-sourced Jira tickets (PRISM-14120..14125) reported `golang.org/x/crypto` v0.51.0 CVEs against dtmgd. Dependabot never alerted and govulncheck never mentioned the module, which looks like two scanners missing something. They did not.
@@ -131,3 +124,52 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **When it applies**: Any "why didn't Dependabot catch this?" question, and any Go transitive-CVE remediation here. Fix the cause by bumping the *real* dependency whose go.mod contributes the requirement — a direct `require` on a module no package imports is dropped again by the next `go mod tidy`. A scheduled `go get -u ./... && go mod tidy` PR is the only thing that keeps indirect deps current.
 - **Date**: 2026-08-06
 - **Ref**: fix(deps): raise golang.org/x/crypto floor past the ssh CVEs (#32)
+
+### setup-go ignores go.mod's `toolchain` line when GOTOOLCHAIN=local is preset
+- **Context**: With `GOTOOLCHAIN: local` set in a CI job's `env`, `actions/setup-go` v7 with `go-version-file: go.mod` installed the `go` directive's version instead of the one on the `toolchain` line, and nothing in the log said so — CI silently built and tested with an older Go than go.mod asked for.
+- **Insight**: `parseGoVersionFile` (`src/installer.ts:652-662`) reads the `toolchain` line only when `GOTOOLCHAIN` is not `local`; otherwise it falls back to the `go` directive. Never preset `GOTOOLCHAIN` in a job: setup-go exports `GOTOOLCHAIN=local` itself once it has resolved the version, so later `go` commands cannot switch toolchains anyway. go.mod currently has no `toolchain` line (`go 1.26.10`), but the trap returns the moment one is added.
+- **When it applies**: Any workflow using `actions/setup-go` with `go-version-file`, and any go.mod that has (or gains) a `toolchain` line
+- **Date**: 2026-10-29
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+
+### goreleaser's tap PR gets 403; open it by hand
+- **Context**: The `homebrew_casks` step pushes the cask to branch `dtmgd-<version>` of the `ivan-gudak/homebrew-tap` fork, then opens a PR to `dynatrace-oss/homebrew-tap`. That PR call fails with 403 "Resource not accessible" with the current `HOMEBREW_TAP_GITHUB_TOKEN`, which can push only to the fork.
+- **Insight**: The release itself publishes; only the tap PR is missing. Open it by hand: `gh pr create --repo dynatrace-oss/homebrew-tap --head ivan-gudak:dtmgd-<version> --base main` (`<version>` without the `v`, as in `.goreleaser.yaml`'s `{{ .ProjectName }}-{{ .Version }}` branch).
+- **When it applies**: Every dtmgd release until the token can open PRs on `dynatrace-oss/homebrew-tap`
+- **Date**: 2026-10-29
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+
+### Release-asset upload "408 Upload body timed out" is a GitHub flake
+- **Context**: A release job failed uploading assets with "408 Upload body timed out due to inactivity".
+- **Insight**: GitHub-side, not a goreleaser or workflow bug. goreleaser leaves a draft release behind holding only `checksums.txt`; delete that draft, then re-run the job.
+- **When it applies**: Any failed release job whose error is a 408 on an asset upload
+- **Date**: 2026-10-29
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+
+### SonarCloud githubactions:S8545 on a pinned `go install …@vX.Y.Z` is a false positive
+- **Context**: SonarCloud reports `githubactions:S8545` ("Dependency versions are not predictable") on steps such as `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0` (`security.yml`, `drift.yml`).
+- **Insight**: The version is pinned, and `go install pkg@version` verifies the module against sum.golang.org, so the install is reproducible. dtctl's workflows do the same (`govulncheck@v1.8.0`, `goimports@v0.50.0`). Resolve the finding as a false positive rather than rewriting the step.
+- **When it applies**: Triaging SonarCloud findings on workflow files
+- **Date**: 2026-10-29
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+
+### Command behaviour is tested end to end with the harness in cmd/harness_test.go
+- **Context**: Phase 2 replaced `Execute()` with `Run(args, stdout, stderr) int` and builds the command tree per invocation (`newRootCmd(a *App)`), so tests can run the real CLI and see its exit code.
+- **Insight**: `runCLI(t, cfgPath, args...)` and `runCLIWithEnv(t, env, cfgPath, args...)` run the CLI through `Run` against an httptest `fakeAPI` (`newFakeAPI` with a route table; `withFakeEnvs` writes a temp config pointing at it) and return stdout, stderr and the exit code. `assertGolden` compares with `cmd/testdata/golden/<name>.golden`; regenerate with `go test ./cmd/ -run <Test> -update` and read the diff — a golden change is a behaviour change. `runCLI` clears every agent-detection variable (`agentmode.EnvVars()`), so output is human unless a test opts in through `runCLIWithEnv` (e.g. `CLAUDECODE=1`).
+- **When it applies**: Adding or changing any command, and before calling a behaviour change safe
+- **Date**: 2026-10-29
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+
+### `go tool cover -func` cannot see closures in package-level vars
+- **Context**: `main` reported 75.1% total coverage while `cmd` was at 32.9%: every command's `RunE` was a closure in a package-level var (`var xCmd = &cobra.Command{RunE: func…}`).
+- **Insight**: `go tool cover -func` totals count only statements inside named functions, so those closures were missing from the total altogether and it over-reported. The CI coverage gate (`test.yml`, threshold 60) uses that total. Commands are now constructors (`newXCmd(a *App)`), so their closures count; keep it that way, or the gate measures less code than it seems to.
+- **When it applies**: Reading or gating on coverage numbers; adding code in closures outside named functions
+- **Date**: 2026-10-29
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+
+### Never point a test at the default config path
+- **Context**: `~/.config/dtmgd/config` on a developer machine may hold live tokens for real clusters. A test that runs a command without `--config` (and without `DTMGD_CONFIG`) reads that file, and one that saves config would rewrite it.
+- **Insight**: Tests pass `--config` with a temp file (`withFakeEnvs` writes one; `runCLI` appends `--config` unless `cfgPath` is `""`). `DTMGD_CONFIG` is tested at path-resolution level only (`TestDTMGDConfigSelectsTheConfigFile` checks `ResolveSource`, never runs a command against the file), so a regression cannot fall back to the real config.
+- **When it applies**: Writing any test that runs a command or loads or saves config
+- **Date**: 2026-10-29
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -16,29 +15,55 @@ import (
 // displayIDRegexp matches security problem display IDs of the form S-NNN (case-insensitive).
 var displayIDRegexp = regexp.MustCompile(`(?i)^s-\d+$`)
 
-// resolveSecurityProblemID converts a display ID (e.g. "S-281") to the internal UUID
-// by listing security problems. If id is already a UUID or cannot be resolved, id is
-// returned unchanged so the API call can fail with a meaningful 404.
-func resolveSecurityProblemID(c *client.Client, id string) string {
+// resolveLookupPageSize is the page size of a display-ID lookup: the most
+// /securityProblems returns per page, so a lookup takes as few requests as
+// possible.
+const resolveLookupPageSize = "500"
+
+// resolveSecurityProblemID converts a display ID (e.g. "S-281") to the internal
+// ID by listing the environment's security problems, stopping at the first
+// page that has it; display IDs are per environment, so c must be the
+// environment's own client. Any other id is returned unchanged, without a
+// request. A failed listing returns its error, and a display ID no security
+// problem has returns a not-found error (exit code 4).
+func resolveSecurityProblemID(c *client.Client, id string, verbose int, errw io.Writer) (string, error) {
 	if !displayIDRegexp.MatchString(id) {
-		return id
+		return id, nil
 	}
-	raw, err := c.GetV2Paged("/securityProblems", map[string]string{"pageSize": "200"}, 0)
-	if err != nil {
-		return id
+	if verbose > 0 {
+		_, _ = fmt.Fprintf(errw, "Resolving %s by listing security problems…\n", id)
 	}
-	var resp SecurityProblemsResponse
-	if err := client.DecodePaged(raw, &resp); err != nil {
-		return id
-	}
-	upperID := strings.ToUpper(id)
-	for _, sp := range resp.SecurityProblems {
-		if strings.ToUpper(sp.DisplayID) == upperID {
-			return sp.SecurityProblemID
+	// The first request sets the page size; later ones send only
+	// nextPageKey, as the API requires.
+	params := map[string]string{"pageSize": resolveLookupPageSize}
+	for {
+		var page struct {
+			SecurityProblems []SecurityProblemEntry `json:"securityProblems"`
+			NextPageKey      string                 `json:"nextPageKey"`
 		}
+		if err := c.GetV2("/securityProblems", params, &page); err != nil {
+			return "", err
+		}
+		for _, sp := range page.SecurityProblems {
+			if strings.EqualFold(sp.DisplayID, id) {
+				return sp.SecurityProblemID, nil
+			}
+		}
+		if page.NextPageKey == "" {
+			return "", &lookupNotFoundError{msg: fmt.Sprintf("security problem %s not found", id)}
+		}
+		params = map[string]string{"nextPageKey": page.NextPageKey}
 	}
-	return id
 }
+
+// lookupNotFoundError is a display-ID lookup that found nothing. It unwraps
+// to an API 404, so exit codes (4), agent error codes (not_found) and hints
+// treat it as the API's own 404 for an unknown ID, while the message says
+// what was looked for rather than claiming the API returned 404.
+type lookupNotFoundError struct{ msg string }
+
+func (e *lookupNotFoundError) Error() string { return e.msg }
+func (e *lookupNotFoundError) Unwrap() error { return &client.ErrAPI{StatusCode: 404} }
 
 // SecurityProblemDetail maps the /securityProblems/{id} API response.
 type SecurityProblemDetail struct {
@@ -151,58 +176,23 @@ Accepts either the display ID (e.g. S-281) from 'dtmgd get security-problems'
 or the internal UUID. Display IDs are resolved automatically.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
-			spFields := "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description"
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					resolvedID := resolveSecurityProblemID(c, args[0])
-					path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
-					var result map[string]interface{}
-					if err := c.GetV2(path, map[string]string{"fields": spFields}, &result); err != nil {
-						return nil, err
+			params := map[string]string{"fields": "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description"}
+			return a.runFetch(fetchSpec{
+				Verb:     "describe",
+				Resource: "security-problem",
+				// A display ID (S-NNN) is resolved with each environment's own
+				// client: display IDs are local to an environment.
+				Fetch: func(c *client.Client, limit int) (fetched, error) {
+					id, err := resolveSecurityProblemID(c, args[0], a.Opts.Verbose, a.Err)
+					if err != nil {
+						return fetched{}, err
 					}
-					return result, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("securityProblem").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			resolvedID := resolveSecurityProblemID(c, args[0])
-			path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
-
-			var raw map[string]interface{}
-			if err := c.GetV2(path, map[string]string{"fields": spFields}, &raw); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("securityProblem").Print(raw)
-			}
-
-			// Re-decode to typed struct for human-readable output.
-			b, err := json.Marshal(raw)
-			if err != nil {
-				return err
-			}
-			var detail SecurityProblemDetail
-			if err := json.Unmarshal(b, &detail); err != nil {
-				return err
-			}
-			printSecurityProblemDetail(a.Out, detail)
-			return nil
+					path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(id))
+					return describeFetch(path, params)(c, limit)
+				},
+				Human: detailHuman(printSecurityProblemDetail),
+			})
 		},
 	}
-	return cmd
+	return withScopes(cmd, "securityProblems.read")
 }

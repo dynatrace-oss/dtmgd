@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 )
 
 // captureStderr runs fn and returns everything written to os.Stderr.
@@ -21,22 +23,9 @@ func captureStderr(fn func()) string {
 	return buf.String()
 }
 
-// captureStdout runs fn and returns everything written to os.Stdout.
-func captureStdout(fn func()) string {
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	fn()
-	w.Close()
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	os.Stdout = old
-	return buf.String()
-}
-
 func TestDetectAgent(t *testing.T) {
 	// Clean state
-	for _, v := range AgentEnvVars {
+	for _, v := range agentmode.EnvVars() {
 		os.Unsetenv(v)
 	}
 	if DetectAgent() {
@@ -52,7 +41,7 @@ func TestDetectAgent(t *testing.T) {
 
 func TestAgentPrinterPrint(t *testing.T) {
 	var buf bytes.Buffer
-	p := &AgentPrinter{w: &buf, resource: "problems"}
+	p := NewAgentPrinter(&buf, &agentmode.ResponseContext{Resource: "problems"})
 	p.Print(map[string]string{"key": "value"})
 
 	out := buf.String()
@@ -194,26 +183,18 @@ func TestPrintHumanError(t *testing.T) {
 	}
 }
 
-// --- DescribeKV ---
+// TestPlainPrefixes pins plain mode: words instead of glyphs, so output read
+// by scripts, screen readers or dumb terminals carries no symbols.
+func TestPlainPrefixes(t *testing.T) {
+	var buf bytes.Buffer
+	SetStderr(&buf)
+	SetPlain(true)
+	t.Cleanup(func() { SetStderr(nil); SetPlain(false) })
 
-func TestDescribeKV(t *testing.T) {
-	out := captureStdout(func() { DescribeKV("Name:", 10, "%s", "Alice") })
-	if !strings.Contains(out, "Name:") || !strings.Contains(out, "Alice") {
-		t.Errorf("unexpected DescribeKV output: %q", out)
-	}
-}
-
-// TestDetectedAgentVar pins which variable switched agent mode on, so the
-// auto-detection notice can name it.
-func TestDetectedAgentVar(t *testing.T) {
-	for _, v := range AgentEnvVars {
-		t.Setenv(v, "")
-	}
-	if got := DetectedAgentVar(); got != "" {
-		t.Fatalf("want empty, got %q", got)
-	}
-	t.Setenv("KIRO", "1")
-	if got := DetectedAgentVar(); got != "KIRO" {
-		t.Fatalf("want KIRO, got %q", got)
+	PrintWarning("x")
+	PrintHumanError("y")
+	PrintHint("z")
+	if want := "Warning: x\nError: y\nHint: z\n"; buf.String() != want {
+		t.Errorf("got %q, want %q", buf.String(), want)
 	}
 }

@@ -2,6 +2,10 @@ package client
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 )
 
@@ -151,5 +155,91 @@ func TestDecodePagedRoundTrip(t *testing.T) {
 	}
 	if resp.Slo[0].Target != 99.9 {
 		t.Errorf("expected 99.9, got %f", resp.Slo[0].Target)
+	}
+}
+
+// pagedServer serves pages of n problems each, linked by nextPageKey, and
+// counts requests.
+func pagedServer(t *testing.T, pages, n int) (*httptest.Server, *int) {
+	t.Helper()
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		page := 1
+		if k := r.URL.Query().Get("nextPageKey"); k != "" {
+			page, _ = strconv.Atoi(k)
+		}
+		items := make([]map[string]interface{}, n)
+		for i := range items {
+			items[i] = map[string]interface{}{"problemId": fmt.Sprintf("P-%d-%d", page, i)}
+		}
+		body := map[string]interface{}{"totalCount": pages * n, "problems": items}
+		if page < pages {
+			body["nextPageKey"] = strconv.Itoa(page + 1)
+		}
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &hits
+}
+
+func pagedClient(t *testing.T, srv *httptest.Server) *Client {
+	t.Helper()
+	c, err := New(srv.URL, "env1", "dt0c01.TEST")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// TestGetV2PagedStopsAtLimit pins that a limit stops paging as soon as it is
+// met, rather than fetching every page and truncating afterwards, and that
+// the result still says more exists.
+func TestGetV2PagedStopsAtLimit(t *testing.T) {
+	srv, hits := pagedServer(t, 3, 10)
+	got, err := pagedClient(t, srv).GetV2Paged("/problems", nil, Paging{Limit: 12, ListKey: "problems"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *hits != 2 {
+		t.Errorf("requests = %d, want 2", *hits)
+	}
+	if n := len(got["problems"].([]interface{})); n != 12 {
+		t.Errorf("items = %d, want 12", n)
+	}
+	if _, ok := got["nextPageKey"]; !ok {
+		t.Error("nextPageKey dropped although results were truncated")
+	}
+}
+
+// TestGetV2PagedExhaustedDropsKey pins that a fully fetched result carries no
+// nextPageKey.
+func TestGetV2PagedExhaustedDropsKey(t *testing.T) {
+	srv, hits := pagedServer(t, 2, 10)
+	got, err := pagedClient(t, srv).GetV2Paged("/problems", nil, Paging{ListKey: "problems"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *hits != 2 || len(got["problems"].([]interface{})) != 20 {
+		t.Errorf("requests = %d, items = %d; want 2 and 20", *hits, len(got["problems"].([]interface{})))
+	}
+	if _, ok := got["nextPageKey"]; ok {
+		t.Error("nextPageKey present on an exhausted result")
+	}
+}
+
+// TestGetV2PagedMaxPagesKeepsKey pins that stopping at --max-pages keeps the
+// truncation signal.
+func TestGetV2PagedMaxPagesKeepsKey(t *testing.T) {
+	srv, hits := pagedServer(t, 3, 10)
+	got, err := pagedClient(t, srv).GetV2Paged("/problems", nil, Paging{MaxPages: 1, ListKey: "problems"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *hits != 1 {
+		t.Errorf("requests = %d, want 1", *hits)
+	}
+	if _, ok := got["nextPageKey"]; !ok {
+		t.Error("nextPageKey dropped although pages remain")
 	}
 }

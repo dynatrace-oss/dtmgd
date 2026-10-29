@@ -40,7 +40,7 @@ const DefaultConcurrency = 10
 // DefaultConcurrency.
 //
 // The apiCall function receives a Client and should perform the request.
-func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, apiCall func(c *Client) (interface{}, error)) ([]EnvResult, error) {
+func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, o Options, apiCall func(c *Client) (interface{}, error)) ([]EnvResult, error) {
 	contexts, err := resolveContexts(cfg, envSpec)
 	if err != nil {
 		return nil, err
@@ -74,27 +74,12 @@ func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, apiCal
 			// ambiguity about which context failed. With multiple
 			// contexts, EnvResult.Name (not this error text) identifies
 			// the context: UnwrapSingle keys the merged result map by it.
-			resolved, resolveErr := nc.Context.Resolve()
-			if resolveErr != nil {
-				r.Error = resolveErr
+			c, err := NewForContext(cfg, nc.Name, o)
+			if err != nil {
+				r.Error = err
 				results[idx] = r
 				return
 			}
-
-			token, tokenErr := cfg.GetToken(resolved.TokenRef)
-			if tokenErr != nil {
-				r.Error = fmt.Errorf("token error: %w", tokenErr)
-				results[idx] = r
-				return
-			}
-
-			c, clientErr := New(resolved.Host, resolved.EnvID, token)
-			if clientErr != nil {
-				r.Error = fmt.Errorf("client error: %w", clientErr)
-				results[idx] = r
-				return
-			}
-			c.SetProxy(resolved.HTTPProxyURL, resolved.HTTPSProxyURL)
 
 			data, callErr := apiCall(c)
 			r.Data = data
@@ -156,29 +141,27 @@ func resolveContexts(cfg *config.Config, envSpec string) ([]config.NamedContext,
 }
 
 // UnwrapSingle returns the data directly if there's only one result,
-// or a map of name→data if there are multiple.
+// otherwise a map of environment name to data, with {"error": msg} for each
+// environment that failed. When any environment failed it also returns a
+// *PartialFailureError, so the call exits non-zero; the map is still valid
+// and callers print it.
 func UnwrapSingle(results []EnvResult) (interface{}, error) {
 	if len(results) == 1 {
 		return results[0].Data, results[0].Error
 	}
 
-	// Multiple environments — collect into a map
 	merged := make(map[string]interface{})
-	var firstErr error
+	var failed []EnvResult
 	for _, r := range results {
 		if r.Error != nil {
 			merged[r.Name] = map[string]string{"error": r.Error.Error()}
-			if firstErr == nil {
-				firstErr = r.Error
-			}
+			failed = append(failed, r)
 		} else {
 			merged[r.Name] = r.Data
 		}
 	}
+	if len(failed) > 0 {
+		return merged, &PartialFailureError{Failed: failed, Total: len(results)}
+	}
 	return merged, nil
-}
-
-// IsSingleEnv returns true if the results are from a single environment.
-func IsSingleEnv(results []EnvResult) bool {
-	return len(results) == 1
 }

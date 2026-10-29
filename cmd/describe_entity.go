@@ -16,42 +16,16 @@ func newDescribeEntityCmd(a *App) *cobra.Command {
 		Short:   "Show detailed information about a specific entity",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
 			path := fmt.Sprintf("/entities/%s", url.PathEscape(args[0]))
 			params := map[string]string{"fields": "+properties,+toRelationships,+fromRelationships,+tags,+managementZones"}
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					var result map[string]interface{}
-					if err := c.GetV2(path, params, &result); err != nil {
-						return nil, err
-					}
-					return result, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("entity").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			var result map[string]interface{}
-			if err := c.GetV2(path, params, &result); err != nil {
-				return err
-			}
-
-			return a.printer("entity").Print(result)
+			return a.runFetch(fetchSpec{
+				Verb:     "describe",
+				Resource: "entity",
+				Fetch:    describeFetch(path, params),
+			})
 		},
 	}
-	return cmd
+	return withScopes(cmd, "entities.read")
 }
 
 func newDescribeEntityTypeCmd(a *App) *cobra.Command {
@@ -61,41 +35,15 @@ func newDescribeEntityTypeCmd(a *App) *cobra.Command {
 		Short:   "Show schema details of an entity type",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
 			path := fmt.Sprintf("/entityTypes/%s", url.PathEscape(args[0]))
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					var result map[string]interface{}
-					if err := c.GetV2(path, nil, &result); err != nil {
-						return nil, err
-					}
-					return result, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("entityType").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			var result map[string]interface{}
-			if err := c.GetV2(path, nil, &result); err != nil {
-				return err
-			}
-
-			return a.printer("entityType").Print(result)
+			return a.runFetch(fetchSpec{
+				Verb:     "describe",
+				Resource: "entity-type",
+				Fetch:    describeFetch(path, nil),
+			})
 		},
 	}
-	return cmd
+	return withScopes(cmd, "entities.read")
 }
 
 func newDescribeEntityRelationsCmd(a *App) *cobra.Command {
@@ -105,54 +53,37 @@ func newDescribeEntityRelationsCmd(a *App) *cobra.Command {
 		Short:   "Show entity relationships",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
-			path := fmt.Sprintf("/entities/%s", url.PathEscape(args[0]))
-			params := map[string]string{"fields": "+toRelationships,+fromRelationships"}
-
-			extractRels := func(result map[string]interface{}) map[string]interface{} {
-				relationships := map[string]interface{}{}
-				if to, ok := result["toRelationships"]; ok {
-					relationships["toRelationships"] = to
-				}
-				if from, ok := result["fromRelationships"]; ok {
-					relationships["fromRelationships"] = from
-				}
-				if len(relationships) == 0 {
-					return result
-				}
-				return relationships
-			}
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					var result map[string]interface{}
-					if err := c.GetV2(path, params, &result); err != nil {
-						return nil, err
+			fetch := describeFetch(fmt.Sprintf("/entities/%s", url.PathEscape(args[0])),
+				map[string]string{"fields": "+toRelationships,+fromRelationships"})
+			return a.runFetch(fetchSpec{
+				Verb:     "describe",
+				Resource: "entity-relations",
+				Fetch: func(c *client.Client, limit int) (fetched, error) {
+					f, err := fetch(c, limit)
+					if err != nil {
+						return f, err
 					}
-					return extractRels(result), nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("entityRelationships").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			var result map[string]interface{}
-			if err := c.GetV2(path, params, &result); err != nil {
-				return err
-			}
-
-			return a.printer("entityRelationships").Print(extractRels(result))
+					f.Body = extractRels(f.Body.(map[string]interface{}))
+					return f, nil
+				},
+			})
 		},
 	}
-	return cmd
+	return withScopes(cmd, "entities.read")
+}
+
+// extractRels keeps only an entity's relationship keys, or returns the entity
+// unchanged when it has none.
+func extractRels(result map[string]interface{}) map[string]interface{} {
+	relationships := map[string]interface{}{}
+	if to, ok := result["toRelationships"]; ok {
+		relationships["toRelationships"] = to
+	}
+	if from, ok := result["fromRelationships"]; ok {
+		relationships["fromRelationships"] = from
+	}
+	if len(relationships) == 0 {
+		return result
+	}
+	return relationships
 }

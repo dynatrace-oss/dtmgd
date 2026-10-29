@@ -1,4 +1,0 @@
-== exit code: 0
-== stdout
-map[displayName:host-1 entityId:HOST-1 firstSeenTms:1.729e+12 fromRelationships:map[isProcessOf:[map[id:PROCESS_GROUP_INSTANCE-1 type:PROCESS_GROUP_INSTANCE]]] lastSeenTms:1.73e+12 managementZones:[map[id:1 name:prod]] properties:map[cpuCores:4 osType:LINUX] tags:[map[context:CONTEXTLESS key:team value:core]] toRelationships:map[] type:HOST]
-== stderr

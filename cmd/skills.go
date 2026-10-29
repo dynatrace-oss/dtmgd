@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -43,16 +44,14 @@ is automatically discovered by any agentskills.io-compatible agent.`,
 
   # List all supported agents
   dtmgd skills install --list`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
-		},
+		RunE: requireSubcommand,
 	}
 	cmd.AddCommand(
 		newSkillsInstallCmd(a),
 		newSkillsUninstallCmd(a),
 		newSkillsStatusCmd(a),
 	)
-	return cmd
+	return asGroup(cmd)
 }
 
 // skillsOptions holds the flags of the skills subcommands. Each subcommand
@@ -170,7 +169,7 @@ func (a *App) runSkillsInstall(opts skillsOptions) error {
 	}
 
 	if a.agentMode() {
-		return output.NewAgentPrinterTo(a.Out, "skills").Print(map[string]interface{}{
+		return output.NewAgentPrinter(a.Out, &agentmode.ResponseContext{Resource: "skills"}).Print(map[string]interface{}{
 			"action":    map[bool]string{true: "updated", false: "installed"}[result.Replaced],
 			"agent":     result.Agent.Name,
 			"path":      result.Path,
@@ -215,7 +214,7 @@ func (a *App) runSkillsUninstall(opts skillsOptions) error {
 	}
 
 	if a.agentMode() {
-		return output.NewAgentPrinterTo(a.Out, "skills").Print(map[string]interface{}{
+		return output.NewAgentPrinter(a.Out, &agentmode.ResponseContext{Resource: "skills"}).Print(map[string]interface{}{
 			"agent":   agent.Name,
 			"removed": removed,
 		})

@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -93,6 +95,7 @@ func newCtxSetCmd(a *App) *cobra.Command {
 }
 
 func newCtxDeleteCmd(a *App) *cobra.Command {
+	var deleteCreds bool
 	cmd := &cobra.Command{
 		Use:               "delete <context-name>",
 		Aliases:           []string{"rm"},
@@ -100,10 +103,23 @@ func newCtxDeleteCmd(a *App) *cobra.Command {
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.contextCompletionFn,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.deleteContext(args[0])
+			return a.deleteContext(args[0], deleteCreds)
 		},
 	}
+	cmd.Flags().BoolVar(&deleteCreds, "delete-credentials", false, "also delete the context's token, unless another context uses it")
 	return cmd
+}
+
+// contextsUsingToken returns the quoted names of the contexts whose
+// token-ref is tokenRef.
+func contextsUsingToken(cfg *config.Config, tokenRef string) []string {
+	var names []string
+	for _, nc := range cfg.Contexts {
+		if nc.Context.TokenRef == tokenRef {
+			names = append(names, strconv.Quote(nc.Name))
+		}
+	}
+	return names
 }
 
 // contextCompletionFn provides shell completion for context names.
@@ -238,13 +254,31 @@ func (a *App) setContext(name, host, envID, tokenRef, description string) error 
 	return nil
 }
 
-func (a *App) deleteContext(name string) error {
+// deleteContext removes a context. With deleteCreds it also deletes the
+// context's token, unless another context still uses it.
+func (a *App) deleteContext(name string, deleteCreds bool) error {
 	cfg, err := a.loadConfigRaw()
 	if err != nil {
 		return err
 	}
+	tokenRef := ""
+	if nc, err := cfg.GetContext(name); err == nil {
+		tokenRef = nc.Context.TokenRef
+	}
 	if err := cfg.DeleteContext(name); err != nil {
 		return err
+	}
+	if deleteCreds && tokenRef != "" {
+		if users := contextsUsingToken(cfg, tokenRef); len(users) > 0 {
+			output.PrintInfo("Kept credential %q: still used by %s.", tokenRef, strings.Join(users, ", "))
+		} else if err := cfg.DeleteToken(tokenRef); errors.Is(err, config.ErrTokenNotFound) {
+			// Nothing to delete is no reason to keep the context.
+			output.PrintInfo("Credential %q was already gone.", tokenRef)
+		} else if err != nil {
+			return err
+		} else {
+			output.PrintSuccess("Credential %q deleted", tokenRef)
+		}
 	}
 	if cfg.CurrentContext == name {
 		cfg.CurrentContext = ""

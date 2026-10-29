@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
-	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
 // EventListItem is the table row for events.
@@ -46,6 +45,7 @@ func newGetEventsCmd(a *App) *cobra.Command {
 		entity    string
 		limit     int
 	}
+	var watch watchOptions
 	cmd := &cobra.Command{
 		Use:     "events",
 		Aliases: []string{"ev", "event"},
@@ -57,18 +57,13 @@ Examples:
   dtmgd get events --from now-6h --type CUSTOM_DEPLOYMENT
   dtmgd get events --env ALL_ENVIRONMENTS --from now-1h`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.watchOrRun(func() error {
-				if opts.from == "" {
-					return fmt.Errorf("--from is required (e.g. now-1h)")
-				}
+			if opts.from == "" {
+				return &UsageError{Err: fmt.Errorf("--from is required (e.g. now-1h)")}
+			}
+			return a.watchOrRun(watch, func() error {
 				to := opts.to
 				if to == "" {
 					to = "now"
-				}
-
-				cfg, err := a.loadConfig()
-				if err != nil {
-					return err
 				}
 
 				params := map[string]string{
@@ -81,78 +76,48 @@ Examples:
 				if opts.entity != "" {
 					params["entitySelector"] = opts.entity
 				}
-				pageSize := 100
-				if opts.limit > 0 {
-					pageSize = opts.limit
-				}
-				params["pageSize"] = fmt.Sprintf("%d", pageSize)
 
-				if a.isMultiEnv() {
-					data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-						return c.GetV2Paged("/events", params, a.maxPagesFor(opts.limit > 0))
-					})
-					if err != nil {
-						return err
-					}
-					return a.printer("events").Print(data)
-				}
-
-				c, err := a.newClient(cfg)
-				if err != nil {
-					return err
-				}
-
-				raw, err := c.GetV2Paged("/events", params, a.maxPagesFor(opts.limit > 0))
-				if err != nil {
-					return err
-				}
-
-				var resp EventsResponse
-				if err := client.DecodePaged(raw, &resp); err != nil {
-					return err
-				}
-
-				if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-					return a.printer("events").Print(resp)
-				}
-
-				events := resp.Events
-				if opts.limit > 0 && len(events) > opts.limit {
-					events = events[:opts.limit]
-				}
-
-				if len(events) == 0 {
-					output.PrintInfo("No events found for the given filters.")
-					return nil
-				}
-
-				var items []EventListItem
-				for _, e := range events {
-					entity := ""
-					if e.AffectedEntity != nil {
-						entity = fmt.Sprintf("%s (%s)", e.AffectedEntity.Name, e.AffectedEntity.Type)
-					}
-					items = append(items, EventListItem{
-						EventID:        e.EventID,
-						EventType:      e.EventType,
-						Title:          e.Title,
-						StartTime:      msToTime(e.StartTime),
-						EndTime:        msToTimeOrEmpty(e.EndTime),
-						AffectedEntity: entity,
-					})
-				}
-
-				if resp.TotalCount > len(events) {
-					output.PrintInfo("Showing %d of %d events.", len(events), resp.TotalCount)
-				}
-				return a.printer("").PrintList(items)
+				return a.runFetch(fetchSpec{
+					Verb:     "get",
+					Resource: "events",
+					Fetch:    pagedFetch("/events", params, "events", 100, a.Opts.MaxPages),
+					Rows:     eventRows,
+					Limit:    opts.limit,
+					List:     true,
+					Empty:    "No events found for the given filters.",
+				})
 			})
 		},
 	}
+	addWatchFlags(cmd, &watch)
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (required), e.g. now-1h")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.eventType, "type", "", "filter by event type (e.g. CUSTOM_DEPLOYMENT)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter events")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of events")
-	return cmd
+	return withScopes(cmd, "events.read")
+}
+
+// eventRows turns an /events body into table rows.
+func eventRows(body interface{}) (interface{}, int, error) {
+	var resp EventsResponse
+	if err := client.DecodePaged(body.(map[string]interface{}), &resp); err != nil {
+		return nil, 0, err
+	}
+	items := make([]EventListItem, 0, len(resp.Events))
+	for _, e := range resp.Events {
+		entity := ""
+		if e.AffectedEntity != nil {
+			entity = fmt.Sprintf("%s (%s)", e.AffectedEntity.Name, e.AffectedEntity.Type)
+		}
+		items = append(items, EventListItem{
+			EventID:        e.EventID,
+			EventType:      e.EventType,
+			Title:          e.Title,
+			StartTime:      msToTime(e.StartTime),
+			EndTime:        msToTimeOrEmpty(e.EndTime),
+			AffectedEntity: entity,
+		})
+	}
+	return items, len(items), nil
 }

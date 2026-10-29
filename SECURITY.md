@@ -46,10 +46,9 @@ the Dynatrace Open Source Community, except where needed to fix the issue.
    Manager); the config file keeps only an empty placeholder.
 2. **Headless systems.** Containers, CI runners and SSH-only servers usually
    have no keyring. There, the token is written to the config file in
-   **plaintext**, and a warning is printed. A config file dtmgd creates gets
-   mode 0600; an existing file keeps its permissions, so check a hand-written
-   one with `ls -l` and `chmod 600` it. For CI prefer a
-   `${VAR}` reference in the config (`token: ${DT_API_TOKEN}`), so the secret
+   **plaintext**, and a warning is printed. dtmgd writes the config file with
+   mode 0600, including a hand-written file that was looser before. For CI
+   prefer a `${VAR}` reference in the config (`token: ${DT_API_TOKEN}`), so the secret
    lives only in the environment, and use short-lived tokens. Run
    `dtmgd config migrate-tokens` once a keyring becomes available.
 3. **Entering tokens.** Use `--token-stdin` or the interactive prompt rather
@@ -66,7 +65,9 @@ the Dynatrace Open Source Community, except where needed to fix the issue.
    saying so. Pass `--no-agent` to keep human-readable output, for example in
    scripts that parse tables. Outside a terminal, `dtmgd skills install` and
    `uninstall` require `--for <agent>`, so an environment variable alone
-   never chooses where files are written.
+   never chooses where files are written. Requests made from inside an agent
+   carry `(AI-Agent: <name>)` in their User-Agent, so cluster administrators
+   can tell agent traffic apart in their access logs.
 7. **Least privilege.** Give environment tokens only the read scopes dtmgd
    needs. A Cluster API token with the Service Provider API scope can also
    change the cluster, so treat it as an admin credential even though dtmgd

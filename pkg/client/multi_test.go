@@ -100,15 +100,6 @@ func TestUnwrapSingleMultiple(t *testing.T) {
 	}
 }
 
-func TestIsSingleEnv(t *testing.T) {
-	if !IsSingleEnv([]EnvResult{{Name: "a"}}) {
-		t.Error("single result should be single env")
-	}
-	if IsSingleEnv([]EnvResult{{Name: "a"}, {Name: "b"}}) {
-		t.Error("two results should not be single env")
-	}
-}
-
 func TestUnwrapSingleWithError(t *testing.T) {
 	errExpected := fmt.Errorf("request failed")
 	results := []EnvResult{{Name: "prod", Data: nil, Error: errExpected}}

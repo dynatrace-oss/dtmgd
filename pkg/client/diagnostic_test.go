@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDiagnoseError(t *testing.T) {
+func TestDiagnose(t *testing.T) {
 	tests := []struct {
 		name     string
 		err      error
@@ -28,7 +28,7 @@ func TestDiagnoseError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hint := DiagnoseError(tt.err)
+			hint := Diagnose(tt.err)
 			if tt.contains == "" {
 				if hint != "" {
 					t.Errorf("expected empty hint, got: %s", hint)
@@ -42,30 +42,36 @@ func TestDiagnoseError(t *testing.T) {
 	}
 }
 
-func TestWrapWithDiagnosis(t *testing.T) {
-	err := WrapWithDiagnosis(errors.New("API error 401: Unauthorized"))
-	if err == nil {
-		t.Fatal("expected non-nil error")
+// TestDiagnoseIgnoresPortNumbers pins that a status hint comes from an API
+// error's status, not from any 40x in the text: an ephemeral port such as
+// 40431 or 4030 made a refused connection "Resource not found" and a
+// timeout "Permission denied".
+func TestDiagnoseIgnoresPortNumbers(t *testing.T) {
+	hint := Diagnose(errors.New("dial tcp 127.0.0.1:40431: connect: connection refused"))
+	if !strings.Contains(hint, "Connection refused") || strings.Contains(hint, "Resource not found") {
+		t.Errorf("connection refused on port 40431: hint %q", hint)
 	}
-	msg := err.Error()
-	if !strings.Contains(msg, "401") {
-		t.Error("original error should be preserved")
-	}
-	if !strings.Contains(msg, "💡") {
-		t.Error("hint should be included")
-	}
-}
-
-func TestWrapWithDiagnosisNil(t *testing.T) {
-	if WrapWithDiagnosis(nil) != nil {
-		t.Error("nil error should return nil")
+	hint = Diagnose(errors.New("dial tcp 127.0.0.1:4030: i/o timeout"))
+	if strings.Contains(hint, "Permission denied") || !strings.Contains(hint, "timed out") {
+		t.Errorf("timeout on port 4030: hint %q", hint)
 	}
 }
 
-func TestWrapWithDiagnosisNoHint(t *testing.T) {
-	original := errors.New("something unknown")
-	wrapped := WrapWithDiagnosis(original)
-	if wrapped != original {
-		t.Error("error without hint should be returned unchanged")
+// TestDiagnosePartialFailure pins that a multi-environment failure gets a
+// status hint only when every failed environment shares the status: with
+// 403 and 401 the first status-looking text in the message used to win.
+func TestDiagnosePartialFailure(t *testing.T) {
+	partial := func(codes ...int) error {
+		p := &PartialFailureError{Total: len(codes)}
+		for i, c := range codes {
+			p.Failed = append(p.Failed, EnvResult{Name: string(rune('a' + i)), Error: APIError(c, "")})
+		}
+		return p
+	}
+	if hint := Diagnose(partial(403, 403)); !strings.Contains(hint, "Permission denied") {
+		t.Errorf("all 403: hint %q, want the permission hint", hint)
+	}
+	if hint := Diagnose(partial(403, 401)); hint != "" {
+		t.Errorf("403 and 401: hint %q, want none", hint)
 	}
 }

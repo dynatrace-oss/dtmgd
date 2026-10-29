@@ -22,13 +22,15 @@ go tool cover -func=coverage.out | grep total
 ## Architecture
 
 ```
-main.go            → calls cmd.Execute()
+main.go            → os.Exit(cmd.Run(os.Args[1:], os.Stdout, os.Stderr))
 cmd/               → Cobra CLI; one file per resource/operation
-  root.go          → persistent flags, LoadConfig, NewPrinter*, multiExec
+  app.go           → App (one per invocation): Run, global flags, loadConfig, printer
+  runner.go        → runFetch: fetch from one or more environments, apply --limit, render
+  root.go          → rewriteNegativeArgs, warnBareRefs
   get_problems.go  → dtmgd get problems
   describe_*.go    → dtmgd describe <resource>
   query_*.go       → dtmgd query metrics/logs
-  watch.go         → --watch flag support (watchOrRun helper)
+  watch.go         → --watch flag support (addWatchFlags, watchOrRun; get problems/events only)
 pkg/client/        → HTTP client (resty); GetV2, GetV1, GetCluster, GetV2Paged
 pkg/config/        → YAML config (~/.config/dtmgd/config); contexts, tokens, keyring
 pkg/output/        → Printer interface: TablePrinter, JSONPrinter, YAMLPrinter, AgentPrinter
@@ -52,49 +54,34 @@ type FooListItem struct {
 `GetV2Paged` is a method (not a generic function) — returns `map[string]interface{}`:
 
 ```go
-raw, err := c.GetV2Paged("/problems", params, effectiveMaxPages(singlePageSuffices))
+raw, err := c.GetV2Paged("/problems", params, client.Paging{MaxPages: maxPages, Limit: limit, ListKey: "problems"})
 var resp ProblemsResponse
 client.DecodePaged(raw, &resp)
 ```
 
-Use `effectiveMaxPages(hasLimit bool)` — returns 1 when a single page satisfies the limit, otherwise `maxPages` from the flag.
+`GetV2Paged` stops once `Limit` items are in hand and keeps the last `nextPageKey` when it stops with pages remaining. Commands normally use `pagedFetch(path, params, listKey, pageCap, a.Opts.MaxPages)` in `cmd/runner.go` rather than calling it directly.
 
 ### Multi-environment fan-out
 
-```go
-if isMultiEnv() {
-    data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-        return c.GetV2Paged("/problems", params, ...)
-    })
-    return NewPrinterForResource("problems").Print(data)
-}
-// single-env path below
-```
-
-`multiExec` fans out in parallel goroutines. Single-env returns the raw value; multi-env returns `map[envName]data`.
+Every `get`, `describe` and `query` command (except `get environments`) calls `a.runFetch(fetchSpec{...})`, which runs the fetch through `client.MultiRequest` for one environment or, with `--env`, several in parallel. Single-env prints the API's own response; multi-env prints a `map[contextName]data` (json/yaml/agent) or a `== name ==` section per environment (table), and fails with a `PartialFailureError` if any environment failed. Do not branch on `isMultiEnv()` in a command.
 
 ### Agent mode (AI envelope output)
 
-Auto-detected from env vars (`CLAUDECODE`, `GITHUB_COPILOT`, `CURSOR_AGENT`, etc.). Always use the resource-aware printer for data commands:
+Auto-detected from env vars (`CLAUDECODE`, `GITHUB_COPILOT`, `CURSOR_AGENT`, etc.) by dtctl's `sdk/agentmode`. `runFetch` handles agent output for data commands; other commands use `a.printer("resource")`, which wraps output in the envelope in agent mode.
 
-```go
-NewPrinterForResource("problems")  // get/describe/query commands
-NewPrinter()                       // config/management commands
-```
-
-Output is wrapped: `{"ok": true, "result": {...}, "context": {"resource": "problems"}}`.
+Output is wrapped: `{"ok": true, "result": {...}, "context": {"verb": "get", "resource": "problems", "total": 5}}`.
 
 ### Adding a new resource
 
-1. Create `cmd/get_foos.go` — define response types, flags, `RunE`, register with `getCmd.AddCommand()`
-2. Wrap `RunE` body in `watchOrRun(func() error { ... })` to get `--watch` for free
-3. Check `isMultiEnv()` and branch: call `multiExec` or `NewClientFromConfig` + typed decode
-4. Add `cmd/get_foos_test.go` for any pure helpers; avoid testing `RunE` directly
+1. Create `cmd/get_foos.go` with a constructor `newGetFoosCmd(a *App) *cobra.Command`: response types, flags bound to a local options struct (no package-level flag variables), and a `RunE` that calls `a.runFetch(fetchSpec{...})`; register it in `newGetCmd`'s `AddCommand`
+2. Declare its token scopes with `withScopes(cmd, "foos.read")` (a test keeps the README scope list in sync)
+3. Add `--watch` only if re-running is meaningful: `addWatchFlags(cmd, &watch)` and wrap the body in `a.watchOrRun(watch, func() error { ... })`
+4. Test it end to end in `cmd/get_foos_test.go` with the harness in `cmd/harness_test.go` (`runCLI` against a `newFakeAPI`, goldens under `cmd/testdata/golden`, `-update` to regenerate)
 
 ### HTTP test patterns
 
 ```go
-// Use 400/403 for error cases — resty retries 5xx (adds 3-second waits)
+// Use 400/403 for error cases — resty retries 429/5xx (adds seconds of waits)
 ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusBadRequest)
 }))
@@ -118,7 +105,6 @@ Problem IDs can be negative integers (e.g. `-6546711275898328738_1776193140000V2
 
 ## Coverage Strategy
 
-`cmd` package `RunE` functions require a live API; focus coverage on pure helpers:
+Commands are tested end to end through `Run` with the harness in `cmd/harness_test.go` (an httptest fake of the API), so `RunE` code is covered like any other. `go tool cover -func`, which the CI gate uses, counts only statements inside named functions: keep command code in constructors, not in closures assigned to package-level vars. Lower-level packages are unit-tested directly:
 - `pkg/client`: `GetV2Paged`, `MultiRequest`, `DecodePaged`, URL construction
 - `pkg/config`: round-trip `SaveTo`/`LoadFrom`, `CurrentContextObj`, `GetContext`/`SetContext`/`DeleteContext`
-- `cmd`: `parseColumns`, `effectiveMaxPages`, `isMultiEnv`, `rewriteNegativeArgs`

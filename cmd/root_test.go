@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
-	"github.com/dynatrace-oss/dtmgd/pkg/output"
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 )
 
 // TestParseColumns verifies the column filter parsing logic.
@@ -55,51 +56,6 @@ func TestParseColumns(t *testing.T) {
 	}
 }
 
-// TestEffectiveMaxPages verifies the page-limit logic.
-func TestEffectiveMaxPages(t *testing.T) {
-	tests := []struct {
-		name        string
-		globalPages int
-		hasLimit    bool
-		want        int
-	}{
-		{
-			name:        "no limit → use global maxPages=0",
-			globalPages: 0,
-			hasLimit:    false,
-			want:        0,
-		},
-		{
-			name:        "no limit → use global maxPages=5",
-			globalPages: 5,
-			hasLimit:    false,
-			want:        5,
-		},
-		{
-			name:        "has limit → always 1 page",
-			globalPages: 0,
-			hasLimit:    true,
-			want:        1,
-		},
-		{
-			name:        "has limit overrides global maxPages",
-			globalPages: 10,
-			hasLimit:    true,
-			want:        1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := &App{Opts: GlobalOptions{MaxPages: tt.globalPages}}
-			got := a.maxPagesFor(tt.hasLimit)
-			if got != tt.want {
-				t.Errorf("maxPagesFor(%v) = %d, want %d", tt.hasLimit, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestIsMultiEnv verifies multi-environment detection.
 func TestIsMultiEnv(t *testing.T) {
 	tests := []struct {
@@ -125,16 +81,23 @@ func TestIsMultiEnv(t *testing.T) {
 	}
 }
 
-// TestRequireSubcommand verifies that requireSubcommand always returns a non-nil error
-// (the "a subcommand is required" sentinel), regardless of the command passed in.
+// TestRequireSubcommand verifies that a group run without a subcommand is a
+// usage error pointing at the group's help, worded as a resource type for the
+// verbs and as a subcommand for the other groups.
 func TestRequireSubcommand(t *testing.T) {
-	cmd := &cobra.Command{Use: "test", Short: "test command"}
-	err := requireSubcommand(cmd, nil)
-	if err == nil {
-		t.Fatal("expected non-nil error from requireSubcommand")
-	}
-	if err.Error() != "a subcommand is required" {
-		t.Errorf("unexpected error message: %q", err.Error())
+	for _, tt := range []struct{ use, want string }{
+		{"get", "a resource type is required"},
+		{"config", "a subcommand is required"},
+	} {
+		cmd := &cobra.Command{Use: tt.use, Short: "test command"}
+		err := requireSubcommand(cmd, nil)
+		var usage *UsageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("%s: want a *UsageError, got %v", tt.use, err)
+		}
+		if err.Error() != tt.want || len(usage.Suggestions) != 1 || !strings.Contains(usage.Suggestions[0], tt.use+" --help") {
+			t.Errorf("%s: error = %q, suggestions = %q", tt.use, err.Error(), usage.Suggestions)
+		}
 	}
 }
 
@@ -240,14 +203,14 @@ func TestIsDescribeProblemArgs(t *testing.T) {
 // on by an environment variable is announced, but an explicit --agent or
 // --no-agent is the user's own choice and needs no notice.
 func TestAgentNoticeOnlyWhenAutoDetected(t *testing.T) {
-	for _, v := range output.AgentEnvVars {
+	for _, v := range agentmode.EnvVars() {
 		t.Setenv(v, "")
 	}
 	t.Setenv("CLAUDECODE", "1")
 	a := &App{}
 
 	a.Opts.Agent, a.Opts.NoAgent = false, false
-	if got := a.agentNotice(); !strings.Contains(got, "CLAUDECODE is set") {
+	if got := a.agentNotice(); !strings.Contains(got, "detected claude") {
 		t.Errorf("auto-detected: got %q", got)
 	}
 	a.Opts.Agent = true

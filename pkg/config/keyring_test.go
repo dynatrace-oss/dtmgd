@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -28,8 +30,9 @@ func TestMain(m *testing.M) {
 // package calls t.Parallel, so they run sequentially.
 func withoutKeyring(t *testing.T) {
 	t.Helper()
+	resetKeyringProbe()
 	keyring.MockInitWithError(keyring.ErrUnsupportedPlatform)
-	t.Cleanup(keyring.MockInit)
+	t.Cleanup(func() { keyring.MockInit(); resetKeyringProbe() })
 }
 
 // TestSetTokenPlaintextBranch covers SetToken's no-keyring path: the branch
@@ -124,5 +127,21 @@ func TestMigrateTokensSkipsPlaceholders(t *testing.T) {
 	}
 	if cfg.Tokens[2].Token != "${EU_TOKEN}" {
 		t.Errorf("placeholder token was modified: %q", cfg.Tokens[2].Token)
+	}
+}
+
+// TestGetTokenSurfacesKeyringErrors pins that a token stored in a keyring
+// that cannot be read reports the keyring's error, instead of the misleading
+// "token not found" it used to.
+func TestGetTokenSurfacesKeyringErrors(t *testing.T) {
+	resetKeyringProbe()
+	keyring.MockInitWithError(errors.New("locked"))
+	t.Cleanup(func() { keyring.MockInit(); resetKeyringProbe() })
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "t1", Token: ""}}
+	_, err := cfg.GetToken("t1")
+	if err == nil || !strings.Contains(err.Error(), "keyring: locked") {
+		t.Errorf("err = %v, want it to carry the keyring error", err)
 	}
 }

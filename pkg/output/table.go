@@ -60,13 +60,9 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 		elemType = elemType.Elem()
 	}
 	if elemType.Kind() != reflect.Struct {
-		// Fallback: print each value on its own line
-		for _, r := range rows {
-			if _, err := fmt.Fprintln(p.w, r.Interface()); err != nil {
-				return err
-			}
-		}
-		return nil
+		// Maps, scalars and slices of them have no columns to lay out. YAML is
+		// the readable form; Go's own formatting would print map[...] syntax.
+		return p.printYAML(v)
 	}
 
 	// Collect headers and field indices
@@ -92,8 +88,7 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 	}
 
 	if len(headers) == 0 {
-		_, err := fmt.Fprintln(p.w, v)
-		return err
+		return p.printYAML(v)
 	}
 
 	// WithHeaderAutoFormat must precede WithHeader: WithHeader applies the
@@ -133,4 +128,9 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 	}
 
 	return tbl.Render()
+}
+
+// printYAML renders v as YAML, the fallback for values without table columns.
+func (p *TablePrinter) printYAML(v interface{}) error {
+	return (&YAMLPrinter{w: p.w}).Print(v)
 }

@@ -32,35 +32,41 @@ func TestCharGetProblemsTable(t *testing.T) {
 	}
 }
 
-func TestCharGetProblemsJSON(t *testing.T) {
+// -o json prints the API's own response, merged across pages (it used to
+// print dtmgd's typed subset of it).
+func TestGetProblemsJSONIsAPIShaped(t *testing.T) {
 	api := newFakeAPI(t, pagedProblems())
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "problems", "-o", "json")
-	assertGolden(t, "char_get_problems_json", r.String())
+	assertGolden(t, "get_problems_json", r.String())
 }
 
-func TestCharGetProblemsAgent(t *testing.T) {
+// The agent envelope carries the API-shaped result and a context with verb
+// and total.
+func TestGetProblemsAgentEnvelope(t *testing.T) {
 	api := newFakeAPI(t, pagedProblems())
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "problems", "-A")
-	assertGolden(t, "char_get_problems_agent", r.String())
+	assertGolden(t, "get_problems_agent", r.String())
 }
 
-// Today: an empty result with -o json writes nothing to stdout.
-func TestCharGetProblemsEmptyJSON(t *testing.T) {
+// An empty result with -o json prints the object with an empty list (it used
+// to print nothing, which broke | jq).
+func TestGetProblemsEmptyJSONPrintsEmptyList(t *testing.T) {
 	api := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_empty.json"}})
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "problems", "-o", "json")
-	assertGolden(t, "char_get_problems_empty_json", r.String())
-	if r.Stdout != "" || r.Code != 0 {
-		t.Errorf("today's behaviour changed: stdout=%q code=%d", r.Stdout, r.Code)
+	assertGolden(t, "get_problems_empty_json", r.String())
+	if !strings.Contains(r.Stdout, `"problems": []`) || r.Code != 0 {
+		t.Errorf("stdout=%q code=%d", r.Stdout, r.Code)
 	}
 }
 
-// Today: describe in table mode prints Go map syntax.
-func TestCharDescribeEntityTable(t *testing.T) {
+// describe in table mode prints the object as YAML (it used to print Go's
+// map[...] syntax).
+func TestDescribeEntityTableIsYAML(t *testing.T) {
 	api := newFakeAPI(t, map[string]route{entitiesPath + "/HOST-1": {File: "entity.json"}})
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "describe", "entity", "HOST-1")
-	assertGolden(t, "char_describe_entity_table", r.String())
-	if !strings.Contains(r.Stdout, "map[") {
-		t.Errorf("today's behaviour changed: stdout has no map[ syntax:\n%s", r.Stdout)
+	assertGolden(t, "describe_entity_table_yaml", r.String())
+	if strings.Contains(r.Stdout, "map[") || !strings.Contains(r.Stdout, "entityId: HOST-1") {
+		t.Errorf("want YAML, got:\n%s", r.Stdout)
 	}
 }
 
@@ -71,29 +77,35 @@ func TestCharMultiEnvJSON(t *testing.T) {
 	assertGolden(t, "char_multi_env_json", r.String())
 }
 
-// Today: every environment failing still exits 0.
-func TestCharMultiEnvAllFail(t *testing.T) {
+// Every environment failing with 403 exits 5 (it used to exit 0).
+func TestMultiEnvAllFailExitsNonZero(t *testing.T) {
 	deny := map[string]route{problemsPath: {Status: 403, File: "error_403.json"}}
 	a, b := newFakeAPI(t, deny), newFakeAPI(t, deny)
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "problems", "--env", "a;b", "-o", "json")
-	assertGolden(t, "char_multi_env_all_fail", r.String())
-	if r.Code != 0 {
-		t.Errorf("today's behaviour changed: code=%d", r.Code)
+	assertGolden(t, "multi_env_all_fail", r.String())
+	if r.Code != 5 {
+		t.Errorf("code = %d, want 5", r.Code)
 	}
 }
 
-func TestCharQueryLogsTable(t *testing.T) {
+// query logs prints only the records on stdout; the "Found N" header is on
+// stderr (stdout used to start with a blank line left over from it).
+func TestQueryLogsTable(t *testing.T) {
 	api := newFakeAPI(t, map[string]route{logsPath: {File: "logs.json"}})
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "query", "logs", "--query", "error", "--from", "now-1h")
-	assertGolden(t, "char_query_logs_table", r.String())
+	assertGolden(t, "query_logs_table", r.String())
+	if strings.HasPrefix(r.Stdout, "\n") || !strings.Contains(r.Stderr, "Found 2 log records") {
+		t.Errorf("stdout %q, stderr %q", r.Stdout, r.Stderr)
+	}
 }
 
-// Today: a mistyped resource prints help to stdout and exits 1.
-func TestCharUnknownResource(t *testing.T) {
+// A mistyped resource is a usage error (exit 2) with a suggestion; it used to
+// dump help to stdout and exit 1.
+func TestUnknownResourceIsUsageError(t *testing.T) {
 	api := newFakeAPI(t, nil)
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "prblems")
-	assertGolden(t, "char_unknown_resource", r.String())
-	if r.Code != 1 {
-		t.Errorf("today's behaviour changed: code=%d", r.Code)
+	assertGolden(t, "unknown_resource_usage_error", r.String())
+	if r.Code != 2 {
+		t.Errorf("code = %d, want 2", r.Code)
 	}
 }

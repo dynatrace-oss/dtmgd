@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/adrg/xdg"
+	"github.com/zalando/go-keyring"
 	"gopkg.in/yaml.v3"
 )
 
@@ -91,14 +92,6 @@ func FindLocalConfig() string {
 		}
 		dir = parent
 	}
-}
-
-// Load loads config from local file first, then global.
-func Load() (*Config, error) {
-	if local := FindLocalConfig(); local != "" {
-		return LoadFrom(local)
-	}
-	return LoadFrom(DefaultConfigPath())
 }
 
 // NotFoundError reports that no config file exists at Path.
@@ -189,7 +182,43 @@ func (c *Config) SaveTo(path string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	return os.WriteFile(path, data, 0600)
+	return writeFileAtomic(path, data)
+}
+
+// writeFileAtomic replaces path with data in one rename, so an interrupted
+// save never leaves a truncated config, and leaves it mode 0600 even if the
+// file it replaces was looser: a config can hold a plaintext token. A symlink
+// is followed, so a config kept elsewhere (a dotfiles repo) stays linked.
+func writeFileAtomic(path string, data []byte) error {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	tmp := f.Name()
+	defer func() {
+		if tmp != "" {
+			_ = os.Remove(tmp)
+		}
+	}()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	tmp = ""
+	return nil
 }
 
 // CurrentContextObj returns the current context.
@@ -219,16 +248,25 @@ func (c *Config) GetContext(name string) (*NamedContext, error) {
 // GetToken retrieves a token by reference name.
 // Tries OS keyring first, then config file plaintext.
 func (c *Config) GetToken(tokenRef string) (string, error) {
-	if IsKeyringAvailable() {
-		ts := NewTokenStore()
-		token, err := ts.GetToken(tokenRef)
+	// kerr is why the keyring could not supply the token, if it failed for a
+	// reason other than not having it. A token whose config entry is empty
+	// lives in the keyring, so that reason is the real error, not "not found".
+	kerr := keyringStatus()
+	if kerr == nil {
+		token, err := NewTokenStore().GetToken(tokenRef)
 		if err == nil && token != "" {
 			return token, nil
+		}
+		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			kerr = err
 		}
 	}
 	for _, nt := range c.Tokens {
 		if nt.Name == tokenRef {
 			if nt.Token == "" {
+				if kerr != nil {
+					return "", fmt.Errorf("keyring: %w (token %q is stored there)", kerr, tokenRef)
+				}
 				return "", fmt.Errorf("token %q not found in keyring (may need to re-add credentials)", tokenRef)
 			}
 			// The stored value may be a ${VAR} reference. Expand it here, at
@@ -301,6 +339,37 @@ func (c *Config) SetToken(name, token string) error {
 		}
 	}
 	c.Tokens = append(c.Tokens, NamedToken{Name: name, Token: token})
+	return nil
+}
+
+// ErrTokenNotFound is DeleteToken's error when neither the OS keyring nor
+// the config holds the token, so callers can treat an already-deleted token
+// as done.
+var ErrTokenNotFound = errors.New("token not found")
+
+// DeleteToken removes the named token from the OS keyring and from the
+// config's tokens list. It is an error wrapping ErrTokenNotFound if neither
+// holds it.
+func (c *Config) DeleteToken(name string) error {
+	found := false
+	if IsKeyringAvailable() {
+		switch err := NewTokenStore().DeleteToken(name); {
+		case err == nil:
+			found = true
+		case !errors.Is(err, keyring.ErrNotFound):
+			return fmt.Errorf("keyring: %w", err)
+		}
+	}
+	for i, nt := range c.Tokens {
+		if nt.Name == name {
+			c.Tokens = append(c.Tokens[:i], c.Tokens[i+1:]...)
+			found = true
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("token %q not found: %w", name, ErrTokenNotFound)
+	}
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 )
 
@@ -61,28 +62,64 @@ func (p *YAMLPrinter) Print(v interface{}) error {
 }
 func (p *YAMLPrinter) PrintList(v interface{}) error { return p.Print(v) }
 
-// PrintSuccess writes a green-ish success message to stderr.
+// Presentation settings for the stderr helpers below. They are process-wide
+// because there is one terminal per process; cmd.Run sets them once per
+// invocation. A nil stderr means os.Stderr as it is at the time of the call.
+var (
+	stderr io.Writer
+	plain  bool
+)
+
+// SetStderr sets where the stderr helpers write; nil restores os.Stderr.
+func SetStderr(w io.Writer) { stderr = w }
+
+// SetPlain switches the stderr helpers between glyphs (⚠ ✗ ✓ 💡) and plain
+// word prefixes, for scripts, screen readers and terminals without them.
+func SetPlain(p bool) { plain = p }
+
+func errOut() io.Writer {
+	if stderr != nil {
+		return stderr
+	}
+	return os.Stderr
+}
+
+func printPrefixed(glyph, word, format string, args ...interface{}) {
+	prefix := glyph
+	if plain {
+		prefix = word
+	}
+	// Best effort: there is nowhere left to report a failed stderr write.
+	_, _ = fmt.Fprintf(errOut(), prefix+format+"\n", args...)
+}
+
+// PrintSuccess writes a success message to stderr.
 func PrintSuccess(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "✓ "+format+"\n", args...)
+	printPrefixed("✓ ", "", format, args...)
 }
 
 // PrintWarning writes a warning message to stderr.
 func PrintWarning(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "⚠ "+format+"\n", args...)
+	printPrefixed("⚠ ", "Warning: ", format, args...)
 }
 
 // PrintInfo writes an informational message to stderr.
 func PrintInfo(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	printPrefixed("", "", format, args...)
 }
 
 // PrintHumanError writes an error message to stderr.
 func PrintHumanError(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "✗ "+format+"\n", args...)
+	printPrefixed("✗ ", "Error: ", format, args...)
 }
 
-// DescribeKV prints a key-value pair with right-aligned key in width w.
-func DescribeKV(key string, w int, valueFormat string, args ...interface{}) {
-	value := fmt.Sprintf(valueFormat, args...)
-	fmt.Printf("%-*s %s\n", w, key, value)
+// PrintHint writes a suggestion for what to do next to stderr.
+func PrintHint(format string, args ...interface{}) {
+	printPrefixed("💡 ", "Hint: ", format, args...)
+}
+
+// IsTerminal reports whether w is an interactive terminal.
+func IsTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
 }

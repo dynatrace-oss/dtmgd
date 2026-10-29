@@ -60,7 +60,7 @@ func TestMultiRequestCapsConcurrency(t *testing.T) {
 	const contexts, limit = 30, 4
 
 	var p peakTracker
-	results, err := MultiRequest(configWithContexts(contexts), "ALL_ENVIRONMENTS", limit,
+	results, err := MultiRequest(configWithContexts(contexts), "ALL_ENVIRONMENTS", limit, Options{},
 		func(c *Client) (interface{}, error) {
 			p.enter()
 			// Long enough that unbounded goroutines would overlap; the cap is
@@ -98,7 +98,7 @@ func TestMultiRequestConcurrencyFallback(t *testing.T) {
 	const contexts = DefaultConcurrency + 12
 
 	var p peakTracker
-	_, err := MultiRequest(configWithContexts(contexts), "ALL_ENVIRONMENTS", 0,
+	_, err := MultiRequest(configWithContexts(contexts), "ALL_ENVIRONMENTS", 0, Options{},
 		func(c *Client) (interface{}, error) {
 			p.enter()
 			time.Sleep(20 * time.Millisecond)
@@ -120,7 +120,7 @@ func TestMultiRequestConcurrencyFallback(t *testing.T) {
 func TestMultiRequestPreservesOrder(t *testing.T) {
 	cfg := configWithContexts(8)
 
-	results, err := MultiRequest(cfg, "ALL_ENVIRONMENTS", 3,
+	results, err := MultiRequest(cfg, "ALL_ENVIRONMENTS", 3, Options{},
 		func(c *Client) (interface{}, error) { return c.APIBaseURL(), nil })
 	if err != nil {
 		t.Fatalf("MultiRequest() error = %v", err)

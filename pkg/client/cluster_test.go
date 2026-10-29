@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -111,3 +112,41 @@ func TestRequestErrorWithoutProxyIsUnchanged(t *testing.T) {
 type errNotReachable struct{}
 
 func (errNotReachable) Error() string { return "dial tcp: connection refused" }
+
+// TestClusterVersionNoFallbackAfterTransportError pins that ClusterVersion
+// tries the environment endpoint only after the cluster endpoint answered
+// with an HTTP error. After a transport failure the host is the same, so the
+// fallback could only fail the same way, after another full timeout: doctor
+// took minutes on a hung host.
+func TestClusterVersionNoFallbackAfterTransportError(t *testing.T) {
+	var fallback atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1.0/onpremise/cluster":
+			// Drop the connection without answering.
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			_ = conn.Close()
+		case "/e/env1/api/v1/config/clusterversion":
+			fallback.Add(1)
+			_, _ = w.Write([]byte(`{"version":"1.330.0.20251017-120000"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	c, err := New(srv.URL, "env1", "dt0c01.TEST")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ClusterVersion(); err == nil {
+		t.Error("want the cluster endpoint's transport error")
+	}
+	if n := fallback.Load(); n != 0 {
+		t.Errorf("environment version endpoint requested %d times after a transport error, want 0", n)
+	}
+}

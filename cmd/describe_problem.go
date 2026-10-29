@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -9,8 +8,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
-	"github.com/dynatrace-oss/dtmgd/pkg/client"
 )
 
 // ProblemDetail maps the /problems/{id} API response.
@@ -145,53 +142,14 @@ Negative-integer problem IDs (e.g. -6546711275898328738_1776193140000V2) are han
 automatically — no special syntax or "--" separator is required.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
 			path := fmt.Sprintf("/problems/%s", url.PathEscape(args[0]))
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					var result map[string]interface{}
-					if err := c.GetV2(path, nil, &result); err != nil {
-						return nil, err
-					}
-					return result, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("problem").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			var raw map[string]interface{}
-			if err := c.GetV2(path, nil, &raw); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("problem").Print(raw)
-			}
-
-			// Re-decode to typed struct for human-readable output.
-			b, err := json.Marshal(raw)
-			if err != nil {
-				return err
-			}
-			var detail ProblemDetail
-			if err := json.Unmarshal(b, &detail); err != nil {
-				return err
-			}
-			printProblemDetail(a.Out, detail)
-			return nil
+			return a.runFetch(fetchSpec{
+				Verb:     "describe",
+				Resource: "problem",
+				Fetch:    describeFetch(path, nil),
+				Human:    detailHuman(printProblemDetail),
+			})
 		},
 	}
-	return cmd
+	return withScopes(cmd, "problems.read")
 }
