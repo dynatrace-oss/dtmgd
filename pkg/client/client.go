@@ -127,9 +127,13 @@ func New(host, envID, token string) (*Client, error) {
 // the retry, User-Agent or proxy configuration, which made `get environments`
 // behave unlike every other command.
 //
-// The retry budget bounds the time to fail: at most 3 attempts of
-// requestTimeout each, with waits of at most 5s between them, and failures
-// that cannot heal on retry (see isRetryable) fail on the first attempt.
+// The retry budget bounds the time to fail: at most 3 attempts, with waits of
+// at most 5s between them, and failures that cannot heal on retry (see
+// isRetryable) fail on the first attempt. Only failures before the request
+// reached the cluster (a dial or TLS-handshake timeout, a reset connection)
+// and 429/5xx answers are retried; a response that does not arrive within
+// requestTimeout fails once, because retrying it would run the same slow
+// query on the cluster again.
 func newRestyClient(baseURL, token string, timeout time.Duration) *resty.Client {
 	return resty.New().
 		SetBaseURL(baseURL).
@@ -144,8 +148,11 @@ func newRestyClient(baseURL, token string, timeout time.Duration) *resty.Client 
 		SetTimeout(timeout)
 }
 
-// requestTimeout bounds a single attempt.
-const requestTimeout = 30 * time.Second
+// requestTimeout bounds a single attempt, from dial to the last byte of the
+// response. Large metric and log queries can take tens of seconds on a busy
+// cluster; 30s cut those off. It is above resty's 30s dial timeout, so a dial
+// that hangs fails as a (retryable) dial timeout rather than as this one.
+const requestTimeout = 60 * time.Second
 
 // quietLogger discards resty's own log lines ("WARN RESTY …"), which used to
 // reach stderr on every retried request regardless of -v. SetVerbosity
@@ -170,21 +177,31 @@ func (c *Client) clients() []*resty.Client {
 }
 
 // isRetryable decides whether a failed request should be retried: rate limits
-// and server errors, and transport failures that can heal on their own
-// (timeouts, a reset or truncated connection). A refused connection, a name
-// that does not resolve, a TLS failure or a proxy error will fail the same way
-// again, so they are not retried; retrying them made a dead host take minutes
-// to report.
+// and server errors, and transport failures that can heal on their own (a
+// dial or TLS-handshake timeout, a reset or truncated connection). A refused
+// connection, a name that does not resolve, a TLS failure or a proxy error
+// will fail the same way again, so they are not retried; retrying them made a
+// dead host take minutes to report. Nor is a response timeout ("Client.Timeout
+// exceeded while awaiting headers", a read timeout): the cluster got the
+// request and is still working on it, and a retry would run it again.
 func isRetryable(r *resty.Response, err error) bool {
 	if err != nil {
-		var nerr net.Error
-		if errors.As(err, &nerr) && nerr.Timeout() {
-			return true
-		}
-		return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.ErrUnexpectedEOF)
+		return connectTimeout(err) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.ErrUnexpectedEOF)
 	}
 	sc := r.StatusCode()
 	return sc == 429 || sc >= 500
+}
+
+// connectTimeout reports whether err is a timeout before the request was
+// sent: dialing the cluster or proxy, or the TLS handshake.
+func connectTimeout(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) && opErr.Op == "dial" && opErr.Timeout() {
+		return true
+	}
+	// net/http's TLS-handshake timeout error is unexported; its text is the
+	// only way to recognise it.
+	return strings.Contains(err.Error(), "TLS handshake timeout")
 }
 
 // SetVerbosity enables debug-level request/response logging.
