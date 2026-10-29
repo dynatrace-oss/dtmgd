@@ -2,8 +2,10 @@ package client
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -376,5 +378,103 @@ func TestGetV2PagedError(t *testing.T) {
 	_, err := c.GetV2Paged("/items", nil, Paging{MaxPages: 0})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// normalizeVerbose makes -v output comparable: the server URL becomes SRV,
+// response durations (T), the User-Agent value *, and each request's header
+// lines, which follow map order, are sorted.
+func normalizeVerbose(out, srvURL string) string {
+	lines := strings.SplitAfter(strings.ReplaceAll(out, srvURL, "SRV"), "\n")
+	for i, l := range lines {
+		switch {
+		case strings.HasPrefix(l, "<== "):
+			lines[i] = l[:strings.LastIndex(l, " (")] + " (T)\n"
+		case strings.HasPrefix(l, "    User-Agent: "):
+			lines[i] = "    User-Agent: *\n"
+		}
+	}
+	for start := 0; start < len(lines); start++ {
+		end := start
+		for end < len(lines) && strings.HasPrefix(lines[end], "    ") {
+			end++
+		}
+		sort.Strings(lines[start:end])
+		start = end
+	}
+	return strings.Join(lines, "")
+}
+
+// TestSetVerbosityOutput pins the -v lines on stderr: a request line naming
+// any proxy, and a response line, for every request (error responses and
+// the cluster client included); level 2 adds the request headers, with
+// credentials redacted, and the response body. Level 0 prints nothing.
+func TestSetVerbosityOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/deny") {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"error":{"code":403,"message":"no"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"key":"val"}`)
+	}))
+	defer srv.Close()
+
+	level1 := "==> GET SRV/e/env1/api/v2/test\n" +
+		"<== 200 200 OK (T)\n" +
+		"==> GET SRV/e/env1/api/v2/deny\n" +
+		"<== 403 403 Forbidden (T)\n" +
+		"==> GET SRV/api/v1.0/onpremise/cluster\n" +
+		"<== 200 200 OK (T)\n"
+	cases := []struct {
+		name  string
+		level int
+		proxy string
+		want  string
+	}{
+		{"level 0", 0, "http://proxy.example:3128", ""},
+		{"level 1", 1, "", level1},
+		{"level 1 via proxy", 1, "http://proxy.example:3128", strings.ReplaceAll(level1, "\n<", " (via proxy http://proxy.example:3128)\n<")},
+		{"level 2", 2, "", "==> GET SRV/e/env1/api/v2/test\n" +
+			"    Accept: application/json\n" +
+			"    Authorization: [REDACTED]\n" +
+			"    Content-Type: application/json\n" +
+			"    Proxy-Authorization: [REDACTED]\n" +
+			"    User-Agent: *\n" +
+			"<== 200 200 OK (T)\n" +
+			"{\"key\":\"val\"}\n" +
+			"==> GET SRV/e/env1/api/v2/deny\n" +
+			"    Accept: application/json\n" +
+			"    Authorization: [REDACTED]\n" +
+			"    Content-Type: application/json\n" +
+			"    Proxy-Authorization: [REDACTED]\n" +
+			"    User-Agent: *\n" +
+			"<== 403 403 Forbidden (T)\n" +
+			"{\"error\":{\"code\":403,\"message\":\"no\"}}\n" +
+			"==> GET SRV/api/v1.0/onpremise/cluster\n" +
+			"    Accept: application/json\n" +
+			"    Authorization: [REDACTED]\n" +
+			"    Content-Type: application/json\n" +
+			"    User-Agent: *\n" +
+			"<== 200 200 OK (T)\n" +
+			"{\"key\":\"val\"}\n"},
+	}
+	for _, tc := range cases {
+		c, err := New(srv.URL, "env1", "dt0c01.TEST")
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.proxyDisplay = tc.proxy // named on the request line; the requests still go direct
+		c.http.SetHeader("Proxy-Authorization", "Basic c2VjcmV0")
+		c.SetVerbosity(tc.level)
+		out := captureClientStderr(t, func() {
+			var m map[string]interface{}
+			_ = c.GetV2("/test", nil, &m)
+			_ = c.GetV2("/deny", nil, &m)
+			_ = c.GetCluster("/v1.0/onpremise/cluster", nil, &m)
+		})
+		if got := normalizeVerbose(out, srv.URL); got != tc.want {
+			t.Errorf("%s:\n--- want\n%s\n--- got\n%s", tc.name, tc.want, got)
+		}
 	}
 }

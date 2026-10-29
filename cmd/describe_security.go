@@ -194,5 +194,5 @@ or the internal UUID. Display IDs are resolved automatically.`,
 			})
 		},
 	}
-	return withScopes(cmd, "securityProblems.read")
+	return withScopes(cmd, scopeSecurityProblemsRead)
 }

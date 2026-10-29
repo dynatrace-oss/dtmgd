@@ -3,9 +3,13 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -241,5 +245,88 @@ func TestGetV2PagedMaxPagesKeepsKey(t *testing.T) {
 	}
 	if _, ok := got["nextPageKey"]; !ok {
 		t.Error("nextPageKey dropped although pages remain")
+	}
+}
+
+// scriptedPages serves a canned body per nextPageKey ("" is the first page)
+// and records each request's query.
+func scriptedPages(t *testing.T, pages map[string]string) (*httptest.Server, *[]url.Values) {
+	t.Helper()
+	var queries []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		queries = append(queries, q)
+		body, ok := pages[q.Get("nextPageKey")]
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest) // 400 is not retried
+			_, _ = io.WriteString(w, `{"error":{"code":400,"message":"no such page"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &queries
+}
+
+// TestGetV2PagedMergesAndSendsOnlyTheKey pins GetV2Paged end to end: the
+// first request carries the caller's params, later ones only nextPageKey;
+// array fields are appended while every other field keeps the first page's
+// value; and the list is truncated to Limit, keeping the last nextPageKey.
+func TestGetV2PagedMergesAndSendsOnlyTheKey(t *testing.T) {
+	srv, queries := scriptedPages(t, map[string]string{
+		"":   `{"totalCount":5,"pageSize":2,"note":"first","problems":["a","b"],"tags":["x"],"nextPageKey":"K2"}`,
+		"K2": `{"totalCount":9,"pageSize":2,"note":"second","problems":["c","d"],"extra":["e"],"nextPageKey":"K3"}`,
+		"K3": `{"problems":["f"]}`,
+	})
+	c := pagedClient(t, srv)
+
+	got, err := c.GetV2Paged("/problems", map[string]string{"from": "now-1h", "pageSize": "2"}, Paging{Limit: 3, ListKey: "problems"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]interface{}{
+		"totalCount": float64(5), "pageSize": float64(2), "note": "first",
+		"problems": []interface{}{"a", "b", "c"}, "tags": []interface{}{"x"}, "nextPageKey": "K3",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged = %v\nwant     %v", got, want)
+	}
+	wantQ := []url.Values{{"from": {"now-1h"}, "pageSize": {"2"}}, {"nextPageKey": {"K2"}}}
+	if !reflect.DeepEqual(*queries, wantQ) {
+		t.Errorf("queries = %v, want %v", *queries, wantQ)
+	}
+
+	// Without a limit every page is fetched, and the exhausted result has
+	// no nextPageKey. nil params send no query at all.
+	*queries = nil
+	got, err = c.GetV2Paged("/problems", nil, Paging{ListKey: "problems"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["nextPageKey"]; ok || len(got["problems"].([]interface{})) != 5 || len(*queries) != 3 || len((*queries)[0]) != 0 {
+		t.Errorf("unlimited: result %v, queries %v", got, *queries)
+	}
+}
+
+// TestGetV2PagedBodyErrors pins GetV2Paged's failures: a body that is not
+// JSON, and a failed later page, each return no result; a JSON null body is
+// an empty result.
+func TestGetV2PagedBodyErrors(t *testing.T) {
+	srv, _ := scriptedPages(t, map[string]string{"": `not json`})
+	got, err := pagedClient(t, srv).GetV2Paged("/problems", nil, Paging{})
+	if got != nil || err == nil || !strings.HasPrefix(err.Error(), "failed to parse response: ") {
+		t.Errorf("not JSON: result %v, err %v", got, err)
+	}
+
+	srv, _ = scriptedPages(t, map[string]string{"": `{"problems":["a"],"nextPageKey":"K2"}`})
+	got, err = pagedClient(t, srv).GetV2Paged("/problems", nil, Paging{})
+	if got != nil || err == nil || !strings.Contains(err.Error(), "no such page") {
+		t.Errorf("failed second page: result %v, err %v", got, err)
+	}
+
+	srv, _ = scriptedPages(t, map[string]string{"": `null`})
+	got, err = pagedClient(t, srv).GetV2Paged("/problems", nil, Paging{Limit: 1, ListKey: "problems"})
+	if err != nil || got == nil || len(got) != 0 {
+		t.Errorf("null body: result %#v, err %v", got, err)
 	}
 }

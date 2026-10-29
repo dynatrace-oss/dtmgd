@@ -119,7 +119,7 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results to show")
 	cmd.Flags().BoolVar(&opts.evaluate, "evaluate", false, "evaluate SLO percentages (slower; max 25 per page, auto-paged)")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", "sloSelector DSL to filter SLOs (e.g. 'managementZone(\"production\")')")
-	return withScopes(cmd, "slo.read")
+	return withScopes(cmd, scopeSLORead)
 }
 
 // sloRows turns a /slo body into table rows.

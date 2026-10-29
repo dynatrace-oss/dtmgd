@@ -12,6 +12,18 @@ import (
 // the README's scope list (checked by a test) and the commands catalog.
 const scopesAnnotation = "dtmgd.io/scopes"
 
+// API token scopes, as the Dynatrace API names them.
+const (
+	scopeProblemsRead         = "problems.read"
+	scopeEntitiesRead         = "entities.read"
+	scopeEventsRead           = "events.read"
+	scopeMetricsRead          = "metrics.read"
+	scopeLogsRead             = "logs.read"
+	scopeSLORead              = "slo.read"
+	scopeSecurityProblemsRead = "securityProblems.read"
+	scopeDataExport           = "DataExport"
+)
+
 // scopesPlaceholder in a command's Long help is replaced with the full scope
 // list once the tree is built (see fillScopeHelp).
 const scopesPlaceholder = "%SCOPES%"

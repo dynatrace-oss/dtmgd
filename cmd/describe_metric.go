@@ -26,5 +26,5 @@ Example:
 			})
 		},
 	}
-	return withScopes(cmd, "metrics.read")
+	return withScopes(cmd, scopeMetricsRead)
 }

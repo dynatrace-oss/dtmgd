@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -389,5 +391,148 @@ func TestPrintMetricQuerySummary(t *testing.T) {
 		if !strings.Contains(buf.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, buf.String())
 		}
+	}
+}
+
+// TestQueryMetricsFlagChecksAndErrors pins query metrics' usage errors,
+// checked before any request and --metric first, and how a failed or
+// undecodable /metrics/query response is reported.
+func TestQueryMetricsFlagChecksAndErrors(t *testing.T) {
+	metricRequired := "== exit code: 2\n== stdout\n== stderr\nError: --metric is required (e.g. builtin:service.response.time)\n"
+	query := []string{"--metric", "builtin:host.cpu.usage", "--from", "now-1h"}
+	cases := []struct {
+		name  string
+		route route
+		args  []string
+		hits  int // /metrics/query requests sent
+		want  string
+	}{
+		{"neither flag", route{Body: metricQueryBody}, nil, 0, metricRequired},
+		{"no --metric", route{Body: metricQueryBody}, []string{"--from", "now-1h"}, 0, metricRequired},
+		{"no --from", route{Body: metricQueryBody}, []string{"--metric", "m"}, 0,
+			"== exit code: 2\n== stdout\n== stderr\nError: --from is required (e.g. now-1h)\n"},
+		{"API error", route{Status: 403, File: "error_403.json"}, query, 1, "== exit code: 5\n" +
+			"== stdout\n" +
+			"== stderr\n" +
+			"Error: API error 403: Token is missing required scope\n" +
+			"Hint: Permission denied. Your API token may be missing required scopes.\n" +
+			"  This command needs the token scope(s): metrics.read, entities.read.\n"},
+	}
+	for _, tc := range cases {
+		api := newFakeAPI(t, map[string]route{metricsQueryPath: tc.route})
+		r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), append([]string{"query", "metrics"}, tc.args...)...)
+		if got := r.String(); got != tc.want {
+			t.Errorf("%s:\n--- want\n%s\n--- got\n%s", tc.name, tc.want, got)
+		}
+		if got := api.Hits(metricsQueryPath); got != tc.hits {
+			t.Errorf("%s: %d requests, want %d", tc.name, got, tc.hits)
+		}
+	}
+
+	// A body the table cannot decode fails the command; nothing is printed
+	// and no entity lookup is made.
+	api := newFakeAPI(t, map[string]route{metricsQueryPath: {Body: `{"resolution":5}`}})
+	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), append([]string{"query", "metrics"}, query...)...)
+	if r.Code != 1 || r.Stdout != "" || !strings.HasPrefix(r.Stderr, "Error: json: cannot unmarshal number") || api.Hits(entitiesPath) != 0 {
+		t.Errorf("undecodable body: code %d, stdout %q, stderr %q, %d entity lookups", r.Code, r.Stdout, r.Stderr, api.Hits(entitiesPath))
+	}
+}
+
+// TestQueryMetricsQueryParams pins the /metrics/query query (--to defaults to
+// now; --resolution and --entity are sent only when given), and that only a
+// table pays for the entity-name lookup.
+func TestQueryMetricsQueryParams(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		want    url.Values
+		lookups int // /entities requests sent
+	}{
+		{"defaults", nil, url.Values{"metricSelector": {"builtin:host.cpu.usage"}, "from": {"now-1h"}, "to": {"now"}}, 1},
+		{"every flag", []string{"--to", "now-5m", "--resolution", "5m", "--entity", "type(HOST)"}, url.Values{
+			"metricSelector": {"builtin:host.cpu.usage"}, "from": {"now-1h"}, "to": {"now-5m"},
+			"resolution": {"5m"}, "entitySelector": {"type(HOST)"},
+		}, 1},
+		{"json", []string{"-o", "json"}, url.Values{"metricSelector": {"builtin:host.cpu.usage"}, "from": {"now-1h"}, "to": {"now"}}, 0},
+		{"agent", []string{"-A"}, url.Values{"metricSelector": {"builtin:host.cpu.usage"}, "from": {"now-1h"}, "to": {"now"}}, 0},
+	}
+	for _, tc := range cases {
+		api := newFakeAPI(t, map[string]route{
+			metricsQueryPath: {Body: metricQueryBody},
+			entitiesPath:     {Body: `{"entities":[{"entityId":"HOST-1","displayName":"web-1"}]}`},
+		})
+		args := append([]string{"query", "metrics", "--metric", "builtin:host.cpu.usage", "--from", "now-1h"}, tc.args...)
+		r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), args...)
+		qs := api.Queries(metricsQueryPath)
+		if r.Code != 0 || len(qs) != 1 || !reflect.DeepEqual(qs[0], tc.want) {
+			t.Errorf("%s: code %d, queries %v, want one with %v", tc.name, r.Code, qs, tc.want)
+		}
+		if got := api.Hits(entitiesPath); got != tc.lookups {
+			t.Errorf("%s: %d entity lookups, want %d", tc.name, got, tc.lookups)
+		}
+	}
+}
+
+// TestInjectEntityNamesOnlyEntityIDKeys pins that names are injected for
+// dt.entity.X keys alone: not for other dimensions, and not for an existing
+// .name key, even when their value matches a looked-up ID.
+func TestInjectEntityNamesOnlyEntityIDKeys(t *testing.T) {
+	resp := &MetricQueryResponse{Result: []MetricQueryResult{{Data: []MetricQueryDataPoints{
+		{DimensionMap: map[string]string{
+			"dt.entity.service":      "SERVICE-1",
+			"dt.entity.service.name": "SERVICE-1",
+			"region":                 "SERVICE-1",
+		}},
+		{DimensionMap: nil},
+	}}}}
+	injectEntityNames(resp, map[string]string{"SERVICE-1": "payments"})
+	want := map[string]string{
+		"dt.entity.service":      "SERVICE-1",
+		"dt.entity.service.name": "payments",
+		"region":                 "SERVICE-1",
+	}
+	if got := resp.Result[0].Data[0].DimensionMap; !reflect.DeepEqual(got, want) {
+		t.Errorf("DimensionMap = %v, want %v", got, want)
+	}
+	if got := resp.Result[0].Data[1].DimensionMap; got != nil {
+		t.Errorf("nil DimensionMap became %v", got)
+	}
+}
+
+// TestPrintEntitySummaryTableTies pins the summary table's exact output and
+// its tie-breaks: equal values sort by name, then by ID; nulls (including a
+// series without exactly one value) sort last, by the same tie-breaks.
+func TestPrintEntitySummaryTableTies(t *testing.T) {
+	a := newTestApp("")
+	row := func(id, name string, values ...*float64) MetricQueryDataPoints {
+		dm := map[string]string{"dt.entity.service": id}
+		if name != "" {
+			dm["dt.entity.service.name"] = name
+		}
+		return MetricQueryDataPoints{DimensionMap: dm, Timestamps: []int64{1704067200000}, Values: values}
+	}
+	data := []MetricQueryDataPoints{
+		row("SERVICE-5", "zeta", nil),
+		row("SERVICE-4", "beta", fptr(1)),
+		row("SERVICE-3", "alpha", fptr(1)),
+		row("SERVICE-2", "alpha", fptr(1)),
+		row("SERVICE-6", "eta"),
+		row("SERVICE-7", "", fptr(2.345)),
+		row("SERVICE-8", "eta", fptr(1), fptr(2)),
+	}
+	var buf bytes.Buffer
+	if err := a.printEntitySummaryTable(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	want := " ENTITY  ENTITY-ID  VALUE \n" +
+		"         SERVICE-7  2.35  \n" +
+		" alpha   SERVICE-2  1.00  \n" +
+		" alpha   SERVICE-3  1.00  \n" +
+		" beta    SERVICE-4  1.00  \n" +
+		" eta     SERVICE-6  null  \n" +
+		" eta     SERVICE-8  null  \n" +
+		" zeta    SERVICE-5  null  \n"
+	if got := buf.String(); got != want {
+		t.Errorf("--- want\n%s\n--- got\n%s", want, got)
 	}
 }

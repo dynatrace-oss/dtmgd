@@ -76,29 +76,7 @@ Examples:
 			return a.runFetch(fetchSpec{
 				Verb:     "query",
 				Resource: "metrics",
-				Fetch: func(c *client.Client, _ int) (fetched, error) {
-					var body map[string]interface{}
-					if err := c.GetV2("/metrics/query", params, &body); err != nil {
-						return fetched{}, err
-					}
-					if !a.humanOutput() {
-						return fetched{Body: body, Total: -1}, nil
-					}
-					// A table names the entities behind each series. The
-					// names come from a second request, so json, yaml and
-					// agent output (the API's own object) never pay for it,
-					// and a failed lookup leaves the IDs rather than failing.
-					// Only Human sees this Body, so it is the typed form.
-					var resp MetricQueryResponse
-					if err := client.DecodePaged(body, &resp); err != nil {
-						return fetched{}, err
-					}
-					var warnings []string
-					if err := resolveMetricEntityNames(c, &resp); err != nil {
-						warnings = append(warnings, fmt.Sprintf("Could not look up entity names (%v); showing entity IDs.", err))
-					}
-					return fetched{Body: resp, Total: -1, Warnings: warnings}, nil
-				},
+				Fetch:    a.metricQueryFetch(params),
 				Human: func(w io.Writer, body interface{}) error {
 					return a.printMetricQuerySummary(w, body.(MetricQueryResponse))
 				},
@@ -110,7 +88,35 @@ Examples:
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.resolution, "resolution", "", "data resolution (e.g. 5m, 1h, 1d)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter metric data")
-	return withScopes(cmd, "metrics.read", "entities.read")
+	return withScopes(cmd, scopeMetricsRead, scopeEntitiesRead)
+}
+
+// metricQueryFetch is the Fetch of query metrics: one /metrics/query request
+// with params, and for a table, the names of the entities behind each series.
+func (a *App) metricQueryFetch(params map[string]string) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, _ int) (fetched, error) {
+		var body map[string]interface{}
+		if err := c.GetV2("/metrics/query", params, &body); err != nil {
+			return fetched{}, err
+		}
+		if !a.humanOutput() {
+			return fetched{Body: body, Total: -1}, nil
+		}
+		// A table names the entities behind each series. The names come
+		// from a second request, so json, yaml and agent output (the API's
+		// own object) never pay for it, and a failed lookup leaves the IDs
+		// rather than failing. Only Human sees this Body, so it is the
+		// typed form.
+		var resp MetricQueryResponse
+		if err := client.DecodePaged(body, &resp); err != nil {
+			return fetched{}, err
+		}
+		var warnings []string
+		if err := resolveMetricEntityNames(c, &resp); err != nil {
+			warnings = append(warnings, fmt.Sprintf("Could not look up entity names (%v); showing entity IDs.", err))
+		}
+		return fetched{Body: resp, Total: -1, Warnings: warnings}, nil
+	}
 }
 
 // MetricEntitySummaryRow is a table row for per-entity single-value metric results.
@@ -134,11 +140,14 @@ func isSingleValueResult(data []MetricQueryDataPoints) bool {
 	return true
 }
 
+// entityDimensionPrefix starts every entity dimension key ("dt.entity.service").
+const entityDimensionPrefix = "dt.entity."
+
 // extractEntityLabel returns (displayName, entityID) from a dimensionMap.
 // It pairs "dt.entity.X" (entity ID) with "dt.entity.X.name" (resolved name).
 func extractEntityLabel(dimMap map[string]string) (name, id string) {
 	for k, v := range dimMap {
-		if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+		if strings.HasPrefix(k, entityDimensionPrefix) && !strings.HasSuffix(k, ".name") {
 			id = v
 			name = dimMap[k+".name"]
 			return
@@ -162,7 +171,7 @@ func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) error
 	for _, res := range resp.Result {
 		for _, dp := range res.Data {
 			for k, v := range dp.DimensionMap {
-				if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+				if strings.HasPrefix(k, entityDimensionPrefix) && !strings.HasSuffix(k, ".name") {
 					seen[v] = k
 				}
 			}
@@ -208,13 +217,18 @@ func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) error
 func injectEntityNames(resp *MetricQueryResponse, nameMap map[string]string) {
 	for ri := range resp.Result {
 		for di := range resp.Result[ri].Data {
-			dm := resp.Result[ri].Data[di].DimensionMap
-			for k, entityID := range dm {
-				if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
-					if name, ok := nameMap[entityID]; ok {
-						dm[k+".name"] = name
-					}
-				}
+			injectDimensionNames(resp.Result[ri].Data[di].DimensionMap, nameMap)
+		}
+	}
+}
+
+// injectDimensionNames adds a "dt.entity.X.name" key to dm for every
+// "dt.entity.X" key whose entity ID nameMap names.
+func injectDimensionNames(dm, nameMap map[string]string) {
+	for k, entityID := range dm {
+		if strings.HasPrefix(k, entityDimensionPrefix) && !strings.HasSuffix(k, ".name") {
+			if name, ok := nameMap[entityID]; ok {
+				dm[k+".name"] = name
 			}
 		}
 	}
@@ -239,38 +253,45 @@ func (a *App) printMetricQuerySummary(w io.Writer, resp MetricQueryResponse) err
 	return nil
 }
 
-func (a *App) printEntitySummaryTable(w io.Writer, data []MetricQueryDataPoints) error {
-	type row struct {
-		name  string
-		id    string
-		value *float64
+// entityValue is one entity's single metric value; a nil value is null.
+type entityValue struct {
+	name  string
+	id    string
+	value *float64
+}
+
+// entityValueLess orders the entity summary table: value descending with
+// nulls last, then name ascending, then ID ascending for determinism.
+func entityValueLess(x, y entityValue) bool {
+	vx, vy := x.value, y.value
+	if vx == nil && vy != nil {
+		return false
 	}
-	var rows []row
+	if vx != nil && vy == nil {
+		return true
+	}
+	if vx != nil && vy != nil && *vx != *vy {
+		return *vx > *vy
+	}
+	if x.name != y.name {
+		return x.name < y.name
+	}
+	return x.id < y.id
+}
+
+// printEntitySummaryTable writes single-value series as a table of one row
+// per entity, sorted by entityValueLess.
+func (a *App) printEntitySummaryTable(w io.Writer, data []MetricQueryDataPoints) error {
+	var rows []entityValue
 	for _, dp := range data {
 		name, id := extractEntityLabel(dp.DimensionMap)
 		var val *float64
 		if len(dp.Values) == 1 {
 			val = dp.Values[0]
 		}
-		rows = append(rows, row{name: name, id: id, value: val})
+		rows = append(rows, entityValue{name: name, id: id, value: val})
 	}
-	// Sort: value desc (nulls last), then name asc, then id asc for determinism
-	sort.Slice(rows, func(i, j int) bool {
-		vi, vj := rows[i].value, rows[j].value
-		if vi == nil && vj != nil {
-			return false
-		}
-		if vi != nil && vj == nil {
-			return true
-		}
-		if vi != nil && vj != nil && *vi != *vj {
-			return *vi > *vj
-		}
-		if rows[i].name != rows[j].name {
-			return rows[i].name < rows[j].name
-		}
-		return rows[i].id < rows[j].id
-	})
+	sort.Slice(rows, func(i, j int) bool { return entityValueLess(rows[i], rows[j]) })
 	tableRows := make([]MetricEntitySummaryRow, 0, len(rows))
 	for _, r := range rows {
 		val := "null"

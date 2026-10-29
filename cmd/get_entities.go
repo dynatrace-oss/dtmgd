@@ -71,7 +71,7 @@ func newGetEntityTypesCmd(a *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of entity types")
-	return withScopes(cmd, "entities.read")
+	return withScopes(cmd, scopeEntitiesRead)
 }
 
 // entityTypeRows turns an /entityTypes body into table rows.
@@ -149,7 +149,7 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of entities")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (name or -name)")
 	cmd.Flags().StringVar(&opts.mz, "mz", "", "management zone selector")
-	return withScopes(cmd, "entities.read")
+	return withScopes(cmd, scopeEntitiesRead)
 }
 
 // entityRows turns an /entities body into table rows.

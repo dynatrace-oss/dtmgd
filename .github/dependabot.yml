@@ -6,6 +6,16 @@ updates:
       interval: weekly
     open-pull-requests-limit: 5
 
+  # CI tooling (govulncheck), pinned in its own module. Tool modules are
+  # `// indirect` in go.mod, which scheduled updates skip unless allowed.
+  - package-ecosystem: gomod
+    directory: /tools
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-type: all
+    open-pull-requests-limit: 5
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

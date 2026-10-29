@@ -7,7 +7,7 @@ LDFLAGS  := -ldflags "-s -w \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Commit=$(COMMIT) \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Date=$(DATE)"
 
-.PHONY: build clean install vet fmt test lint release-dry
+.PHONY: build clean install vet fmt test lint vulncheck release-dry
 
 build:
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) .
@@ -28,8 +28,14 @@ lint: vet fmt
 	@UNFORMATTED=$$(gofmt -l .); \
 	if [ -n "$$UNFORMATTED" ]; then echo "Unformatted files: $$UNFORMATTED"; exit 1; fi
 
+# govulncheck is pinned and checksum-locked in tools/go.mod and go.sum.
+vulncheck:
+	go -C tools build -o $(CURDIR)/bin/govulncheck golang.org/x/vuln/cmd/govulncheck
+	./bin/govulncheck ./...
+
 release-dry:
 	goreleaser release --snapshot --clean
 
 clean:
 	rm -f $(BINARY)
+	rm -rf bin

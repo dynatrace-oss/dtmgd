@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"encoding/json"
+	"net/url"
+	"reflect"
 	"testing"
 )
 
@@ -123,5 +125,62 @@ func TestLogEntryUnmarshal(t *testing.T) {
 	}
 	if entry.Content != "403 FORBIDDEN Purchase was rejected" {
 		t.Errorf("Content = %q", entry.Content)
+	}
+}
+
+// TestQueryLogsFlagChecksAndErrors pins query logs' usage errors, checked
+// before any request and --query first, and how an API error is reported.
+func TestQueryLogsFlagChecksAndErrors(t *testing.T) {
+	queryRequired := "== exit code: 2\n== stdout\n== stderr\nError: --query is required (e.g. \"error\")\n"
+	cases := []struct {
+		name string
+		args []string
+		hits int // requests sent
+		want string
+	}{
+		{"neither flag", nil, 0, queryRequired},
+		{"no --query", []string{"--from", "now-1h"}, 0, queryRequired},
+		{"no --from", []string{"--query", "error"}, 0, "== exit code: 2\n== stdout\n== stderr\nError: --from is required (e.g. now-1h)\n"},
+		{"API error", []string{"--query", "error", "--from", "now-1h"}, 1, "== exit code: 5\n" +
+			"== stdout\n" +
+			"== stderr\n" +
+			"Error: API error 403: Token is missing required scope\n" +
+			"Hint: Permission denied. Your API token may be missing required scopes.\n" +
+			"  This command needs the token scope(s): logs.read.\n"},
+	}
+	for _, tc := range cases {
+		api := newFakeAPI(t, map[string]route{logsPath: {Status: 403, File: "error_403.json"}})
+		r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), append([]string{"query", "logs"}, tc.args...)...)
+		if got := r.String(); got != tc.want {
+			t.Errorf("%s:\n--- want\n%s\n--- got\n%s", tc.name, tc.want, got)
+		}
+		if got := api.Hits(logsPath); got != tc.hits {
+			t.Errorf("%s: %d requests, want %d", tc.name, got, tc.hits)
+		}
+	}
+}
+
+// TestQueryLogsQueryParams pins the /logs/search query: --to defaults to now,
+// and --sort and --entity are sent only when given.
+func TestQueryLogsQueryParams(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want url.Values
+	}{
+		{"defaults", nil, url.Values{"query": {"error"}, "from": {"now-1h"}, "to": {"now"}, "limit": {"100"}}},
+		{"every flag", []string{"--to", "now-5m", "--sort", "-timestamp", "--entity", "type(PROCESS_GROUP)"}, url.Values{
+			"query": {"error"}, "from": {"now-1h"}, "to": {"now-5m"}, "limit": {"100"},
+			"sort": {"-timestamp"}, "entitySelector": {"type(PROCESS_GROUP)"},
+		}},
+	}
+	for _, tc := range cases {
+		api := newFakeAPI(t, map[string]route{logsPath: {File: "logs.json"}})
+		args := append([]string{"query", "logs", "--query", "error", "--from", "now-1h"}, tc.args...)
+		r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), args...)
+		qs := api.Queries(logsPath)
+		if r.Code != 0 || len(qs) != 1 || !reflect.DeepEqual(qs[0], tc.want) {
+			t.Errorf("%s: code %d, queries %v, want one with %v", tc.name, r.Code, qs, tc.want)
+		}
 	}
 }

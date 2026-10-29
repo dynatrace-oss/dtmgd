@@ -21,6 +21,11 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
+      - name: Check go mod tidy (tools module)
+        run: |
+          go -C tools mod tidy
+          git diff --exit-code tools/go.mod tools/go.sum
+
       - name: Check gofmt
         run: |
           UNFORMATTED=$(gofmt -l .)

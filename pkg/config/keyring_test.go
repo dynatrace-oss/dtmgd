@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -144,4 +145,93 @@ func TestGetTokenSurfacesKeyringErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "keyring: locked") {
 		t.Errorf("err = %v, want it to carry the keyring error", err)
 	}
+}
+
+// keyringReadsFail makes the keyring probe pass but every later keyring call
+// fail with err, as a keyring that locks after startup does.
+func keyringReadsFail(t *testing.T, err error) {
+	t.Helper()
+	probe.Lock()
+	probe.done, probe.err = true, nil
+	probe.Unlock()
+	keyring.MockInitWithError(err)
+	t.Cleanup(func() { keyring.MockInit(); resetKeyringProbe() })
+}
+
+// TestGetTokenSources pins where GetToken finds a token and what it says
+// when it cannot: the keyring wins whenever it holds a non-empty token; an
+// empty or missing keyring entry falls back to the config; and an empty
+// config entry reports why the keyring did not supply it.
+func TestGetTokenSources(t *testing.T) {
+	resetKeyringProbe()
+	t.Cleanup(resetKeyringProbe)
+	for name, value := range map[string]string{"kr": "from-keyring", "kr-empty": ""} {
+		if err := keyring.Set(keyringService, name, value); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = keyring.Delete(keyringService, name) })
+	}
+	cfg := &Config{Tokens: []NamedToken{
+		{Name: "kr", Token: "plain-kr"},
+		{Name: "kr-empty", Token: "plain-empty"},
+		{Name: "blank", Token: ""},
+		{Name: "plain", Token: "plain-value"},
+	}}
+	bare := &Config{}
+
+	cases := []struct {
+		name, ref string
+		cfg       *Config
+		want      string
+		wantErr   string
+	}{
+		{"keyring first", "kr", cfg, "from-keyring", ""},
+		{"keyring without a config entry", "kr", bare, "from-keyring", ""},
+		{"empty keyring value falls back", "kr-empty", cfg, "plain-empty", ""},
+		{"not in keyring, plaintext", "plain", cfg, "plain-value", ""},
+		{"not in keyring, blank entry", "blank", cfg, "", `token "blank" not found in keyring (may need to re-add credentials)`},
+		{"nowhere", "missing", cfg, "", `token "missing" not found`},
+	}
+	for _, tc := range cases {
+		got, err := tc.cfg.GetToken(tc.ref)
+		gotErr := ""
+		if err != nil {
+			gotErr = err.Error()
+		}
+		if got != tc.want || gotErr != tc.wantErr {
+			t.Errorf("%s: GetToken(%q) = %q, %q; want %q, %q", tc.name, tc.ref, got, gotErr, tc.want, tc.wantErr)
+		}
+	}
+}
+
+// TestGetTokenKeyringReadFails pins GetToken when the keyring passed its
+// probe but cannot be read: a blank config entry reports the keyring's error
+// (wrapped), a plaintext entry is still used, and an unknown name is plain
+// "not found". A keyring that fails its probe reports the probe's error.
+func TestGetTokenKeyringReadFails(t *testing.T) {
+	locked := errors.New("locked")
+	cfg := &Config{Tokens: []NamedToken{{Name: "blank", Token: ""}, {Name: "plain", Token: "plain-value"}}}
+
+	t.Run("read fails", func(t *testing.T) {
+		keyringReadsFail(t, locked)
+		_, err := cfg.GetToken("blank")
+		if err == nil || err.Error() != `keyring: locked (token "blank" is stored there)` || !errors.Is(err, locked) {
+			t.Errorf("blank entry: err = %v", err)
+		}
+		if got, err := cfg.GetToken("plain"); got != "plain-value" || err != nil {
+			t.Errorf("plaintext entry: %q, %v", got, err)
+		}
+		if _, err := cfg.GetToken("missing"); err == nil || err.Error() != `token "missing" not found` {
+			t.Errorf("unknown name: err = %v", err)
+		}
+	})
+
+	t.Run("probe fails", func(t *testing.T) {
+		withoutKeyring(t)
+		_, err := cfg.GetToken("blank")
+		want := fmt.Sprintf("keyring: %v (token \"blank\" is stored there)", keyring.ErrUnsupportedPlatform)
+		if err == nil || err.Error() != want || !errors.Is(err, keyring.ErrUnsupportedPlatform) {
+			t.Errorf("blank entry: err = %v, want %s", err, want)
+		}
+	})
 }

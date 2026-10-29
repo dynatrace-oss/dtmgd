@@ -74,21 +74,10 @@ Examples:
 			return a.runFetch(fetchSpec{
 				Verb:     "query",
 				Resource: "logs",
-				Fetch: func(c *client.Client, limit int) (fetched, error) {
-					p := make(map[string]string, len(params)+1)
-					for k, v := range params {
-						p[k] = v
-					}
-					p["limit"] = strconv.Itoa(logSearchLimit(limit))
-					var body map[string]interface{}
-					if err := c.GetV2("/logs/search", p, &body); err != nil {
-						return fetched{}, err
-					}
-					return logsFetched(body), nil
-				},
-				Human: printLogRecords,
-				Limit: opts.limit,
-				List:  true,
+				Fetch:    logSearchFetch(params),
+				Human:    printLogRecords,
+				Limit:    opts.limit,
+				List:     true,
 			})
 		},
 	}
@@ -98,7 +87,24 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records, at most 1000 (default: 100)")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. -timestamp for newest first)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag(\"env:prod\")')")
-	return withScopes(cmd, "logs.read")
+	return withScopes(cmd, scopeLogsRead)
+}
+
+// logSearchFetch is the Fetch of query logs: one /logs/search request with
+// params and the limit logSearchLimit derives from the effective item limit.
+func logSearchFetch(params map[string]string) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, limit int) (fetched, error) {
+		p := make(map[string]string, len(params)+1)
+		for k, v := range params {
+			p[k] = v
+		}
+		p["limit"] = strconv.Itoa(logSearchLimit(limit))
+		var body map[string]interface{}
+		if err := c.GetV2("/logs/search", p, &body); err != nil {
+			return fetched{}, err
+		}
+		return logsFetched(body), nil
+	}
 }
 
 // Default and largest limit of one /logs/search request.

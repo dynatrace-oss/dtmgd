@@ -159,9 +159,9 @@ const requestTimeout = 60 * time.Second
 // replaces it.
 type quietLogger struct{}
 
-func (quietLogger) Errorf(string, ...interface{}) {}
-func (quietLogger) Warnf(string, ...interface{})  {}
-func (quietLogger) Debugf(string, ...interface{}) {}
+func (quietLogger) Errorf(string, ...interface{}) { /* discarded on purpose */ }
+func (quietLogger) Warnf(string, ...interface{})  { /* discarded on purpose */ }
+func (quietLogger) Debugf(string, ...interface{}) { /* discarded on purpose */ }
 
 // stderrLogger is resty's logger under -v.
 type stderrLogger struct{ l *log.Logger }
@@ -223,13 +223,7 @@ func (c *Client) SetVerbosity(level int) {
 			}
 			fmt.Fprintf(os.Stderr, "==> %s %s%s\n", req.Method, req.URL, via)
 			if level >= 2 {
-				for k, v := range req.Header {
-					if strings.EqualFold(k, "authorization") || strings.EqualFold(k, "proxy-authorization") {
-						fmt.Fprintf(os.Stderr, "    %s: [REDACTED]\n", k)
-					} else {
-						fmt.Fprintf(os.Stderr, "    %s: %s\n", k, strings.Join(v, ", "))
-					}
-				}
+				printRequestHeaders(req.Header)
 			}
 			return nil
 		})
@@ -241,6 +235,19 @@ func (c *Client) SetVerbosity(level int) {
 			}
 			return nil
 		})
+	}
+}
+
+// printRequestHeaders writes h to stderr for verbosity 2 and above, one header
+// per line, with the credentials in Authorization and Proxy-Authorization
+// redacted.
+func printRequestHeaders(h http.Header) {
+	for k, v := range h {
+		if strings.EqualFold(k, "authorization") || strings.EqualFold(k, "proxy-authorization") {
+			fmt.Fprintf(os.Stderr, "    %s: [REDACTED]\n", k)
+		} else {
+			fmt.Fprintf(os.Stderr, "    %s: %s\n", k, strings.Join(v, ", "))
+		}
 	}
 }
 

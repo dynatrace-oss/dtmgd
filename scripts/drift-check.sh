@@ -10,7 +10,8 @@
 # Run by .github/workflows/drift.yml, which turns the report into an issue.
 # Bot-opened PRs would not trigger CI here, so the fix itself is a human PR.
 #
-# GOVULNCHECK overrides the govulncheck command (default: govulncheck).
+# GOVULNCHECK overrides the govulncheck command (default: govulncheck). CI
+# passes the binary built from the checksum-locked tools/ module.
 set -euo pipefail
 trap 'echo "drift-check: unexpected failure on line $LINENO" >&2; exit 2' ERR
 

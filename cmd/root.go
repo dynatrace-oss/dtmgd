@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"slices"
+
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
@@ -33,54 +35,21 @@ func rewriteNegativeArgs(args []string) []string {
 	if !isDescribeProblemArgs(args) {
 		return args
 	}
-	negIdx := -1
-	for i, a := range args {
-		if len(a) >= 2 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' {
-			negIdx = i
-			break
-		}
-	}
+	negIdx := negativeArgIndex(args)
 	if negIdx == -1 {
 		return args
 	}
 	// "--" already present before the negative ID — nothing to do.
-	for i := 0; i < negIdx; i++ {
-		if args[i] == "--" {
-			return args
-		}
+	if slices.Contains(args[:negIdx], "--") {
+		return args
 	}
 	before := args[:negIdx]
 	negID := args[negIdx]
-	after := args[negIdx+1:]
 
 	// Move flag-like tokens (starting with -<letter> or --<word>) that come
 	// after the negative ID to before the "--", so they are still parsed by
 	// cobra.  Stop at a bare "--" or any non-flag token.
-	var movedFlags []string
-	var positionalAfter []string
-	for i := 0; i < len(after); {
-		a := after[i]
-		if a == "--" {
-			// Hard stop: pass remaining args (including this "--") through as-is.
-			positionalAfter = append(positionalAfter, after[i:]...)
-			break
-		}
-		isFlagLike := len(a) >= 2 && a[0] == '-' &&
-			(a[1] == '-' || (a[1] >= 'a' && a[1] <= 'z') || (a[1] >= 'A' && a[1] <= 'Z'))
-		if isFlagLike {
-			movedFlags = append(movedFlags, a)
-			// If the next token does not look like a flag, treat it as the flag value.
-			if i+1 < len(after) && (len(after[i+1]) == 0 || after[i+1][0] != '-') {
-				movedFlags = append(movedFlags, after[i+1])
-				i += 2
-				continue
-			}
-			i++
-		} else {
-			positionalAfter = append(positionalAfter, after[i:]...)
-			break
-		}
-	}
+	movedFlags, positionalAfter := leadingFlags(args[negIdx+1:])
 
 	out := make([]string, 0, len(args)+1)
 	out = append(out, before...)
@@ -89,6 +58,45 @@ func rewriteNegativeArgs(args []string) []string {
 	out = append(out, negID)
 	out = append(out, positionalAfter...)
 	return out
+}
+
+// negativeArgIndex is the index of the first argument that is "-" followed
+// by a digit, such as a negative-integer problem ID, or -1 if there is none.
+func negativeArgIndex(args []string) int {
+	for i, a := range args {
+		if len(a) >= 2 && a[0] == '-' && a[1] >= '0' && a[1] <= '9' {
+			return i
+		}
+	}
+	return -1
+}
+
+// leadingFlags splits the arguments after a negative ID into the flag-like
+// tokens that lead them, each followed by its value if it has one, and the
+// rest, which start at the first bare "--" or non-flag token.
+func leadingFlags(after []string) (flags, rest []string) {
+	for i := 0; i < len(after); {
+		a := after[i]
+		if a == "--" || !isFlagLike(a) {
+			// Hard stop: pass remaining args (including any "--") through as-is.
+			return flags, after[i:]
+		}
+		flags = append(flags, a)
+		i++
+		// If the next token does not look like a flag, treat it as the flag value.
+		if i < len(after) && (len(after[i]) == 0 || after[i][0] != '-') {
+			flags = append(flags, after[i])
+			i++
+		}
+	}
+	return flags, nil
+}
+
+// isFlagLike reports whether a looks like a flag: "--" followed by anything,
+// or "-" followed by a letter.
+func isFlagLike(a string) bool {
+	return len(a) >= 2 && a[0] == '-' &&
+		(a[1] == '-' || (a[1] >= 'a' && a[1] <= 'z') || (a[1] >= 'A' && a[1] <= 'Z'))
 }
 
 // warnBareRefs warns about bare $VAR references, which are no longer expanded.

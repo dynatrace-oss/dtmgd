@@ -92,18 +92,19 @@ func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, o Opti
 	return results, nil
 }
 
+// resolveContexts returns the contexts envSpec selects (see MultiRequest), in
+// the order it names them.
 func resolveContexts(cfg *config.Config, envSpec string) ([]config.NamedContext, error) {
 	if envSpec == "" {
 		// Current context only
 		if cfg.CurrentContext == "" {
 			return nil, fmt.Errorf("no current context set. Run 'dtmgd config set-context' to configure one")
 		}
-		for _, nc := range cfg.Contexts {
-			if nc.Name == cfg.CurrentContext {
-				return []config.NamedContext{nc}, nil
-			}
+		nc, err := cfg.GetContext(cfg.CurrentContext)
+		if err != nil {
+			return nil, fmt.Errorf("current context %q not found in config", cfg.CurrentContext)
 		}
-		return nil, fmt.Errorf("current context %q not found in config", cfg.CurrentContext)
+		return []config.NamedContext{*nc}, nil
 	}
 
 	if envSpec == "ALL_ENVIRONMENTS" {
@@ -121,23 +122,22 @@ func resolveContexts(cfg *config.Config, envSpec string) ([]config.NamedContext,
 		if name == "" {
 			continue
 		}
-		found := false
-		for _, nc := range cfg.Contexts {
-			if nc.Name == name {
-				result = append(result, nc)
-				found = true
-				break
-			}
+		nc, err := cfg.GetContext(name)
+		if err != nil {
+			return nil, fmt.Errorf("context %q not found. Available: %s", name, strings.Join(contextNames(cfg), ", "))
 		}
-		if !found {
-			available := make([]string, len(cfg.Contexts))
-			for i, nc := range cfg.Contexts {
-				available[i] = nc.Name
-			}
-			return nil, fmt.Errorf("context %q not found. Available: %s", name, strings.Join(available, ", "))
-		}
+		result = append(result, *nc)
 	}
 	return result, nil
+}
+
+// contextNames lists the names of cfg's contexts, in config order.
+func contextNames(cfg *config.Config) []string {
+	names := make([]string, len(cfg.Contexts))
+	for i, nc := range cfg.Contexts {
+		names[i] = nc.Name
+	}
+	return names
 }
 
 // UnwrapSingle returns the data directly if there's only one result,

@@ -190,8 +190,8 @@ func (c *Config) SaveTo(path string) error {
 // file it replaces was looser: a config can hold a plaintext token. A symlink
 // is followed, so a config kept elsewhere (a dotfiles repo) stays linked.
 func writeFileAtomic(path string, data []byte) error {
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {
@@ -251,15 +251,9 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 	// kerr is why the keyring could not supply the token, if it failed for a
 	// reason other than not having it. A token whose config entry is empty
 	// lives in the keyring, so that reason is the real error, not "not found".
-	kerr := keyringStatus()
-	if kerr == nil {
-		token, err := NewTokenStore().GetToken(tokenRef)
-		if err == nil && token != "" {
-			return token, nil
-		}
-		if err != nil && !errors.Is(err, keyring.ErrNotFound) {
-			kerr = err
-		}
+	fromKeyring, kerr := keyringToken(tokenRef)
+	if fromKeyring != "" {
+		return fromKeyring, nil
 	}
 	for _, nt := range c.Tokens {
 		if nt.Name == tokenRef {
@@ -279,6 +273,24 @@ func (c *Config) GetToken(tokenRef string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("token %q not found", tokenRef)
+}
+
+// keyringToken looks tokenRef up in the OS keyring, if the keyring is usable.
+// It returns the token when the keyring holds a non-empty one; otherwise it
+// returns why the keyring could not supply it, or nil if it simply does not
+// have it.
+func keyringToken(tokenRef string) (string, error) {
+	if kerr := keyringStatus(); kerr != nil {
+		return "", kerr
+	}
+	token, err := NewTokenStore().GetToken(tokenRef)
+	if err == nil && token != "" {
+		return token, nil
+	}
+	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		return "", err
+	}
+	return "", nil
 }
 
 // SetContext creates or updates a context entry.

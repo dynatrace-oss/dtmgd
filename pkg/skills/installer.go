@@ -205,18 +205,9 @@ func Install(agent Agent, baseDir string, global bool, overwrite bool) (*Install
 // A missing directory is not an error: it is the ordinary first-install case
 // and simply has nothing to preserve.
 func unmanagedFiles(dir string, embeddedFS fs.FS) ([]string, error) {
-	managed := make(map[string]bool)
-	err := fs.WalkDir(embeddedFS, ".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && filepath.Ext(path) != ".go" {
-			managed[filepath.Clean(path)] = true
-		}
-		return nil
-	})
+	managed, err := managedFiles(embeddedFS)
 	if err != nil {
-		return nil, fmt.Errorf("reading embedded skill: %w", err)
+		return nil, err
 	}
 
 	var extra []string
@@ -244,6 +235,25 @@ func unmanagedFiles(dir string, embeddedFS fs.FS) ([]string, error) {
 	}
 	sort.Strings(extra)
 	return extra, nil
+}
+
+// managedFiles is the set of files the embedded skill installs, by cleaned
+// relative path: every file in embeddedFS except Go sources.
+func managedFiles(embeddedFS fs.FS) (map[string]bool, error) {
+	managed := make(map[string]bool)
+	err := fs.WalkDir(embeddedFS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) != ".go" {
+			managed[filepath.Clean(path)] = true
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reading embedded skill: %w", err)
+	}
+	return managed, nil
 }
 
 // copyEmbeddedFS copies all files from the embedded filesystem to destDir,
@@ -286,12 +296,10 @@ func Uninstall(agent Agent, baseDir string) ([]string, error) {
 	var errs []string
 
 	projectDir := filepath.Join(baseDir, agent.ProjectPath)
-	if _, err := os.Stat(projectDir); err == nil {
-		if err := os.RemoveAll(projectDir); err != nil {
-			errs = append(errs, fmt.Sprintf("failed to remove %s: %v", projectDir, err))
-		} else {
-			removed = append(removed, projectDir)
-		}
+	if ok, err := removeSkillDir(projectDir); err != nil {
+		errs = append(errs, err.Error())
+	} else if ok {
+		removed = append(removed, projectDir)
 	}
 
 	if agent.GlobalPath != "" {
@@ -300,12 +308,10 @@ func Uninstall(agent Agent, baseDir string) ([]string, error) {
 			errs = append(errs, fmt.Sprintf("failed to determine home directory: %v", err))
 		} else {
 			globalDir := filepath.Join(home, agent.GlobalPath)
-			if _, err := os.Stat(globalDir); err == nil {
-				if err := os.RemoveAll(globalDir); err != nil {
-					errs = append(errs, fmt.Sprintf("failed to remove %s: %v", globalDir, err))
-				} else {
-					removed = append(removed, globalDir)
-				}
+			if ok, err := removeSkillDir(globalDir); err != nil {
+				errs = append(errs, err.Error())
+			} else if ok {
+				removed = append(removed, globalDir)
 			}
 		}
 	}
@@ -314,6 +320,19 @@ func Uninstall(agent Agent, baseDir string) ([]string, error) {
 		return removed, fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return removed, nil
+}
+
+// removeSkillDir removes dir and everything under it, reporting whether it
+// did. A dir os.Stat cannot see (normally, one that does not exist) is left
+// alone, which is not an error.
+func removeSkillDir(dir string) (bool, error) {
+	if _, err := os.Stat(dir); err == nil {
+		if err := os.RemoveAll(dir); err != nil {
+			return false, fmt.Errorf("failed to remove %s: %w", dir, err)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // Status checks the installation state for a given agent.

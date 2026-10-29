@@ -99,6 +99,25 @@ func (a *App) renderOne(s fetchSpec, f fetched) error {
 // environment), or a section per environment for a person. Any failure makes
 // the call fail, after everything that did arrive has been printed.
 func (a *App) renderMulti(s fetchSpec, results []client.EnvResult) error {
+	merged, partial := mergeResults(results)
+	if a.agentMode() {
+		return a.renderMultiAgent(s, results, merged, partial)
+	}
+
+	switch fm := a.format(); fm {
+	case output.FormatJSON, output.FormatYAML:
+		if err := output.NewPrinterTo(string(fm), a.Out).Print(merged); err != nil {
+			return err
+		}
+		return partial
+	}
+	return a.renderMultiHuman(s, results, partial)
+}
+
+// mergeResults keys each environment's Body by context name, with
+// {"error": …} for a failed environment, and returns a
+// *client.PartialFailureError naming the failures, or nil if there are none.
+func mergeResults(results []client.EnvResult) (map[string]interface{}, error) {
 	merged := map[string]interface{}{}
 	var failed []client.EnvResult
 	for _, r := range results {
@@ -109,40 +128,37 @@ func (a *App) renderMulti(s fetchSpec, results []client.EnvResult) error {
 			merged[r.Name] = r.Data.(fetched).Body
 		}
 	}
-	var partial error
-	if len(failed) > 0 {
-		partial = &client.PartialFailureError{Failed: failed, Total: len(results)}
+	if len(failed) == 0 {
+		return merged, nil
 	}
+	return merged, &client.PartialFailureError{Failed: failed, Total: len(results)}
+}
 
-	if a.agentMode() {
-		// The merged envelope has no per-environment context, so failures
-		// and truncated lists are named in its warnings, in config order.
-		ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource}
-		for _, r := range results {
-			if r.Error != nil {
-				ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
-			} else if f := r.Data.(fetched); f.HasMore {
-				ctx.HasMore = true
-				ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %s", r.Name, truncationNote(s, f)))
-			}
+// renderMultiAgent prints the merged results as one agent envelope. The
+// envelope has no per-environment context, so failures and truncated lists
+// are named in its warnings, in config order.
+func (a *App) renderMultiAgent(s fetchSpec, results []client.EnvResult, merged map[string]interface{}, partial error) error {
+	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource}
+	for _, r := range results {
+		if r.Error != nil {
+			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
+		} else if f := r.Data.(fetched); f.HasMore {
+			ctx.HasMore = true
+			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %s", r.Name, truncationNote(s, f)))
 		}
-		if partial == nil {
-			return output.NewAgentPrinter(a.Out, ctx).Print(merged)
-		}
-		if err := output.WriteAgentPartial(a.Out, merged, errorDetail(partial, ""), ctx); err != nil {
-			return err
-		}
-		return fmt.Errorf("%w: %w", errReported, partial)
 	}
-
-	switch fm := a.format(); fm {
-	case output.FormatJSON, output.FormatYAML:
-		if err := output.NewPrinterTo(string(fm), a.Out).Print(merged); err != nil {
-			return err
-		}
-		return partial
+	if partial == nil {
+		return output.NewAgentPrinter(a.Out, ctx).Print(merged)
 	}
+	if err := output.WriteAgentPartial(a.Out, merged, errorDetail(partial, ""), ctx); err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errReported, partial)
+}
 
+// renderMultiHuman prints a section per environment for a person, a failed
+// environment's error going to stderr in its place.
+func (a *App) renderMultiHuman(s fetchSpec, results []client.EnvResult, partial error) error {
 	for i, r := range results {
 		if i > 0 {
 			_, _ = fmt.Fprintln(a.Out)
