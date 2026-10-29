@@ -21,6 +21,7 @@ Supported resources:
 Cluster resources (need a cluster context: one without env-id):
   environments (envs)   The cluster's environments
   nodes (node)          The cluster's nodes, their state, version and roles
+  license-usage         Each environment's total billed license usage
 
 Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		RunE: requireSubcommand,
@@ -30,6 +31,7 @@ Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		newGetEntitiesCmd(a),
 		newGetEnvironmentsCmd(a),
 		newGetEventsCmd(a),
+		newGetLicenseUsageCmd(a),
 		newGetMetricsCmd(a),
 		newGetNodesCmd(a),
 		newGetProblemsCmd(a),

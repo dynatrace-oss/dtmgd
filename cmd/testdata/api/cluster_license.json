@@ -1,0 +1,16 @@
+{
+  "accountName": "Test Account",
+  "clusterId": "00000000-0000-0000-0000-000000000001",
+  "contactEmailAddress": "license-contact@example.com",
+  "lastBillingTime": "2026-10-29T06:00:00Z",
+  "licenseExpirationTime": "2027-06-30T23:59:59Z",
+  "licenseKey": "TEST-KEY0-0000-9876",
+  "licenseName": "Test license",
+  "licenseStatus": "ACTIVE",
+  "licenseType": "PAID",
+  "productVersion": "1.330.18.20251017-120000",
+  "usageOfHostUnits": {"quota": 100, "remaining": 57.5, "remainingPercent": 57.5, "usage": 42.5, "usagePercent": 42.5, "usageStatus": "USING_QUOTA"},
+  "usageOfDemUnits": {"quota": 50000, "remaining": 0, "remainingPercent": 0, "usage": 52000, "usagePercent": 104, "usageStatus": "USING_OVERAGE",
+    "overageUsage": {"overageQuota": 10000, "overageUsage": 2000, "overageUsagePercent": 20}},
+  "usageOfDduUnits": {"quota": 1000000, "remaining": 750000, "remainingPercent": 75, "usage": 250000, "usagePercent": 25, "usageStatus": "USING_QUOTA"}
+}
