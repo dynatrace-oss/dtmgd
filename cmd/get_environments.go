@@ -25,22 +25,32 @@ const environmentsMoved = `"get environments" now lists a cluster's environments
 // show. Quotas are present only with includeConsumptionInfo, and a quota or
 // limit the API leaves null is unknown or unlimited.
 type clusterEnvironment struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	State        string   `json:"state"`
-	Trial        bool     `json:"trial"`
-	CreationDate string   `json:"creationDate"`
-	Tags         []string `json:"tags"`
-	Quotas       *struct {
-		HostUnits *struct {
-			CurrentUsage *float64 `json:"currentUsage"`
-			MaxLimit     *float64 `json:"maxLimit"`
-		} `json:"hostUnits"`
-		DavisDataUnits *struct {
-			ConsumedThisYear *float64 `json:"consumedThisYear"`
-			AnnualLimit      *float64 `json:"annualLimit"`
-		} `json:"davisDataUnits"`
-	} `json:"quotas"`
+	ID           string             `json:"id"`
+	Name         string             `json:"name"`
+	State        string             `json:"state"`
+	Trial        bool               `json:"trial"`
+	CreationDate string             `json:"creationDate"`
+	Tags         []string           `json:"tags"`
+	Quotas       *environmentQuotas `json:"quotas"`
+}
+
+// environmentQuotas is the part of an environment's quotas the consumption
+// columns show.
+type environmentQuotas struct {
+	HostUnits      *hostUnitsQuota `json:"hostUnits"`
+	DavisDataUnits *dduQuota       `json:"davisDataUnits"`
+}
+
+// hostUnitsQuota is an environment's host-unit usage and limit.
+type hostUnitsQuota struct {
+	CurrentUsage *float64 `json:"currentUsage"`
+	MaxLimit     *float64 `json:"maxLimit"`
+}
+
+// dduQuota is an environment's yearly Davis data unit usage and limit.
+type dduQuota struct {
+	ConsumedThisYear *float64 `json:"consumedThisYear"`
+	AnnualLimit      *float64 `json:"annualLimit"`
 }
 
 // environmentRow is a get environments table row.
