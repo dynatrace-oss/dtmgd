@@ -47,11 +47,6 @@ type Options struct {
 	Verbosity int
 }
 
-// NewFromConfig creates a Client for the config's current context.
-func NewFromConfig(cfg *config.Config) (*Client, error) {
-	return NewForContext(cfg, cfg.CurrentContext, Options{})
-}
-
 // NewForContext creates a Client for the named context: it resolves the
 // context, looks up its token, and applies its proxy and o.
 //

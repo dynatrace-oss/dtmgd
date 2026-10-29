@@ -16,12 +16,6 @@ type Printer interface {
 	PrintList(v interface{}) error
 }
 
-// NewPrinter returns a Printer for the given format ("table", "json", "yaml").
-// Defaults to table.
-func NewPrinter(format string) Printer {
-	return NewPrinterTo(format, os.Stdout)
-}
-
 // NewPrinterTo returns a Printer writing to the given writer.
 func NewPrinterTo(format string, w io.Writer) Printer {
 	return NewPrinterToWithColumns(format, w, nil)
