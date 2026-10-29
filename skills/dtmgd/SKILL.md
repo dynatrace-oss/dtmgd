@@ -62,7 +62,7 @@ Use `-o json` for AI/script consumption. Default is human-friendly `table`.
 -o yaml     # YAML output (-o yml also works)
 ```
 
-Any other `-o` value fails before a request is made.
+Any other `-o` value is a usage error (exit 2) before any request is made.
 
 - **stdout is data only.** Notes for a person ("No problems found", "Showing
   10 of 15 problems", warnings, errors, hints) go to stderr, so piping stdout to

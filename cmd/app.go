@@ -71,7 +71,7 @@ func newRootCmd(a *App) *cobra.Command {
 			output.SetPlain(a.plain())
 			f, err := output.ParseFormat(a.Opts.Output)
 			if err != nil {
-				return err
+				return &UsageError{Err: err}
 			}
 			// Normalised, so every format check below sees "yaml" for yml.
 			a.Opts.Output = string(f)

@@ -10,8 +10,8 @@ import (
 func TestInvalidOutputFormatIsRejected(t *testing.T) {
 	api := newFakeAPI(t, pagedProblems())
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "problems", "-o", "xml")
-	if r.Code == 0 {
-		t.Errorf("code = 0, want non-zero")
+	if r.Code != 2 {
+		t.Errorf("code = %d, want 2 (usage error)", r.Code)
 	}
 	if !strings.Contains(r.Stderr, `unknown output format "xml"`) {
 		t.Errorf("stderr = %q", r.Stderr)

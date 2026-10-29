@@ -266,7 +266,7 @@ what exists.
 | `--config <file>` | Config file path (default: `~/.config/dtmgd/config`) |
 | `-c, --context <name>` | Override current context |
 | `-e, --env <spec>` | Target environment(s): context name, `"prod;staging"`, or `ALL_ENVIRONMENTS` |
-| `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` (or `yml`); any other value fails before a request is made |
+| `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` (or `yml`); any other value is a usage error (exit 2) before any request is made |
 | `-A, --agent` | Force AI agent envelope output (`{ok, result, context}`) |
 | `--no-agent` | Disable auto-detected agent mode |
 | `--plain` | Words instead of symbols on stderr, no screen control (automatic when stdout is not a terminal) |
