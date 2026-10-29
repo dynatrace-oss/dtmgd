@@ -141,24 +141,27 @@ func resolveContexts(cfg *config.Config, envSpec string) ([]config.NamedContext,
 }
 
 // UnwrapSingle returns the data directly if there's only one result,
-// or a map of name→data if there are multiple.
+// otherwise a map of environment name to data, with {"error": msg} for each
+// environment that failed. When any environment failed it also returns a
+// *PartialFailureError, so the call exits non-zero; the map is still valid
+// and callers print it.
 func UnwrapSingle(results []EnvResult) (interface{}, error) {
 	if len(results) == 1 {
 		return results[0].Data, results[0].Error
 	}
 
-	// Multiple environments — collect into a map
 	merged := make(map[string]interface{})
-	var firstErr error
+	var failed []EnvResult
 	for _, r := range results {
 		if r.Error != nil {
 			merged[r.Name] = map[string]string{"error": r.Error.Error()}
-			if firstErr == nil {
-				firstErr = r.Error
-			}
+			failed = append(failed, r)
 		} else {
 			merged[r.Name] = r.Data
 		}
+	}
+	if len(failed) > 0 {
+		return merged, &PartialFailureError{Failed: failed, Total: len(results)}
 	}
 	return merged, nil
 }

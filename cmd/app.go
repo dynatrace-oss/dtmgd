@@ -48,16 +48,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	}()
 	root := newRootCmd(a)
 	root.SetArgs(rewriteNegativeArgs(args))
-	if err := root.Execute(); err != nil {
-		err = client.WrapWithDiagnosis(err)
-		if a.agentMode() {
-			output.PrintAgentError(err)
-		} else {
-			output.PrintHumanError("%s", err)
-		}
-		return 1
+	cmd, err := root.ExecuteC()
+	if err != nil {
+		a.reportError(cmd, err)
+		return exitCode(err)
 	}
-	return 0
+	return client.ExitSuccess
 }
 
 // newRootCmd builds the dtmgd command tree over a, binding the global flags

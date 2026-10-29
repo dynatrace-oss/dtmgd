@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestDiagnoseError(t *testing.T) {
+func TestDiagnose(t *testing.T) {
 	tests := []struct {
 		name     string
 		err      error
@@ -28,7 +28,7 @@ func TestDiagnoseError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			hint := DiagnoseError(tt.err)
+			hint := Diagnose(tt.err)
 			if tt.contains == "" {
 				if hint != "" {
 					t.Errorf("expected empty hint, got: %s", hint)
@@ -39,33 +39,5 @@ func TestDiagnoseError(t *testing.T) {
 				t.Errorf("expected hint containing %q, got: %s", tt.contains, hint)
 			}
 		})
-	}
-}
-
-func TestWrapWithDiagnosis(t *testing.T) {
-	err := WrapWithDiagnosis(errors.New("API error 401: Unauthorized"))
-	if err == nil {
-		t.Fatal("expected non-nil error")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "401") {
-		t.Error("original error should be preserved")
-	}
-	if !strings.Contains(msg, "💡") {
-		t.Error("hint should be included")
-	}
-}
-
-func TestWrapWithDiagnosisNil(t *testing.T) {
-	if WrapWithDiagnosis(nil) != nil {
-		t.Error("nil error should return nil")
-	}
-}
-
-func TestWrapWithDiagnosisNoHint(t *testing.T) {
-	original := errors.New("something unknown")
-	wrapped := WrapWithDiagnosis(original)
-	if wrapped != original {
-		t.Error("error without hint should be returned unchanged")
 	}
 }

@@ -2,12 +2,13 @@ package client
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 )
 
-// DiagnoseError returns a user-friendly hint for common API errors.
-func DiagnoseError(err error) string {
+// Diagnose returns a hint for what to do about err, or "" when it has none.
+// Callers print it separately from the error (a human hint line, or the
+// agent envelope's suggestions) rather than gluing it into the message.
+func Diagnose(err error) string {
 	if err == nil {
 		return ""
 	}
@@ -67,16 +68,4 @@ func diagnoseStatus(code int) string {
 		return "Rate limited by the Dynatrace API. Wait a moment and retry, or reduce request frequency."
 	}
 	return ""
-}
-
-// WrapWithDiagnosis wraps an error with a diagnostic hint if available.
-func WrapWithDiagnosis(err error) error {
-	if err == nil {
-		return nil
-	}
-	hint := DiagnoseError(err)
-	if hint == "" {
-		return err
-	}
-	return fmt.Errorf("%w\n\n  💡 %s", err, hint)
 }

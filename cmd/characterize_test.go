@@ -72,14 +72,14 @@ func TestCharMultiEnvJSON(t *testing.T) {
 	assertGolden(t, "char_multi_env_json", r.String())
 }
 
-// Today: every environment failing still exits 0.
-func TestCharMultiEnvAllFail(t *testing.T) {
+// Every environment failing with 403 exits 5 (it used to exit 0).
+func TestMultiEnvAllFailExitsNonZero(t *testing.T) {
 	deny := map[string]route{problemsPath: {Status: 403, File: "error_403.json"}}
 	a, b := newFakeAPI(t, deny), newFakeAPI(t, deny)
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "problems", "--env", "a;b", "-o", "json")
-	assertGolden(t, "char_multi_env_all_fail", r.String())
-	if r.Code != 0 {
-		t.Errorf("today's behaviour changed: code=%d", r.Code)
+	assertGolden(t, "multi_env_all_fail", r.String())
+	if r.Code != 5 {
+		t.Errorf("code = %d, want 5", r.Code)
 	}
 }
 

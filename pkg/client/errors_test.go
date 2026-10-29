@@ -63,7 +63,7 @@ func TestErrAPICapsMessageLength(t *testing.T) {
 }
 
 // TestErrAPIStillDiagnosable is the regression this change could plausibly
-// have caused: DiagnoseError matches on status-code substrings, so stripping
+// have caused: Diagnose matches on status-code substrings, so stripping
 // the body must not take the hints with it.
 func TestErrAPIStillDiagnosable(t *testing.T) {
 	cases := map[int]string{
@@ -73,7 +73,7 @@ func TestErrAPIStillDiagnosable(t *testing.T) {
 		429: "Rate limited",
 	}
 	for code, wantHint := range cases {
-		hint := DiagnoseError(APIError(code, "Unauthorized"))
+		hint := Diagnose(APIError(code, "Unauthorized"))
 		if !strings.Contains(hint, wantHint) {
 			t.Errorf("status %d lost its diagnosis: got %q, want it to contain %q", code, hint, wantHint)
 		}
@@ -86,7 +86,7 @@ func TestErrAPIStillDiagnosable(t *testing.T) {
 func TestErrAPINoCrossStatusFalseMatch(t *testing.T) {
 	err := APIError(400, `{"error":{"message":"see RFC 404 for details"}}`)
 
-	if hint := DiagnoseError(err); strings.Contains(hint, "Resource not found") {
+	if hint := Diagnose(err); strings.Contains(hint, "Resource not found") {
 		t.Errorf("a 400 was diagnosed from text in its own message: %q", hint)
 	}
 }

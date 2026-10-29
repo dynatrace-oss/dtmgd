@@ -256,7 +256,7 @@ func (c *Client) SetProxy(httpProxy, httpsProxy string) {
 // bad-proxy.internal: no such host", which names a host the user never typed
 // into their context and does not say why dtmgd was trying to reach it.
 //
-// The underlying error is wrapped rather than replaced, so DiagnoseError still
+// The underlying error is wrapped rather than replaced, so Diagnose still
 // matches on "no such host", "connection refused" and the rest.
 func (c *Client) requestError(what string, err error) error {
 	if c.proxyURL != "" {
