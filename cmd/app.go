@@ -263,11 +263,6 @@ func (a *App) saveConfig(cfg *config.Config) error {
 	return cfg.Save()
 }
 
-// newClient creates an API client from the current config.
-func (a *App) newClient(cfg *config.Config) (*client.Client, error) {
-	return client.NewForContext(cfg, cfg.CurrentContext, a.clientOptions())
-}
-
 // clientOptions are the client settings this invocation's flags ask for.
 func (a *App) clientOptions() client.Options {
 	return client.Options{Verbosity: a.Opts.Verbose}
@@ -306,37 +301,4 @@ func (a *App) columns() []string {
 // isMultiEnv returns true if the --env flag specifies multiple environments.
 func (a *App) isMultiEnv() bool {
 	return a.Opts.Env == "ALL_ENVIRONMENTS" || strings.Contains(a.Opts.Env, ";")
-}
-
-// maxPagesFor returns the page limit. When --limit is set, fetch only 1 page
-// (the API's pageSize already limits results). Otherwise use --max-pages.
-func (a *App) maxPagesFor(hasLimit bool) int {
-	if hasLimit {
-		return 1
-	}
-	return a.Opts.MaxPages
-}
-
-// effectiveEnvSpec returns the env spec from the --env flag.
-func (a *App) effectiveEnvSpec() string {
-	return a.Opts.Env
-}
-
-// multiExec runs an API call against one or more environments based on --env flag.
-// Returns the unwrapped result (single value or map of name→value).
-func (a *App) multiExec(cfg *config.Config, apiCall func(c *client.Client) (interface{}, error)) (interface{}, error) {
-	spec := a.effectiveEnvSpec()
-	if spec == "" {
-		// Single environment — use current context directly
-		c, err := a.newClient(cfg)
-		if err != nil {
-			return nil, err
-		}
-		return apiCall(c)
-	}
-	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, a.clientOptions(), apiCall)
-	if err != nil {
-		return nil, err
-	}
-	return client.UnwrapSingle(results)
 }

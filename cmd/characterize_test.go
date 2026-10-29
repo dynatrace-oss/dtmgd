@@ -88,10 +88,15 @@ func TestMultiEnvAllFailExitsNonZero(t *testing.T) {
 	}
 }
 
-func TestCharQueryLogsTable(t *testing.T) {
+// query logs prints only the records on stdout; the "Found N" header is on
+// stderr (stdout used to start with a blank line left over from it).
+func TestQueryLogsTable(t *testing.T) {
 	api := newFakeAPI(t, map[string]route{logsPath: {File: "logs.json"}})
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "query", "logs", "--query", "error", "--from", "now-1h")
-	assertGolden(t, "char_query_logs_table", r.String())
+	assertGolden(t, "query_logs_table", r.String())
+	if strings.HasPrefix(r.Stdout, "\n") || !strings.Contains(r.Stderr, "Found 2 log records") {
+		t.Errorf("stdout %q, stderr %q", r.Stdout, r.Stderr)
+	}
 }
 
 // A mistyped resource is a usage error (exit 2) with a suggestion; it used to

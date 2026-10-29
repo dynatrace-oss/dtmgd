@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -232,53 +234,71 @@ func TestInjectEntityNames_NoOp(t *testing.T) {
 }
 
 // TestPrintTimeSeriesDataPoint exercises all label-derivation branches of the function
-// (name+id, id-only, dimensions list, dimensionMap fallback, empty).  The function
-// writes to App.Out (discarded here); we just verify it doesn't panic with any combination of inputs.
+// (name+id, id-only, dimensions list, dimensionMap fallback, empty).
 func TestPrintTimeSeriesDataPoint(t *testing.T) {
-	a := newTestApp("")
 	v42 := fptr(42.0)
-	cases := []MetricQueryDataPoints{
+	cases := []struct {
+		dp    MetricQueryDataPoints
+		label string // "" = no Entity line
+	}{
 		{
 			// name + id resolved
-			DimensionMap: map[string]string{
-				"dt.entity.service":      "SERVICE-ABC",
-				"dt.entity.service.name": "payments",
+			MetricQueryDataPoints{
+				DimensionMap: map[string]string{
+					"dt.entity.service":      "SERVICE-ABC",
+					"dt.entity.service.name": "payments",
+				},
+				Timestamps: []int64{1704067200000, 1704070800000},
+				Values:     []*float64{v42, nil},
 			},
-			Timestamps: []int64{1704067200000, 1704070800000},
-			Values:     []*float64{v42, nil},
+			"payments (SERVICE-ABC)",
 		},
 		{
 			// id only (no name)
-			DimensionMap: map[string]string{"dt.entity.service": "SERVICE-XYZ"},
-			Timestamps:   []int64{1704067200000},
-			Values:       []*float64{v42},
+			MetricQueryDataPoints{
+				DimensionMap: map[string]string{"dt.entity.service": "SERVICE-XYZ"},
+				Timestamps:   []int64{1704067200000},
+				Values:       []*float64{v42},
+			},
+			"SERVICE-XYZ",
 		},
 		{
 			// Dimensions slice used when DimensionMap is empty
-			Dimensions: []string{"prod", "eu"},
-			Timestamps: []int64{},
-			Values:     nil,
-		},
-		{
-			// DimensionMap with non-entity keys (fallback)
-			DimensionMap: map[string]string{"host": "web-1", "region": "eu-west"},
-			Timestamps:   []int64{1704067200000},
-			Values:       []*float64{fptr(1.0)},
+			MetricQueryDataPoints{Dimensions: []string{"prod", "eu"}},
+			"[prod eu]",
 		},
 		{
 			// Completely empty input
-			DimensionMap: map[string]string{},
+			MetricQueryDataPoints{DimensionMap: map[string]string{}},
+			"",
 		},
 	}
 
-	for _, dp := range cases {
-		// Should not panic.
-		a.printTimeSeriesDataPoint(dp)
+	for _, tc := range cases {
+		var buf bytes.Buffer
+		printTimeSeriesDataPoint(&buf, tc.dp)
+		out := buf.String()
+		if tc.label != "" && !strings.Contains(out, "  Entity: "+tc.label+"\n") {
+			t.Errorf("label %q missing:\n%s", tc.label, out)
+		}
+		if tc.label == "" && strings.Contains(out, "Entity:") {
+			t.Errorf("unexpected Entity line:\n%s", out)
+		}
+		if !strings.Contains(out, "TIMESTAMP (UTC)") {
+			t.Errorf("no header:\n%s", out)
+		}
+	}
+
+	var buf bytes.Buffer
+	printTimeSeriesDataPoint(&buf, cases[0].dp)
+	for _, want := range []string{"2024-01-01 00:00:00         42.0000", "2024-01-01 01:00:00         null"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, buf.String())
+		}
 	}
 }
 
-// TestPrintEntitySummaryTable exercises the sort and formatting logic.  Output goes
-// to App.Out (discarded here); we verify the function completes without panic for various inputs.
+// TestPrintEntitySummaryTable pins the sort: value descending, nulls last.
 func TestPrintEntitySummaryTable(t *testing.T) {
 	a := newTestApp("")
 	v1, v2 := fptr(100.0), fptr(50.0)
@@ -292,6 +312,12 @@ func TestPrintEntitySummaryTable(t *testing.T) {
 			Values:     []*float64{v2},
 		},
 		{
+			// null value entry
+			DimensionMap: map[string]string{"dt.entity.service": "SERVICE-C"},
+			Timestamps:   []int64{1704067200000},
+			Values:       []*float64{nil},
+		},
+		{
 			DimensionMap: map[string]string{
 				"dt.entity.service":      "SERVICE-A",
 				"dt.entity.service.name": "payments",
@@ -299,22 +325,25 @@ func TestPrintEntitySummaryTable(t *testing.T) {
 			Timestamps: []int64{1704067200000},
 			Values:     []*float64{v1},
 		},
-		{
-			// null value entry
-			DimensionMap: map[string]string{"dt.entity.service": "SERVICE-C"},
-			Timestamps:   []int64{1704067200000},
-			Values:       []*float64{nil},
-		},
 	}
 
-	// Should not panic.
-	a.printEntitySummaryTable(data)
-	// Empty slice.
-	a.printEntitySummaryTable(nil)
+	var buf bytes.Buffer
+	if err := a.printEntitySummaryTable(&buf, data); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	a1, b1, c1 := strings.Index(out, "SERVICE-A"), strings.Index(out, "SERVICE-B"), strings.Index(out, "SERVICE-C")
+	if a1 < 0 || b1 < 0 || c1 < 0 || a1 > b1 || b1 > c1 {
+		t.Errorf("want SERVICE-A (100), SERVICE-B (50), SERVICE-C (null) in that order:\n%s", out)
+	}
+	if !strings.Contains(out, "100.00") || !strings.Contains(out, "null") {
+		t.Errorf("values missing:\n%s", out)
+	}
 }
 
-// TestPrintMetricQuerySummary exercises both the single-value and time-series
-// branches of the summary printer.
+// TestPrintMetricQuerySummary pins that the whole summary, headings
+// included, is written to the given writer (stdout), for both the
+// single-value and time-series branches.
 func TestPrintMetricQuerySummary(t *testing.T) {
 	a := newTestApp("")
 	v := fptr(1.5)
@@ -346,6 +375,19 @@ func TestPrintMetricQuerySummary(t *testing.T) {
 		},
 	}
 
-	// Should not panic.
-	a.printMetricQuerySummary(resp)
+	var buf bytes.Buffer
+	if err := a.printMetricQuerySummary(&buf, resp); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Resolution: 1h",
+		"Metric: builtin:service.requestCount.total",
+		"SERVICE-A",
+		"Metric: builtin:service.errors.total.count",
+		"Entity: SERVICE-B",
+	} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, buf.String())
+		}
+	}
 }

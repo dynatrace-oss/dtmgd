@@ -56,51 +56,6 @@ func TestParseColumns(t *testing.T) {
 	}
 }
 
-// TestEffectiveMaxPages verifies the page-limit logic.
-func TestEffectiveMaxPages(t *testing.T) {
-	tests := []struct {
-		name        string
-		globalPages int
-		hasLimit    bool
-		want        int
-	}{
-		{
-			name:        "no limit → use global maxPages=0",
-			globalPages: 0,
-			hasLimit:    false,
-			want:        0,
-		},
-		{
-			name:        "no limit → use global maxPages=5",
-			globalPages: 5,
-			hasLimit:    false,
-			want:        5,
-		},
-		{
-			name:        "has limit → always 1 page",
-			globalPages: 0,
-			hasLimit:    true,
-			want:        1,
-		},
-		{
-			name:        "has limit overrides global maxPages",
-			globalPages: 10,
-			hasLimit:    true,
-			want:        1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			a := &App{Opts: GlobalOptions{MaxPages: tt.globalPages}}
-			got := a.maxPagesFor(tt.hasLimit)
-			if got != tt.want {
-				t.Errorf("maxPagesFor(%v) = %d, want %d", tt.hasLimit, got, tt.want)
-			}
-		})
-	}
-}
-
 // TestIsMultiEnv verifies multi-environment detection.
 func TestIsMultiEnv(t *testing.T) {
 	tests := []struct {

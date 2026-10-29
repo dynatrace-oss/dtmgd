@@ -21,6 +21,11 @@ type fetched struct {
 	Body    interface{} // printed as-is for json, yaml and agent output
 	Total   int         // how many exist, or -1 when unknown
 	HasMore bool        // more exist than Body holds
+
+	// Warnings are problems that did not fail the fetch, such as a failed
+	// name lookup for a table. renderHuman prints each to stderr after the
+	// result; json, yaml and agent output do not show them.
+	Warnings []string
 }
 
 // fetchSpec describes one command for runFetch: how to fetch a result from
@@ -152,8 +157,20 @@ func (a *App) renderMulti(s fetchSpec, results []client.EnvResult) error {
 }
 
 // renderHuman renders one environment's result as a table, a custom summary
-// or YAML, with a stderr note when the result is empty or truncated.
+// or YAML, with a stderr note when the result is empty or truncated, followed
+// by the fetch's warnings.
 func (a *App) renderHuman(s fetchSpec, f fetched) error {
+	if err := a.renderBody(s, f); err != nil {
+		return err
+	}
+	for _, w := range f.Warnings {
+		output.PrintWarning("%s", w)
+	}
+	return nil
+}
+
+// renderBody is renderHuman without the warnings.
+func (a *App) renderBody(s fetchSpec, f fetched) error {
 	switch {
 	case s.Human != nil:
 		return s.Human(a.Out, f.Body)
@@ -192,6 +209,16 @@ func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext
 		}
 	}
 	return ctx
+}
+
+// humanOutput reports whether results go to a person: table or wide output,
+// not agent mode. Fetches use it to skip work only a table needs.
+func (a *App) humanOutput() bool {
+	if a.agentMode() {
+		return false
+	}
+	f := a.format()
+	return f != output.FormatJSON && f != output.FormatYAML
 }
 
 // showing is the "Showing n of total resource" phrase of a truncation note.

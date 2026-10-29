@@ -1,6 +1,5 @@
 == exit code: 0
 == stdout
-
 [2024-10-27 03:33:20] [ERROR] error: payment failed
 [2024-10-27 03:34:20] [WARN] retrying payment
 == stderr

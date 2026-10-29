@@ -1,317 +1,144 @@
 package cmd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
 
-func TestCleanPGName_BookStorePrefix(t *testing.T) {
+func i64(n int64) *int64 { return &n }
+
+// countString renders a count the way the table does, for comparisons.
+func countString(n *int64) string {
+	if n == nil {
+		return "-"
+	}
+	return fmt.Sprint(*n)
+}
+
+// aggregate builds a one-bucket /logs/aggregate response.
+func aggregate(groups map[string]int64) LogAggregateResponse {
+	return LogAggregateResponse{AggregationResult: map[string]map[string]map[string]int64{
+		"dt.entity.process_group": {"1730000000000": groups},
+	}}
+}
+
+// TestAggregateLevel pins the top-N window rule and the entity ID case
+// mismatch: the entities API returns PROCESS_GROUP-ABC, logs aggregate
+// returns process_group-abc for the same entity.
+func TestAggregateLevel(t *testing.T) {
+	names := map[string]string{
+		"process_group-aaa": "checkout",
+		"process_group-bbb": "cart",
+		"process_group-ccc": "search",
+	}
 	tests := []struct {
-		input string
-		want  string
+		name   string
+		resp   LogAggregateResponse
+		max    int
+		want   map[string]string // pgID → count, "-" = unknown
+		reason string
 	}{
 		{
-			// Standard SpringBoot process group display name
-			"SpringBoot BookStore-Orders com.dynatrace.orders.OrdersApplication orders-*",
-			"orders",
+			name:   "room left: a missing group has no records",
+			resp:   aggregate(map[string]int64{"process_group-aaa": 7}),
+			max:    3,
+			want:   map[string]string{"process_group-aaa": "7", "process_group-bbb": "0", "process_group-ccc": "0"},
+			reason: "fewer groups than maxGroupValues means every group with records is there",
 		},
 		{
-			"SpringBoot BookStore-Payments com.dynatrace.payments.PaymentsApplication payments-*",
-			"payments",
+			name:   "full window: a missing group is unknown",
+			resp:   aggregate(map[string]int64{"process_group-aaa": 7, "process_group-bbb": 3}),
+			max:    2,
+			want:   map[string]string{"process_group-aaa": "7", "process_group-bbb": "3", "process_group-ccc": "-"},
+			reason: "the API stopped at maxGroupValues groups",
 		},
 		{
-			"SpringBoot BookStore-Dynapay com.dynatrace.dynapay.DynapayApplication dynapay-*",
-			"dynapay",
+			name:   "full window of groups outside the selection",
+			resp:   aggregate(map[string]int64{"process_group-zzz": 90, "process_group-yyy": 80}),
+			max:    2,
+			want:   map[string]string{"process_group-aaa": "-", "process_group-bbb": "-", "process_group-ccc": "-"},
+			reason: "groups the selector did not find still fill the window",
 		},
 		{
-			"SpringBoot BookStore-Ingest com.dynatrace.ingest.IngestApplication ingest-*",
-			"ingest",
+			name:   "uppercase IDs in the aggregate still match",
+			resp:   aggregate(map[string]int64{"PROCESS_GROUP-AAA": 4}),
+			max:    100,
+			want:   map[string]string{"process_group-aaa": "4", "process_group-bbb": "0", "process_group-ccc": "0"},
+			reason: "IDs are compared lowercased",
 		},
 		{
-			// Multi-word service name: only first word after BookStore- is extracted
-			"SpringBoot BookStore-MyService extra tokens",
-			"myservice",
-		},
-		{
-			// BookStore- at the very end (no trailing space)
-			"BookStore-Books",
-			"books",
+			name:   "empty result",
+			resp:   LogAggregateResponse{},
+			max:    100,
+			want:   map[string]string{"process_group-aaa": "0", "process_group-bbb": "0", "process_group-ccc": "0"},
+			reason: "no records at this level",
 		},
 	}
-
 	for _, tt := range tests {
-		label := tt.input
-		if len(label) > 30 {
-			label = label[:30]
-		}
-		t.Run(label, func(t *testing.T) {
-			got := cleanPGName(tt.input)
-			if got != tt.want {
-				t.Errorf("cleanPGName(%q) = %q, want %q", tt.input, got, tt.want)
+		t.Run(tt.name, func(t *testing.T) {
+			got := aggregateLevel(tt.resp, names, tt.max)
+			for id, want := range tt.want {
+				if g := countString(got[id]); g != want {
+					t.Errorf("%s = %s, want %s (%s)", id, g, want, tt.reason)
+				}
 			}
 		})
 	}
 }
 
-func TestCleanPGName_FallbackSuffixStrip(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"orders.bookstore.svc.cluster.local", "orders"},
-		{"payments.svc.cluster.local", "payments"},
-		{"ingest.bookstore", "ingest"},
-		// No suffix to strip — returned as-is
-		{"some-unknown-service", "some-unknown-service"},
-		// sh process groups: strip "sh " prefix and trailing "-*" wildcard
-		{"sh storage-*", "storage"},
+// TestBuildLogCounts pins the rows: every selected group appears (0 when it
+// has no records), groups sharing a display name are summed, an unknown part
+// makes the sum unknown, and rows sort by ERROR, WARN and total, unknown last.
+func TestBuildLogCounts(t *testing.T) {
+	names := map[string]string{
+		"pg-1": "books", "pg-2": "books", // two groups, one display name
+		"pg-3": "orders",
+		"pg-4": "idle",
+		"pg-5": "search",
 	}
+	levels := map[string]map[string]*int64{
+		"INFO":  {"pg-1": i64(10), "pg-2": i64(0), "pg-3": i64(1), "pg-4": i64(0), "pg-5": nil},
+		"WARN":  {"pg-1": i64(1), "pg-2": i64(0), "pg-3": i64(0), "pg-4": i64(0), "pg-5": i64(0)},
+		"ERROR": {"pg-1": i64(3), "pg-2": i64(5), "pg-3": i64(2), "pg-4": i64(0), "pg-5": i64(0)},
+	}
+	got := buildLogCounts(names, levels).LogCounts
 
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := cleanPGName(tt.input)
-			if got != tt.want {
-				t.Errorf("cleanPGName(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
+	var lines []string
+	for _, lc := range got {
+		lines = append(lines, strings.Join([]string{lc.Service,
+			countString(lc.Info), countString(lc.Warn), countString(lc.Error), countString(lc.Total)}, " "))
+	}
+	want := []string{
+		"books 10 1 8 19",
+		"orders 1 0 2 3",
+		"idle 0 0 0 0",
+		"search - 0 0 -",
+	}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Errorf("rows:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
 	}
 }
 
-// TestCleanPGName_CaseLower verifies that extracted names are always lowercase.
-func TestCleanPGName_CaseLower(t *testing.T) {
-	result := cleanPGName("SpringBoot BookStore-STORAGE com.dynatrace.storage.StorageApplication storage-*")
-	if result != strings.ToLower(result) {
-		t.Errorf("cleanPGName result should be lowercase, got %q", result)
+// A level whose map lacks a group (it was never aggregated) is unknown, not 0.
+func TestBuildLogCountsMissingLevelIsUnknown(t *testing.T) {
+	got := buildLogCounts(map[string]string{"pg-1": "books"}, map[string]map[string]*int64{
+		"INFO": {"pg-1": i64(1)},
+		"WARN": {"pg-1": i64(1)},
+	}).LogCounts
+	if len(got) != 1 || got[0].Error != nil || got[0].Total != nil {
+		t.Errorf("got %+v, want ERROR and TOTAL unknown", got)
 	}
 }
 
-// TestEntityIDNormalization verifies that PROCESS_GROUP-UPPERCASE matches process_group-lowercase
-// via strings.ToLower — this is the fix for the entity ID case mismatch.
-func TestEntityIDNormalization(t *testing.T) {
-	// Entity API returns uppercase; logs aggregate returns lowercase for the same entity.
-	entityAPIID := "PROCESS_GROUP-CAA2A66AE22043F9"
-	aggregateID := "process_group-caa2a66ae22043f9"
-
-	if strings.ToLower(entityAPIID) != aggregateID {
-		t.Errorf("ToLower(%q) = %q, expected %q", entityAPIID, strings.ToLower(entityAPIID), aggregateID)
-	}
-
-	// Simulate building the lookup map with lowercase keys.
-	entityNames := map[string]string{}
-	entityNames[strings.ToLower(entityAPIID)] = "ingest"
-
-	// Simulate looking up the aggregate result.
-	if name, ok := entityNames[aggregateID]; !ok {
-		t.Errorf("aggregate ID %q should be found in lowercase entity map", aggregateID)
-	} else if name != "ingest" {
-		t.Errorf("expected name %q, got %q", "ingest", name)
-	}
-}
-
-// TestZeroRowsIncluded verifies that services with no log data still appear in output as
-// zero rows (fixing the silent omission bug: services with no logs were previously dropped).
-func TestZeroRowsIncluded(t *testing.T) {
-	// Simulate entity lookup: 3 known services.
-	entityNames := map[string]string{
-		"process_group-aaa": "books",
-		"process_group-bbb": "orders",
-		"process_group-ccc": "payments",
-	}
-
-	// Simulate aggregate result: only "payments" had any logs.
-	pgCounts := map[string]map[string]int64{
-		"process_group-ccc": {"ERROR": 12},
-	}
-
-	// Apply the fixed row-building logic (iterate entityNames, not pgCounts).
-	rows := make([]LogCountRow, 0, len(entityNames))
-	for pgID, name := range entityNames {
-		levels := pgCounts[pgID] // nil for books and orders
-		rows = append(rows, LogCountRow{
-			Service: name,
-			Info:    levels["INFO"],
-			Warn:    levels["WARN"],
-			Error:   levels["ERROR"],
-			Total:   levels["INFO"] + levels["WARN"] + levels["ERROR"],
-		})
-	}
-
-	if len(rows) != 3 {
-		t.Fatalf("expected 3 rows (including zero rows), got %d", len(rows))
-	}
-
-	byService := map[string]LogCountRow{}
-	for _, r := range rows {
-		byService[r.Service] = r
-	}
-
-	// payments should have 12 errors.
-	if byService["payments"].Error != 12 {
-		t.Errorf("payments error count = %d, want 12", byService["payments"].Error)
-	}
-	// books and orders should have zero totals (not omitted).
-	for _, svc := range []string{"books", "orders"} {
-		r := byService[svc]
-		if r.Total != 0 {
-			t.Errorf("%s total = %d, want 0 (zero-row should be included)", svc, r.Total)
-		}
-	}
-}
-
-// TestCleanPGName_ShStartup verifies that "sh service-*" shell startup process group names
-// are correctly mapped to their service name, including hyphenated service names.
-func TestCleanPGName_ShStartup(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"sh books-*", "books"},
-		{"sh dynapay-*", "dynapay"},
-		{"sh storage-*", "storage"},
-		// Hyphenated service name: only the terminal "-*" is stripped, not at first hyphen.
-		{"sh client-api-*", "client-api"},
-		{"sh order-worker-*", "order-worker"},
-		// No wildcard suffix: strip "sh " only.
-		{"sh payments", "payments"},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.input, func(t *testing.T) {
-			got := cleanPGName(tt.input)
-			if got != tt.want {
-				t.Errorf("cleanPGName(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-// TestLogCountAggregation verifies that multiple process group rows with the same service
-// name are summed into a single row (deduplication for per-pod PG entities).
-func TestLogCountAggregation(t *testing.T) {
-	// Simulate two PGs for "books" (two pods), one for "orders".
-	entityNames := map[string]string{
-		"process_group-aaa": "books",
-		"process_group-bbb": "books", // second pod
-		"process_group-ccc": "orders",
-	}
-	pgCounts := map[string]map[string]int64{
-		"process_group-aaa": {"ERROR": 3, "WARN": 1},
-		"process_group-bbb": {"ERROR": 5, "INFO": 10},
-		"process_group-ccc": {"ERROR": 2},
-	}
-
-	// Build rows as the command does.
-	rows := make([]LogCountRow, 0, len(entityNames))
-	for pgID, name := range entityNames {
-		levels := pgCounts[pgID]
-		info := levels["INFO"]
-		warn := levels["WARN"]
-		errCount := levels["ERROR"]
-		rows = append(rows, LogCountRow{
-			Service: name,
-			Info:    info,
-			Warn:    warn,
-			Error:   errCount,
-			Total:   info + warn + errCount,
-		})
-	}
-
-	// Apply aggregation (mirrors the fixed RunE logic).
-	aggMap := map[string]*LogCountRow{}
-	for i := range rows {
-		r := &rows[i]
-		if existing, ok := aggMap[r.Service]; ok {
-			existing.Info += r.Info
-			existing.Warn += r.Warn
-			existing.Error += r.Error
-			existing.Total = existing.Info + existing.Warn + existing.Error
-		} else {
-			cp := *r
-			aggMap[r.Service] = &cp
-		}
-	}
-
-	if len(aggMap) != 2 {
-		t.Fatalf("expected 2 aggregated rows, got %d", len(aggMap))
-	}
-
-	books := aggMap["books"]
-	if books == nil {
-		t.Fatal("expected 'books' row")
-	}
-	if books.Info != 10 {
-		t.Errorf("books Info = %d, want 10", books.Info)
-	}
-	if books.Warn != 1 {
-		t.Errorf("books Warn = %d, want 1", books.Warn)
-	}
-	if books.Error != 8 {
-		t.Errorf("books Error = %d, want 8 (3+5)", books.Error)
-	}
-	if books.Total != 19 {
-		t.Errorf("books Total = %d, want 19 (10+1+8)", books.Total)
-	}
-
-	orders := aggMap["orders"]
-	if orders == nil {
-		t.Fatal("expected 'orders' row")
-	}
-	if orders.Error != 2 {
-		t.Errorf("orders Error = %d, want 2", orders.Error)
-	}
-}
-
-// TestLogCountAggregation_ZeroDuplicates verifies that two zero-count PGs for the same
-// service collapse to a single zero row (not two rows).
-func TestLogCountAggregation_ZeroDuplicates(t *testing.T) {
-	entityNames := map[string]string{
-		"process_group-x1": "books",
-		"process_group-x2": "books",
-	}
-	pgCounts := map[string]map[string]int64{} // no logs
-
-	rows := make([]LogCountRow, 0, len(entityNames))
-	for pgID, name := range entityNames {
-		levels := pgCounts[pgID]
-		rows = append(rows, LogCountRow{
-			Service: name,
-			Info:    levels["INFO"],
-			Warn:    levels["WARN"],
-			Error:   levels["ERROR"],
-			Total:   levels["INFO"] + levels["WARN"] + levels["ERROR"],
-		})
-	}
-
-	aggMap := map[string]*LogCountRow{}
-	for i := range rows {
-		r := &rows[i]
-		if existing, ok := aggMap[r.Service]; ok {
-			existing.Info += r.Info
-			existing.Warn += r.Warn
-			existing.Error += r.Error
-			existing.Total = existing.Info + existing.Warn + existing.Error
-		} else {
-			cp := *r
-			aggMap[r.Service] = &cp
-		}
-	}
-
-	if len(aggMap) != 1 {
-		t.Fatalf("expected 1 aggregated row for 2 zero-count duplicate PGs, got %d", len(aggMap))
-	}
-	if aggMap["books"].Total != 0 {
-		t.Errorf("merged zero row should have Total=0, got %d", aggMap["books"].Total)
-	}
-}
 func TestPGSelectorConversion(t *testing.T) {
 	tests := []struct {
 		input string
 		want  string
 	}{
 		{
-			`type(SERVICE),tag("[Environment]BookStore")`,
-			`type(PROCESS_GROUP),tag("[Environment]BookStore")`,
+			`type(SERVICE),tag("env:prod")`,
+			`type(PROCESS_GROUP),tag("env:prod")`,
 		},
 		{
 			// Already PROCESS_GROUP — no change.
