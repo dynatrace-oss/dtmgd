@@ -1,0 +1,17 @@
+{
+  "id": "env-1",
+  "name": "shop-prod",
+  "state": "ENABLED",
+  "trial": false,
+  "creationDate": "2025-01-10T08:00:00.000Z",
+  "tags": ["prod", "shop"],
+  "quotas": {
+    "hostUnits": {"currentUsage": 12, "maxLimit": 100},
+    "davisDataUnits": {"consumedThisMonth": 410.25, "consumedThisYear": 5000.5, "annualLimit": 100000, "monthlyLimit": null},
+    "customMetrics": null
+  },
+  "storage": {
+    "transactionStorage": {"currentlyUsed": 1073741824, "maxLimit": null, "retentionReductionPercentage": 0, "retentionReductionReason": ""},
+    "userSessionRetention": {"currentlyUsedInDays": 35, "currentlyUsedInMillis": 3024000000, "maxLimitInDays": 35}
+  }
+}

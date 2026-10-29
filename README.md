@@ -127,7 +127,7 @@ declares the scopes it uses, and a permission error names the ones the failed
 command needs; a test keeps this list identical to those declarations.
 
 <!-- scopes:start -->
-- Access problem and event feed, metrics, and topology (`DataExport`): `get environments`
+- Access problem and event feed, metrics, and topology (`DataExport`): `doctor`
 - Read entities (`entities.read`): entities, entity types and relations; name lookups in `query metrics` and `query log-counts`
 - Read events (`events.read`): events
 - Read logs (`logs.read`): `query logs`, `query log-counts`
@@ -135,6 +135,7 @@ command needs; a test keeps this list identical to those declarations.
 - Read problems (`problems.read`): problems
 - Read security problems (`securityProblems.read`): security problems
 - Read SLO (`slo.read`): SLOs
+- Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`
 <!-- scopes:end -->
 
 > **Note:** API token scopes in Managed deployments differ from SaaS Platform tokens. Ensure you select the correct scopes for your Managed cluster version.

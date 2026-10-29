@@ -53,11 +53,14 @@ type briefCatalog struct {
 
 // catalogCommand is one runnable command in the catalog.
 type catalogCommand struct {
-	Path           string                 `json:"path" yaml:"path"`
-	Aliases        []string               `json:"aliases,omitempty" yaml:"aliases,omitempty"`
-	Short          string                 `json:"short" yaml:"short"`
-	RequiredScopes []string               `json:"required_scopes,omitempty" yaml:"required_scopes,omitempty"`
-	Flags          map[string]catalogFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
+	Path           string   `json:"path" yaml:"path"`
+	Aliases        []string `json:"aliases,omitempty" yaml:"aliases,omitempty"`
+	Short          string   `json:"short" yaml:"short"`
+	RequiredScopes []string `json:"required_scopes,omitempty" yaml:"required_scopes,omitempty"`
+	// ClusterScoped marks a command that needs a cluster context (no
+	// env-id) rather than an environment context.
+	ClusterScoped bool                   `json:"cluster_scoped,omitempty" yaml:"cluster_scoped,omitempty"`
+	Flags         map[string]catalogFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
 // catalogFlag describes one flag. Default is the flag's default as cobra
@@ -171,6 +174,7 @@ func describeCommand(cmd *cobra.Command) catalogCommand {
 		Aliases:        cmd.Aliases,
 		Short:          cmd.Short,
 		RequiredScopes: requiredScopes(cmd),
+		ClusterScoped:  isClusterCommand(cmd),
 	}
 	visitOwnFlags(cmd, func(f *pflag.Flag) {
 		if e.Flags == nil {

@@ -143,7 +143,7 @@ func (a *App) printDoctor(rows []DoctorRow, failed []string) error {
 
 // checkContext runs doctor's checks against one context, in order: it
 // resolves, its token is stored, and the cluster reports its version. The
-// first check that fails decides the row. `get environments` shares it.
+// first check that fails decides the row.
 func (a *App) checkContext(cfg *config.Config, nc config.NamedContext) DoctorRow {
 	row := DoctorRow{Context: nc.Name, Host: nc.Context.Host, EnvID: nc.Context.EnvID}
 	fail := func(err error) DoctorRow {

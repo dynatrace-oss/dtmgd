@@ -1,0 +1,8 @@
+{
+  "environments": [
+    {"id": "env-3", "name": "legacy", "state": "DISABLED", "trial": true, "creationDate": "2023-11-20T16:45:00.000Z", "tags": ["old"], "quotas": null, "storage": null}
+  ],
+  "totalCount": 3,
+  "pageSize": 2,
+  "nextPageKey": null
+}

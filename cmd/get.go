@@ -10,7 +10,6 @@ func newGetCmd(a *App) *cobra.Command {
 		Long: `List resources from a Dynatrace Managed environment.
 
 Supported resources:
-  environments          Configured Managed environments and cluster info
   problems (prob)       Active and resolved problems
   entities (ent)        Monitored entities (requires --selector)
   entity-types (et)     All available entity types
@@ -18,6 +17,9 @@ Supported resources:
   metrics (met)         Available metric descriptors
   slos                  Service Level Objectives
   security-problems (sp) Security vulnerabilities
+
+Cluster resources (need a cluster context: one without env-id):
+  environments (envs)   The cluster's environments
 
 Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		RunE: requireSubcommand,

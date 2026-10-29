@@ -180,24 +180,6 @@ func TestDoctorTable(t *testing.T) {
 	}
 }
 
-// TestGetEnvironmentsDeprecationNote pins that get environments still works
-// and points to doctor.
-func TestGetEnvironmentsDeprecationNote(t *testing.T) {
-	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", versionAPI(t, "1.330.0.20251017-120000")}), "get", "environments")
-	if r.Code != 0 {
-		t.Fatalf("code %d, stderr %q", r.Code, r.Stderr)
-	}
-	if !strings.Contains(r.Stderr, `Use "dtmgd doctor"`) {
-		t.Errorf("stderr = %q", r.Stderr)
-	}
-	if strings.Contains(r.Stdout, "doctor") {
-		t.Errorf("note leaked to stdout: %q", r.Stdout)
-	}
-	if !strings.Contains(r.Stdout, "1.330.0.20251017-120000") || !strings.Contains(r.Stdout, "OK") {
-		t.Errorf("stdout = %q", r.Stdout)
-	}
-}
-
 // TestJudgeVersion pins the version floor comparison on the first three
 // numeric parts.
 func TestJudgeVersion(t *testing.T) {

@@ -1,0 +1,11 @@
+{
+  "environments": [
+    {"id": "env-1", "name": "shop-prod", "state": "ENABLED", "trial": false, "creationDate": "2025-01-10T08:00:00.000Z", "tags": [],
+     "quotas": {"hostUnits": {"currentUsage": 12, "maxLimit": 100}, "davisDataUnits": {"consumedThisYear": 5000.5, "annualLimit": 100000}}, "storage": null},
+    {"id": "env-2", "name": "shop-dev", "state": "ENABLED", "trial": false, "creationDate": "2025-03-02T12:30:00.000Z", "tags": [],
+     "quotas": {"hostUnits": {"currentUsage": 2.5, "maxLimit": null}, "davisDataUnits": null}, "storage": null}
+  ],
+  "totalCount": 2,
+  "pageSize": 1000,
+  "nextPageKey": null
+}

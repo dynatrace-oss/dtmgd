@@ -25,6 +25,9 @@ Supported resources:
   slo <id>                  SLO details with evaluation data
   security-problem <id>     Security vulnerability details with CVE info
 
+Cluster resources (need a cluster context: one without env-id):
+  environment <id>          An environment's properties, quotas and storage
+
 Detail commands print a readable summary (or YAML) by default; use -o json for the raw API object.`,
 		RunE: requireSubcommand,
 	}
@@ -32,6 +35,7 @@ Detail commands print a readable summary (or YAML) by default; use -o json for t
 		newDescribeEntityCmd(a),
 		newDescribeEntityTypeCmd(a),
 		newDescribeEntityRelationsCmd(a),
+		newDescribeEnvironmentCmd(a),
 		newDescribeEventCmd(a),
 		newDescribeMetricCmd(a),
 		newDescribeProblemCmd(a),
