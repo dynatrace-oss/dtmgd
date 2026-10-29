@@ -147,3 +147,71 @@ func TestGetV2PagedKeepsProxyAnnotation(t *testing.T) {
 		t.Errorf("want error naming the proxy, got %v", err)
 	}
 }
+
+// TestProxyCredentialsAreRedacted pins that a proxy URL's password never
+// reaches an error, -v output or (through the error) an agent envelope: the
+// proxy was printed verbatim, so http://user:password@proxy put the password
+// in stderr and in logs that capture it.
+func TestProxyCredentialsAreRedacted(t *testing.T) {
+	const secret = "s3cr3t"
+
+	t.Run("errors", func(t *testing.T) {
+		proxy := "http://alice:" + secret + "@" + closedAddr(t)
+		c, err := New("http://managed.example.com", "env1", "dt0c01.TEST")
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.SetProxy("", proxy)
+		var out map[string]interface{}
+		err = c.GetV2("/problems", nil, &out)
+		if err == nil || !strings.Contains(err.Error(), "alice:xxxxx@") || strings.Contains(err.Error(), secret) {
+			t.Errorf("GetV2 error = %v; want the proxy named with its password redacted", err)
+		}
+		if got := c.requestError("request", errNotReachable{}).Error(); strings.Contains(got, secret) || !strings.Contains(got, "alice:xxxxx@") {
+			t.Errorf("requestError = %q", got)
+		}
+	})
+
+	t.Run("verbose", func(t *testing.T) {
+		// A forward proxy that answers every request itself.
+		proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"problems":[]}`)
+		}))
+		defer proxySrv.Close()
+		proxy := strings.Replace(proxySrv.URL, "http://", "http://alice:"+secret+"@", 1)
+		for _, level := range []int{1, 2} {
+			c, err := New("http://managed.example.com", "env1", "dt0c01.TEST")
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.SetProxy("", proxy)
+			c.SetVerbosity(level)
+			var reqErr error
+			stderr := captureClientStderr(t, func() {
+				var out map[string]interface{}
+				reqErr = c.GetV2("/problems", nil, &out)
+			})
+			if reqErr != nil {
+				t.Fatalf("-v level %d: request through the proxy failed: %v", level, reqErr)
+			}
+			if strings.Contains(stderr, secret) || !strings.Contains(stderr, "via proxy http://alice:xxxxx@") {
+				t.Errorf("-v level %d stderr:\n%s", level, stderr)
+			}
+		}
+	})
+
+	t.Run("unusual forms", func(t *testing.T) {
+		for _, proxy := range []string{
+			"alice:" + secret + "@proxy.example.com:8080",   // no scheme: parses as scheme "alice"
+			"http://alice:" + secret + "@proxy example.com", // does not parse
+		} {
+			if got := redactProxy(proxy); strings.Contains(got, secret) {
+				t.Errorf("redactProxy(%q) = %q", proxy, got)
+			}
+		}
+		if got := redactProxy("http://proxy.example.com:8080"); got != "http://proxy.example.com:8080" {
+			t.Errorf("redactProxy changed a proxy without credentials: %q", got)
+		}
+	})
+}

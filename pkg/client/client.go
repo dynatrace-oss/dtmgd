@@ -33,11 +33,11 @@ type Client struct {
 	apiBaseURL   string // {host}/e/{env-id}/api
 	clusterURL   string // {host}/api
 	dashboardURL string // {host}/e/{env-id}
-	// proxyURL is the proxy actually in effect, retained so that it can be
-	// named in verbose output and in connection errors. Without it, "proxy
+	// proxyDisplay is the proxy actually in effect, retained so that it can
+	// be named in verbose output and in connection errors. Without it, "proxy
 	// configured and working", "proxy configured and ignored", and "no proxy"
 	// are indistinguishable from anything dtmgd prints.
-	proxyURL string
+	proxyDisplay string
 }
 
 // Options are the per-invocation settings every client is built with.
@@ -218,13 +218,13 @@ func (c *Client) SetVerbosity(level int) {
 			// level printed it, so a user who suspected their proxy was being
 			// bypassed had to reach for tcpdump to find out.
 			via := ""
-			if c.proxyURL != "" {
-				via = fmt.Sprintf(" (via proxy %s)", c.proxyURL)
+			if c.proxyDisplay != "" {
+				via = fmt.Sprintf(" (via proxy %s)", c.proxyDisplay)
 			}
 			fmt.Fprintf(os.Stderr, "==> %s %s%s\n", req.Method, req.URL, via)
 			if level >= 2 {
 				for k, v := range req.Header {
-					if strings.EqualFold(k, "authorization") {
+					if strings.EqualFold(k, "authorization") || strings.EqualFold(k, "proxy-authorization") {
 						fmt.Fprintf(os.Stderr, "    %s: [REDACTED]\n", k)
 					} else {
 						fmt.Fprintf(os.Stderr, "    %s: %s\n", k, strings.Join(v, ", "))
@@ -247,7 +247,8 @@ func (c *Client) SetVerbosity(level int) {
 // APIBaseURL returns the environment API base URL.
 func (c *Client) APIBaseURL() string { return c.apiBaseURL }
 
-// SetProxy configures HTTP/HTTPS proxy on the client.
+// SetProxy configures HTTP/HTTPS proxy on the client. resty gets the URL as
+// given; everything dtmgd prints shows it through redactProxy.
 //
 // The proxy is applied to the cluster client too. It previously was not, so
 // `get environments` connected directly while every other command went
@@ -262,10 +263,28 @@ func (c *Client) SetProxy(httpProxy, httpsProxy string) {
 	if proxy == "" {
 		return
 	}
-	c.proxyURL = proxy
+	c.proxyDisplay = redactProxy(proxy)
 	for _, rc := range c.clients() {
 		rc.SetProxy(proxy)
 	}
+}
+
+// redactProxy is proxy as dtmgd shows it: with the password of any userinfo
+// replaced by xxxxx. Errors and -v output used to print the proxy verbatim,
+// so a proxy password reached stderr, logs and agent envelopes.
+func redactProxy(proxy string) string {
+	u, err := url.Parse(proxy)
+	switch {
+	case err == nil && u.User != nil:
+		return u.Redacted()
+	case err == nil && !strings.Contains(u.Opaque, "@"):
+		return proxy // no userinfo
+	case err != nil && !strings.Contains(proxy, "@"):
+		return proxy // unparseable, but holds no userinfo
+	}
+	// Userinfo url.Parse did not recognise as such: without a scheme,
+	// "alice:pw@proxy:8080" parses as scheme "alice". Drop all of it.
+	return "xxxxx" + proxy[strings.LastIndex(proxy, "@"):]
 }
 
 // requestError annotates a transport failure with the proxy it went through.
@@ -277,8 +296,8 @@ func (c *Client) SetProxy(httpProxy, httpsProxy string) {
 // The underlying error is wrapped rather than replaced, so Diagnose still
 // matches on "no such host", "connection refused" and the rest.
 func (c *Client) requestError(what string, err error) error {
-	if c.proxyURL != "" {
-		return fmt.Errorf("%s failed (via proxy %s): %w", what, c.proxyURL, err)
+	if c.proxyDisplay != "" {
+		return fmt.Errorf("%s failed (via proxy %s): %w", what, c.proxyDisplay, err)
 	}
 	return fmt.Errorf("%s failed: %w", what, err)
 }
