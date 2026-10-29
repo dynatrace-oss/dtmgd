@@ -93,6 +93,7 @@ use --selector criteria instead:
 				Resource: "security-problems",
 				Fetch:    pagedFetch("/securityProblems", securityProblemsParams(opts), "securityProblems", 200, a.Opts.MaxPages),
 				Rows:     securityProblemRows,
+				Link:     uiPage(uiVulnerabilities),
 				Limit:    opts.limit,
 				List:     true,
 				Empty:    "No security problems found.",

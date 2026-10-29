@@ -59,6 +59,7 @@ Examples:
 				Resource: "metrics",
 				Fetch:    pagedFetch("/metrics", params, "metrics", 500, a.Opts.MaxPages),
 				Rows:     metricRows,
+				Link:     uiPage(uiMetrics),
 				Limit:    opts.limit,
 				List:     true,
 				Empty:    "No metrics found.",

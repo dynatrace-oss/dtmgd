@@ -80,6 +80,7 @@ Examples:
 				Human: func(w io.Writer, body interface{}) error {
 					return a.printMetricQuerySummary(w, body.(MetricQueryResponse))
 				},
+				Link: uiPage(uiDataExplorer),
 			})
 		},
 	}

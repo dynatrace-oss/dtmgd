@@ -233,8 +233,9 @@ func multiEnvPartialConfig(t *testing.T) string {
 
 // TestMultiEnvAgentPartialFailure pins the merged agent envelope when one
 // environment fails: ok=false with a partial_failure error, every result
-// keyed by context, and warnings naming the failure and the truncated list in
-// request order. Nothing goes to stderr, and the exit code is 1.
+// keyed by context, warnings naming the failure and the truncated list in
+// request order, and a UI link for each environment that answered. Nothing
+// goes to stderr, and the exit code is 1.
 func TestMultiEnvAgentPartialFailure(t *testing.T) {
 	r := runCLI(t, multiEnvPartialConfig(t), "get", "problems", "--env", "a;b;c", "-A", "--limit", "1")
 	want := "== exit code: 1\n" +
@@ -271,7 +272,11 @@ func TestMultiEnvAgentPartialFailure(t *testing.T) {
 		"    \"warnings\": [\n" +
 		"      \"b: API error 403: Token is missing required scope\",\n" +
 		"      \"c: Showing 1 of 5 problems\"\n" +
-		"    ]\n" +
+		"    ],\n" +
+		"    \"links\": {\n" +
+		"      \"a\": \"http://FAKE/e/env1/ui/problems\",\n" +
+		"      \"c\": \"http://FAKE/e/env1/ui/problems\"\n" +
+		"    }\n" +
 		"  }\n" +
 		"}\n" +
 		"== stderr\n"

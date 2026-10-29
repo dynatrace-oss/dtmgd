@@ -191,6 +191,7 @@ or the internal UUID. Display IDs are resolved automatically.`,
 					return describeFetch(path, params)(c, limit)
 				},
 				Human: detailHuman(printSecurityProblemDetail),
+				Link:  uiItem(uiVulnerability, "securityProblemId"),
 			})
 		},
 	}

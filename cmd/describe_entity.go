@@ -22,6 +22,7 @@ func newDescribeEntityCmd(a *App) *cobra.Command {
 				Verb:     "describe",
 				Resource: "entity",
 				Fetch:    describeFetch(path, params),
+				Link:     uiItem(uiEntity, "entityId"),
 			})
 		},
 	}
@@ -66,6 +67,9 @@ func newDescribeEntityRelationsCmd(a *App) *cobra.Command {
 					f.Body = extractRels(f.Body.(map[string]interface{}))
 					return f, nil
 				},
+				// The body keeps only the relationships, so the link is to
+				// the entity the command was given.
+				Link: uiID(uiEntity, args[0]),
 			})
 		},
 	}

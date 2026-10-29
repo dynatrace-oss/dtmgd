@@ -161,6 +161,7 @@ default). --from or --to evaluate over the given dates instead and imply
 				Resource: "slos",
 				Fetch:    pagedFetch("/slo", slosParams(opts), "slo", pageCap, a.Opts.MaxPages),
 				Rows:     sloRows,
+				Link:     uiPage(uiSLOs),
 				Limit:    opts.limit,
 				List:     true,
 				Empty:    "No SLOs found.",

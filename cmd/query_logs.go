@@ -80,6 +80,7 @@ Examples:
 				Resource: "logs",
 				Fetch:    logSearchFetch(params),
 				Human:    printLogRecords,
+				Link:     uiPage(uiLogs),
 				Limit:    opts.limit,
 				List:     true,
 			})

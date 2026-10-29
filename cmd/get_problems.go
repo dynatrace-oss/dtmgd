@@ -102,6 +102,7 @@ Multi-environment:
 					// is set; paging fulfils larger or unlimited requests.
 					Fetch: pagedFetch("/problems", problemsParams(opts), "problems", 10, a.Opts.MaxPages),
 					Rows:  problemRows,
+					Link:  uiPage(uiProblems),
 					Limit: opts.limit,
 					List:  true,
 					Empty: "No problems found for the given filters.",

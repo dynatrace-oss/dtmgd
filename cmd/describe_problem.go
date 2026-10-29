@@ -159,6 +159,7 @@ automatically — no special syntax or "--" separator is required.`,
 				Resource: "problem",
 				Fetch:    describeFetch(path, nil),
 				Human:    detailHuman(printProblemDetail),
+				Link:     uiItem(uiProblemDetails, "problemId"),
 			})
 		},
 	}

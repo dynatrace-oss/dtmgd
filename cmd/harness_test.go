@@ -123,10 +123,22 @@ type fakeEnv struct {
 // a plaintext token) and returns its path. The first env is current.
 func withFakeEnvs(t *testing.T, envs ...fakeEnv) string {
 	t.Helper()
+	return withFakeEnvIDs(t, nil, envs...)
+}
+
+// withFakeEnvIDs is withFakeEnvs with the env-id of each context named in ids
+// taken from ids (env1 for the others), so a test can tell environments'
+// URLs apart once the harness has normalised every host to http://FAKE.
+func withFakeEnvIDs(t *testing.T, ids map[string]string, envs ...fakeEnv) string {
+	t.Helper()
 	var b strings.Builder
 	fmt.Fprintf(&b, "apiVersion: dtmgd.io/v1\nkind: Config\ncurrent-context: %s\ncontexts:\n", envs[0].Name)
 	for _, e := range envs {
-		fmt.Fprintf(&b, "  - name: %s\n    context:\n      host: %s\n      env-id: env1\n      token-ref: tok-%s\n", e.Name, e.API.URL, e.Name)
+		envID := "env1"
+		if id, ok := ids[e.Name]; ok {
+			envID = id
+		}
+		fmt.Fprintf(&b, "  - name: %s\n    context:\n      host: %s\n      env-id: %s\n      token-ref: tok-%s\n", e.Name, e.API.URL, envID, e.Name)
 	}
 	b.WriteString("tokens:\n")
 	for _, e := range envs {

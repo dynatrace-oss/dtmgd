@@ -26,6 +26,11 @@ type fetched struct {
 	// name lookup for a table. renderHuman prints each to stderr after the
 	// result; json, yaml and agent output do not show them.
 	Warnings []string
+
+	// UIBase is the environment's Dynatrace UI base URL, {host}/e/{env-id},
+	// that fetchSpec.Link builds on. runFetch fills it in from the
+	// environment's own client; "" means the result gets no link.
+	UIBase string
 }
 
 // fetchSpec describes one command for runFetch: how to fetch a result from
@@ -44,6 +49,12 @@ type fetchSpec struct {
 
 	// Human renders one environment's Body for a person, overriding Rows.
 	Human func(w io.Writer, body interface{}) error
+
+	// Link builds the Dynatrace UI link for one environment's Body from its
+	// UI base URL, or returns "" for none (see links.go). Agent output puts
+	// it in context.links; describe commands also name it on stderr for a
+	// person. json and yaml never show it. nil = the command has no UI page.
+	Link func(base string, body interface{}) string
 
 	Limit int    // --limit; 0 = none
 	List  bool   // a list: the agent default limit applies
@@ -70,9 +81,7 @@ func (a *App) runFetch(s fetchSpec) error {
 	if a.isMultiEnv() {
 		spec = a.Opts.Env
 	}
-	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, a.clientOptions(), func(c *client.Client) (interface{}, error) {
-		return s.Fetch(c, limit)
-	})
+	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, a.clientOptions(), s.fetchFrom(limit))
 	if err != nil {
 		return err
 	}
@@ -83,6 +92,21 @@ func (a *App) runFetch(s fetchSpec) error {
 		return a.renderOne(s, results[0].Data.(fetched))
 	}
 	return a.renderMulti(s, results)
+}
+
+// fetchFrom is the per-environment call runFetch gives client.MultiRequest:
+// Fetch with the effective limit, and on success the UI base URL of the
+// environment that answered, so each environment's result links to its own
+// UI.
+func (s fetchSpec) fetchFrom(limit int) func(*client.Client) (interface{}, error) {
+	return func(c *client.Client) (interface{}, error) {
+		f, err := s.Fetch(c, limit)
+		if err != nil {
+			return f, err
+		}
+		f.UIBase = c.DashboardURL()
+		return f, nil
+	}
 }
 
 // renderOne renders a single environment's result.
@@ -139,9 +163,10 @@ func mergeResults(results []client.EnvResult) (map[string]interface{}, error) {
 
 // renderMultiAgent prints the merged results as one agent envelope. The
 // envelope has no per-environment context, so failures and truncated lists
-// are named in its warnings, in config order.
+// are named in its warnings, in config order, and its links are keyed by
+// context name (envLinks).
 func (a *App) renderMultiAgent(s fetchSpec, results []client.EnvResult, merged map[string]interface{}, partial error) error {
-	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource}
+	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, Links: envLinks(s, results)}
 	for _, r := range results {
 		if r.Error != nil {
 			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
@@ -184,7 +209,7 @@ func (a *App) renderMultiHuman(s fetchSpec, results []client.EnvResult, partial 
 
 // renderHuman renders one environment's result as a table, a custom summary
 // or YAML, with a stderr note when the result is empty or truncated, followed
-// by the fetch's warnings.
+// by the fetch's warnings and, for a describe command, its UI link.
 func (a *App) renderHuman(s fetchSpec, f fetched) error {
 	if err := a.renderBody(s, f); err != nil {
 		return err
@@ -192,6 +217,7 @@ func (a *App) renderHuman(s fetchSpec, f fetched) error {
 	for _, w := range f.Warnings {
 		output.PrintWarning("%s", w)
 	}
+	printDescribeLink(s, f)
 	return nil
 }
 
@@ -224,7 +250,7 @@ func (a *App) renderBody(s fetchSpec, f fetched) error {
 
 // responseContext is the agent envelope context for one environment's result.
 func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext {
-	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, HasMore: f.HasMore}
+	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, HasMore: f.HasMore, Links: singleLinks(s, f)}
 	if f.Total >= 0 {
 		total := f.Total
 		ctx.Total = &total
