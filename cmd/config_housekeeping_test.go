@@ -114,3 +114,35 @@ func TestDeleteContextWithCredentials(t *testing.T) {
 		t.Errorf("shared token deleted although b still uses it (err %v)", err)
 	}
 }
+
+// TestDeleteContextWithMissingCredential pins that --delete-credentials does
+// not block deleting a context whose token is already gone from both the
+// keyring and the config: the deletion used to fail with "token not found"
+// and leave the context in place.
+func TestDeleteContextWithMissingCredential(t *testing.T) {
+	path := withTempConfig(t, `apiVersion: dtmgd.io/v1
+kind: Config
+current-context: a
+contexts:
+  - name: a
+    context: {host: https://a.example.com, env-id: e1, token-ref: shared}
+  - name: b
+    context: {host: https://b.example.com, env-id: e2, token-ref: gone}
+tokens:
+  - name: shared
+    token: ""
+`)
+	storeKeyringTokens(t, "shared")
+
+	r := runCLI(t, path, "ctx", "delete", "b", "--delete-credentials")
+	if r.Code != 0 {
+		t.Fatalf("code %d, stderr %q", r.Code, r.Stderr)
+	}
+	if !strings.Contains(r.Stderr, `"gone" was already gone`) {
+		t.Errorf("stderr does not say the credential was already gone: %q", r.Stderr)
+	}
+	after, _ := os.ReadFile(path)
+	if strings.Contains(string(after), "name: b") {
+		t.Errorf("context b is still in the config:\n%s", after)
+	}
+}

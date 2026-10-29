@@ -342,8 +342,14 @@ func (c *Config) SetToken(name, token string) error {
 	return nil
 }
 
+// ErrTokenNotFound is DeleteToken's error when neither the OS keyring nor
+// the config holds the token, so callers can treat an already-deleted token
+// as done.
+var ErrTokenNotFound = errors.New("token not found")
+
 // DeleteToken removes the named token from the OS keyring and from the
-// config's tokens list. It is an error if neither holds it.
+// config's tokens list. It is an error wrapping ErrTokenNotFound if neither
+// holds it.
 func (c *Config) DeleteToken(name string) error {
 	found := false
 	if IsKeyringAvailable() {
@@ -362,7 +368,7 @@ func (c *Config) DeleteToken(name string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("token %q not found", name)
+		return fmt.Errorf("token %q not found: %w", name, ErrTokenNotFound)
 	}
 	return nil
 }

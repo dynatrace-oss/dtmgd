@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -270,7 +271,10 @@ func (a *App) deleteContext(name string, deleteCreds bool) error {
 	if deleteCreds && tokenRef != "" {
 		if users := contextsUsingToken(cfg, tokenRef); len(users) > 0 {
 			output.PrintInfo("Kept credential %q: still used by %s.", tokenRef, strings.Join(users, ", "))
-		} else if err := cfg.DeleteToken(tokenRef); err != nil {
+		} else if err := cfg.DeleteToken(tokenRef); errors.Is(err, config.ErrTokenNotFound) {
+			// Nothing to delete is no reason to keep the context.
+			output.PrintInfo("Credential %q was already gone.", tokenRef)
+		} else if err != nil {
 			return err
 		} else {
 			output.PrintSuccess("Credential %q deleted", tokenRef)
