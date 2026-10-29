@@ -225,9 +225,9 @@ process running as you, as well as being recorded in your shell history.`,
 
 // setCredentials stores an API token under the given name.
 func setCredentials(name, token string) error {
-	cfg, err := loadConfigRaw()
+	cfg, err := loadConfigForUpdate()
 	if err != nil {
-		cfg = config.NewConfig()
+		return err
 	}
 
 	// Warn before the placeholder disappears. This matters most in the keyring

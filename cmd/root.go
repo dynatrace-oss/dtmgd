@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -33,12 +35,35 @@ func agentMode() bool {
 	return agentFlag || output.DetectAgent()
 }
 
+// agentNotice returns the stderr line announcing that agent mode was switched
+// on by an environment variable, or "" when no notice is due.
+//
+// Pentest note 5: with CLAUDECODE (or similar) exported in a CI job, every
+// dtmgd call there silently switched to JSON envelopes, and table-parsing
+// scripts broke without an error. An explicit --agent or --no-agent is the
+// user's own choice, so only auto-detection is announced.
+func agentNotice() string {
+	if agentFlag || noAgentFlag {
+		return ""
+	}
+	v := output.DetectedAgentVar()
+	if v == "" {
+		return ""
+	}
+	return fmt.Sprintf("Agent mode is on because %s is set. Use --no-agent for human-readable output.", v)
+}
+
 // rootCmd is the base command.
 var rootCmd = &cobra.Command{
 	Use:           "dtmgd",
 	Short:         "Dynatrace Managed CLI",
 	SilenceErrors: true,
 	SilenceUsage:  true,
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		if n := agentNotice(); n != "" {
+			output.PrintInfo("%s", n)
+		}
+	},
 	Long: `dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
 
 It provides read access to problems, entities, events, logs, metrics, SLOs,
@@ -199,6 +224,18 @@ func LoadConfig() (*config.Config, error) {
 // Used by config management commands.
 func loadConfigRaw() (*config.Config, error) {
 	return loadFromSource()
+}
+
+// loadConfigForUpdate loads the config that a command is about to modify and
+// save. Only a missing file yields a fresh config; any other failure — a parse
+// error, a permission problem — is returned, because saving over a file that
+// could not be read would replace every context and token in it.
+func loadConfigForUpdate() (*config.Config, error) {
+	cfg, err := loadConfigRaw()
+	if errors.Is(err, fs.ErrNotExist) {
+		return config.NewConfig(), nil
+	}
+	return cfg, err
 }
 
 // loadFromSource reads whichever config file ResolveSource selects, reporting

@@ -183,9 +183,9 @@ func warnClobberedContextRefs(cfg *config.Config, name, host, envID, tokenRef st
 }
 
 func setContext(name, host, envID, tokenRef, description string) error {
-	cfg, err := loadConfigRaw()
+	cfg, err := loadConfigForUpdate()
 	if err != nil {
-		cfg = config.NewConfig()
+		return err
 	}
 
 	// For new contexts, host + env-id are required.

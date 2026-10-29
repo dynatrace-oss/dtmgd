@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -540,5 +541,18 @@ func TestGetTokenLiteralDollarPreserved(t *testing.T) {
 	}
 	if got != "pa$$w0rd" {
 		t.Errorf("GetToken() = %q, want the dollars preserved", got)
+	}
+}
+
+// TestLoadFromMissingIsNotExist pins that a missing file is distinguishable
+// from every other load failure. Callers that create a config on first use
+// rely on that distinction: anything else must abort, not start over.
+func TestLoadFromMissingIsNotExist(t *testing.T) {
+	_, err := LoadFrom(filepath.Join(t.TempDir(), "absent.yaml"))
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("want fs.ErrNotExist, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "config file not found at") {
+		t.Errorf("message changed: %v", err)
 	}
 }

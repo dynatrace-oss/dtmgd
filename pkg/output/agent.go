@@ -21,12 +21,18 @@ var AgentEnvVars = []string{
 
 // DetectAgent returns true if the process is running inside an AI agent.
 func DetectAgent() bool {
+	return DetectedAgentVar() != ""
+}
+
+// DetectedAgentVar returns the first variable in AgentEnvVars that is set,
+// or "" when none is. It lets callers say why agent mode switched on.
+func DetectedAgentVar() string {
 	for _, v := range AgentEnvVars {
 		if os.Getenv(v) != "" {
-			return true
+			return v
 		}
 	}
-	return false
+	return ""
 }
 
 // AgentResponse is the structured envelope for AI agent output.

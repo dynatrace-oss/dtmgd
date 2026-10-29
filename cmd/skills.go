@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 	"github.com/dynatrace-oss/dtmgd/pkg/skills"
@@ -55,7 +56,8 @@ Skills are installed as directories following the agentskills.io standard:
   <agent-config>/skills/dtmgd/SKILL.md
 
 If no agent is specified with --for, the command auto-detects the current
-agent from environment variables. Use --global to install to the user-wide
+agent from environment variables. When stdin is not a terminal (scripts, CI,
+an agent's shell tool), --for is required. Use --global to install to the user-wide
 location instead of the project directory.
 
 Use --cross-client to install to the shared .agents/skills/ directory defined
@@ -70,7 +72,7 @@ var skillsUninstallCmd = &cobra.Command{
 	Long: `Remove dtmgd skill files installed for an AI coding assistant.
 
 If no agent is specified with --for, the command auto-detects the current
-agent. Removes skill directories from both project-local and global locations.`,
+agent; when stdin is not a terminal, --for is required. Removes skill directories from both project-local and global locations.`,
 	RunE: runSkillsUninstall,
 }
 
@@ -132,7 +134,7 @@ func runSkillsInstall(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--cross-client and --for cannot be used together")
 	}
 
-	agent, err := chooseAgent(forFlag, crossClient)
+	agent, err := chooseAgent(forFlag, crossClient, stdinIsTerminal())
 	if err != nil {
 		return err
 	}
@@ -185,7 +187,7 @@ func runSkillsUninstall(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("--cross-client and --for cannot be used together")
 	}
 
-	agent, err := chooseAgent(forFlag, crossClient)
+	agent, err := chooseAgent(forFlag, crossClient, stdinIsTerminal())
 	if err != nil {
 		return err
 	}
@@ -284,7 +286,14 @@ func runSkillsList() error {
 // chooseAgent picks the target agent based on flags. If crossClient is true,
 // returns the cross-client pseudo-agent. If forFlag is set, looks up by name.
 // Otherwise auto-detects from environment variables.
-func chooseAgent(forFlag string, crossClient bool) (skills.Agent, error) {
+// chooseAgent picks the agent whose skill directory a command acts on.
+//
+// interactive reports whether stdin is a terminal. Without one, an
+// environment variable alone does not choose the directory (pentest note 5):
+// in a CI job that exports CLAUDECODE for Claude Code itself, an automated
+// `dtmgd skills install` would otherwise write into .claude/skills/ without
+// anyone asking for it.
+func chooseAgent(forFlag string, crossClient, interactive bool) (skills.Agent, error) {
 	if crossClient {
 		return skills.CrossClientAgent, nil
 	}
@@ -302,6 +311,11 @@ func chooseAgent(forFlag string, crossClient bool) (skills.Agent, error) {
 			strings.Join(skills.SupportedAgents(), ", "),
 		)
 	}
+	if !interactive {
+		return skills.Agent{}, fmt.Errorf(
+			"--for is required when not running in a terminal (detected %s; use --for %s)",
+			agent.Name, agent.Name)
+	}
 	return agent, nil
 }
 
@@ -310,4 +324,9 @@ func unknownAgentError(name string) error {
 		"unknown agent %q\nSupported agents: %s, cross-client",
 		name, strings.Join(skills.SupportedAgents(), ", "),
 	)
+}
+
+// stdinIsTerminal reports whether stdin is an interactive terminal.
+func stdinIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
