@@ -174,3 +174,22 @@ func TestSetContextCreatesMissingConfig(t *testing.T) {
 		t.Errorf("context not written:\n%s", after)
 	}
 }
+
+// TestSetContextRejectsSemicolonInName pins that ctx set and config
+// set-context refuse a name containing ';' (which --env splits on) with a
+// usage error, and write nothing.
+func TestSetContextRejectsSemicolonInName(t *testing.T) {
+	for _, args := range [][]string{
+		{"ctx", "set", "a;b", "--host", "https://example.invalid", "--env-id", "env1"},
+		{"config", "set-context", "a;b", "--host", "https://example.invalid", "--env-id", "env1"},
+	} {
+		cfgPath := filepath.Join(t.TempDir(), "config")
+		r := runCLI(t, cfgPath, args...)
+		if r.Code != 2 || !strings.Contains(r.Stderr, `context name "a;b" contains ';'`) {
+			t.Errorf("%v: want exit 2 and the ';' message, got %s", args, r)
+		}
+		if _, err := os.Stat(cfgPath); !os.IsNotExist(err) {
+			t.Errorf("%v: config was written (%v)", args, err)
+		}
+	}
+}

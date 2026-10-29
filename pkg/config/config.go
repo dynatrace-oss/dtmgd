@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/zalando/go-keyring"
@@ -133,6 +134,9 @@ func LoadFrom(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, parseError(path, err)
 	}
+	if err := checkContextNames(path, cfg.Contexts); err != nil {
+		return nil, err
+	}
 	// Apply defaults for fields that may be absent in minimal configs.
 	if cfg.APIVersion == "" {
 		cfg.APIVersion = "dtmgd.io/v1"
@@ -141,6 +145,27 @@ func LoadFrom(path string) (*Config, error) {
 		cfg.Kind = "Config"
 	}
 	return &cfg, nil
+}
+
+// checkContextNames rejects context names that no dtmgd command could select
+// or repair: a name defined more than once (only the first would ever be
+// used), and a name containing ';', which --env uses to separate names. Names
+// match exactly, so "prod" and "Prod" are distinct.
+func checkContextNames(path string, contexts []NamedContext) error {
+	count := make(map[string]int, len(contexts))
+	for _, nc := range contexts {
+		if strings.Contains(nc.Name, ";") {
+			return fmt.Errorf("config file %s: context name %q contains ';', which --env uses to separate names; rename it by editing the file", path, nc.Name)
+		}
+		count[nc.Name]++
+	}
+	// In config order, so the first duplicated name is the one reported.
+	for _, nc := range contexts {
+		if n := count[nc.Name]; n > 1 {
+			return fmt.Errorf("config file %s: context %q is defined %d times; rename or remove the extras by editing the file", path, nc.Name, n)
+		}
+	}
+	return nil
 }
 
 // parseError converts a yaml decode failure into a message safe to show.

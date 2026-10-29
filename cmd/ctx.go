@@ -219,6 +219,9 @@ func warnClobberedContextRefs(cfg *config.Config, name, host, envID, tokenRef st
 }
 
 func (a *App) setContext(name, host, envID, tokenRef, description string) error {
+	if strings.Contains(name, ";") {
+		return &UsageError{Err: fmt.Errorf("context name %q contains ';', which --env uses to separate names; choose another name", name)}
+	}
 	cfg, err := a.loadConfigForUpdate()
 	if err != nil {
 		return err
