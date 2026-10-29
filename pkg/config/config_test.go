@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func makeTestConfig() *Config {
@@ -682,5 +684,76 @@ func TestSaveToFallsBackWhenRenameIsBusy(t *testing.T) {
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
 		t.Errorf("directory holds %d entries, want only the config (no temporary file)", len(entries))
+	}
+}
+
+// TestSaveToInPlaceKeepsTheFileWhenTheWriteFails pins that an in-place save
+// that fails part-way (a full disk) leaves the config as it was rather than
+// truncated: it cannot be atomic, but it puts the original bytes back.
+func TestSaveToInPlaceKeepsTheFileWhenTheWriteFails(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions enforced")
+	}
+	dir := filepath.Join(t.TempDir(), "conf")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config")
+	original := "apiVersion: dtmgd.io/v1\nkind: Config\ncurrent-context: kept\n"
+	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	// The first write runs out of space half-way; later ones (the restore) work.
+	calls := 0
+	writeAt = func(f *os.File, b []byte, off int64) (int, error) {
+		calls++
+		if calls == 1 {
+			n, _ := f.WriteAt(b[:len(b)/2], off)
+			return n, syscall.ENOSPC
+		}
+		return f.WriteAt(b, off)
+	}
+	t.Cleanup(func() { writeAt = (*os.File).WriteAt })
+
+	cfg := NewConfig()
+	cfg.CurrentContext = "a-much-longer-context-name-than-before"
+	if err := cfg.SaveTo(path); err == nil || !errors.Is(err, syscall.ENOSPC) {
+		t.Fatalf("SaveTo = %v, want the ENOSPC error", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != original {
+		t.Errorf("config after the failed save:\n%q\nwant the original:\n%q", got, original)
+	}
+}
+
+// TestSaveToInPlaceShorterContentLeavesNoTail pins that rewriting a config in
+// place with less data than it held leaves exactly the new content.
+func TestSaveToInPlaceShorterContentLeavesNoTail(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions enforced")
+	}
+	dir := filepath.Join(t.TempDir(), "conf")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config")
+	if err := os.WriteFile(path, []byte(strings.Repeat("# padding\n", 200)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	cfg := NewConfig()
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+	want, _ := yaml.Marshal(cfg)
+	if got, _ := os.ReadFile(path); string(got) != string(want) {
+		t.Errorf("file after save:\n%q\nwant:\n%q", got, want)
 	}
 }

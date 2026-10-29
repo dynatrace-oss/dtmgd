@@ -268,27 +268,68 @@ func writeFileAtomic(path string, data []byte) error {
 // writeFileInPlace is writeFileAtomic's fallback for a directory dtmgd may not
 // create files in (a config mounted or kept in a read-only directory) while the
 // file itself is writable. It is not atomic, but it is the only save possible
-// there. Before writing it drops every group and other permission bit, and
-// writes nothing if it cannot, so a plaintext token never lands in a looser
-// file. It only ever removes bits: a file its owner made read-only stays so,
-// and the write then fails.
+// there, and it never leaves the config half-written: the new data is written
+// over the old from the start, then the file is cut to length, and if any step
+// fails (a full disk) the original bytes are put back. Before writing it drops
+// every group and other permission bit, and writes nothing if it cannot, so a
+// plaintext token never lands in a looser file. It only ever removes bits: a
+// file its owner made read-only stays so, and the write then fails.
 func writeFileInPlace(path string, data []byte) error {
-	if fi, err := os.Stat(path); err == nil {
-		if err := chmodFile(path, fi.Mode().Perm()&0o600); err != nil {
-			return fmt.Errorf("failed to write config: cannot restrict it to mode 0600: %w", err)
+	fi, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		// Nothing to protect; creating it may still be refused.
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			return fmt.Errorf("failed to write config: %w", err)
 		}
+		return nil
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := chmodFile(path, fi.Mode().Perm()&0o600); err != nil {
+		return fmt.Errorf("failed to write config: cannot restrict it to mode 0600: %w", err)
+	}
+	original, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	f, err := os.OpenFile(filepath.Clean(path), os.O_WRONLY, 0)
+	if err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := overwrite(f, data); err != nil {
+		restoreErr := overwrite(f, original)
+		_ = f.Close()
+		if restoreErr != nil {
+			return fmt.Errorf("failed to write config, and could not restore it, so it may be damaged: %w", errors.Join(err, restoreErr))
+		}
+		return fmt.Errorf("failed to write config (left unchanged): %w", err)
+	}
+	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	return nil
 }
 
-// chmodFile and renameFile are os.Chmod and os.Rename; tests replace them to
-// make them fail.
+// overwrite replaces f's content with data: written over the existing bytes
+// from the start, cut to length, and synced. Writing over the old bytes rather
+// than truncating first means a file no larger than before needs no new space.
+func overwrite(f *os.File, data []byte) error {
+	if _, err := writeAt(f, data, 0); err != nil {
+		return err
+	}
+	if err := f.Truncate(int64(len(data))); err != nil {
+		return err
+	}
+	return f.Sync()
+}
+
+// chmodFile, renameFile and writeAt are os.Chmod, os.Rename and
+// (*os.File).WriteAt; tests replace them to make them fail.
 var (
 	chmodFile  = os.Chmod
 	renameFile = os.Rename
+	writeAt    = (*os.File).WriteAt
 )
 
 // CurrentContextObj returns the current context.
