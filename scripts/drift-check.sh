@@ -16,7 +16,8 @@ trap 'echo "drift-check: unexpected failure on line $LINENO" >&2; exit 2' ERR
 
 status=0
 raise() {
-	if (($1 > status)); then status=$1; fi
+	local level=$1
+	if ((level > status)); then status=$level; fi
 }
 
 echo "# Toolchain and dependency drift"
