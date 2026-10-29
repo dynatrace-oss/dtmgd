@@ -18,6 +18,7 @@ import (
 // DoctorRow is one context's result in `dtmgd doctor`.
 type DoctorRow struct {
 	Context string `json:"context" yaml:"context" table:"CONTEXT"`
+	Scope   string `json:"scope" yaml:"scope" table:"SCOPE"` // environment or cluster
 	Host    string `json:"host" yaml:"host" table:"HOST"`
 	EnvID   string `json:"envId" yaml:"envId" table:"ENV-ID"`
 	Status  string `json:"status" yaml:"status" table:"STATUS"`
@@ -52,12 +53,15 @@ cluster version is at least 1.328.0.
 
 When the token cannot read the cluster version, doctor tries a metrics call
 instead, as the Dynatrace Managed MCP server does, and reports a warning if
-that works. Exits 1 if any context fails.`,
+that works. A cluster context (no env-id) is checked against the Cluster API:
+its token must have the ServiceProviderAPI scope. Exits 1 if any context
+fails.`,
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error { return a.runDoctor() },
 	}
-	// DataExport reads the cluster version; metrics.read is the fallback check.
-	return withScopes(cmd, scopeDataExport, scopeMetricsRead)
+	// DataExport reads the cluster version; metrics.read is the fallback
+	// check; ServiceProviderAPI is a cluster context's.
+	return withScopes(cmd, scopeDataExport, scopeMetricsRead, scopeServiceProviderAPI)
 }
 
 // runDoctor checks the selected contexts and prints one row for each.
@@ -145,7 +149,7 @@ func (a *App) printDoctor(rows []DoctorRow, failed []string) error {
 // resolves, its token is stored, and the cluster reports its version. The
 // first check that fails decides the row.
 func (a *App) checkContext(cfg *config.Config, nc config.NamedContext) DoctorRow {
-	row := DoctorRow{Context: nc.Name, Host: nc.Context.Host, EnvID: nc.Context.EnvID}
+	row := DoctorRow{Context: nc.Name, Scope: contextScope(nc.Context), Host: nc.Context.Host, EnvID: nc.Context.EnvID}
 	fail := func(err error) DoctorRow {
 		row.Status, row.Detail = doctorFail, failDetail(err)
 		return row
@@ -166,19 +170,58 @@ func (a *App) checkContext(cfg *config.Config, nc config.NamedContext) DoctorRow
 		return fail(fmt.Errorf("config error: %w", err))
 	}
 
+	if nc.Context.IsCluster() {
+		return checkClusterVersion(row, c)
+	}
+	return checkEnvironmentVersion(row, c)
+}
+
+// checkEnvironmentVersion is checkContext's last check on an environment
+// context: the cluster version, or, when the token cannot read it, whether it
+// can read metrics.
+func checkEnvironmentVersion(row DoctorRow, c *client.Client) DoctorRow {
 	version, err := c.ClusterVersion()
 	switch {
 	case err == nil:
-		row.Version = version
-		row.Status, row.Detail = judgeVersion(version)
-		if row.Version == "" {
-			row.Version = "unknown"
-		}
+		return versionRow(row, version)
 	case isAuthFailure(err) && metricsReadable(c):
 		// The token works but lacks the scope for the version endpoints.
 		row.Status, row.Version, row.Detail = doctorWarn, "unknown", detailVersionUnreadable
-	default:
-		return fail(err)
+		return row
+	}
+	row.Status, row.Detail = doctorFail, failDetail(err)
+	return row
+}
+
+// checkClusterVersion is checkContext's last check on a cluster context: the
+// version from the Cluster API's node list. There is no metrics fallback,
+// which is an environment API call, and a failure says what a cluster context
+// needs.
+func checkClusterVersion(row DoctorRow, c *client.Client) DoctorRow {
+	version, err := c.ClusterVersion()
+	if err != nil {
+		row.Status, row.Detail = doctorFail, failDetail(clusterFailure(err, row.Context))
+		return row
+	}
+	return versionRow(row, version)
+}
+
+// clusterFailure gives a cluster context's failed check the hint a cluster
+// command would give it, and a 403 the scope a cluster context's token needs.
+func clusterFailure(err error, ctxName string) error {
+	var apiErr *client.ErrAPI
+	if errors.As(err, &apiErr) && apiErr.StatusCode == 403 {
+		return withHint(err, "Permission denied. A cluster context's token needs the ServiceProviderAPI scope.")
+	}
+	return clusterHint(err, ctxName, fetchSpec{})
+}
+
+// versionRow is row for a cluster reporting version ("" when unknown).
+func versionRow(row DoctorRow, version string) DoctorRow {
+	row.Version = version
+	row.Status, row.Detail = judgeVersion(version)
+	if row.Version == "" {
+		row.Version = "unknown"
 	}
 	return row
 }
@@ -212,7 +255,7 @@ func judgeVersion(v string) (status, detail string) {
 // first line that only introduces the next ("Store it with:") takes the next
 // line along, so the row says what to run.
 func failDetail(err error) string {
-	lines := strings.Split(client.Diagnose(err), "\n")
+	lines := strings.Split(hintFor(err), "\n")
 	hint := strings.TrimSpace(lines[0])
 	if strings.HasSuffix(hint, ":") && len(lines) > 1 {
 		hint += " " + strings.TrimSpace(lines[1])

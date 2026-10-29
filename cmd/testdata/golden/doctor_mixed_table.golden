@@ -1,0 +1,6 @@
+== exit code: 0
+== stdout
+ CONTEXT  SCOPE        HOST                    ENV-ID  STATUS  VERSION                  DETAIL 
+ a        environment  http://FAKE  env1    ok      1.330.0.20251017-120000         
+ c        cluster      http://FAKE          ok      1.328.5.20250901-090000         
+== stderr

@@ -135,7 +135,7 @@ command needs; a test keeps this list identical to those declarations.
 - Read problems (`problems.read`): problems
 - Read security problems (`securityProblems.read`): security problems
 - Read SLO (`slo.read`): SLOs
-- Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`
+- Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`, `doctor`
 <!-- scopes:end -->
 
 > **Note:** API token scopes in Managed deployments differ from SaaS Platform tokens. Ensure you select the correct scopes for your Managed cluster version.

@@ -23,7 +23,7 @@ const (
 
 // doctorRowJSON decodes one doctor row.
 type doctorRowJSON struct {
-	Context, Host, EnvID, Status, Version, Detail string
+	Context, Scope, Host, EnvID, Status, Version, Detail string
 }
 
 // versionAPI is a fake cluster whose node list reports version v. The real
@@ -173,7 +173,7 @@ func TestDoctorTable(t *testing.T) {
 	if r.Code != 0 {
 		t.Fatalf("code %d, stderr %q", r.Code, r.Stderr)
 	}
-	for _, h := range []string{"CONTEXT", "HOST", "ENV-ID", "STATUS", "VERSION", "DETAIL"} {
+	for _, h := range []string{"CONTEXT", "SCOPE", "HOST", "ENV-ID", "STATUS", "VERSION", "DETAIL"} {
 		if !strings.Contains(r.Stdout, h) {
 			t.Errorf("table has no %s column:\n%s", h, r.Stdout)
 		}
@@ -272,7 +272,53 @@ func TestDoctorDeclaresScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := requiredScopes(doctor); !reflect.DeepEqual(got, []string{"DataExport", "metrics.read"}) {
-		t.Errorf("doctor scopes = %q, want [DataExport metrics.read]", got)
+	if got := requiredScopes(doctor); !reflect.DeepEqual(got, []string{"DataExport", "metrics.read", "ServiceProviderAPI"}) {
+		t.Errorf("doctor scopes = %q, want [DataExport metrics.read ServiceProviderAPI]", got)
 	}
+}
+
+// clusterDoctor runs doctor over environment context "a" (version
+// 1.330.0.20251017-120000) and cluster context "c", whose node list answers
+// rt, and returns the rows by context.
+func clusterDoctor(t *testing.T, rt route, args ...string) (map[string]doctorRowJSON, cliResult, *fakeAPI) {
+	t.Helper()
+	cluster := newFakeAPI(t, map[string]route{clusterVersionPath: rt, metricsPath: {Body: `{"totalCount":0,"metrics":[]}`}})
+	cfg := withFakeContexts(t, "a", []fakeEnv{{"a", versionAPI(t, "1.330.0.20251017-120000")}}, []fakeEnv{{"c", cluster}})
+	rows, r := doctorRows(t, cfg, args...)
+	return rows, r, cluster
+}
+
+// TestDoctorClusterContextOK pins doctor on a cluster context: checked
+// against the Cluster API's node list, its version the lowest node's.
+func TestDoctorClusterContextOK(t *testing.T) {
+	rows, r, _ := clusterDoctor(t, route{File: "cluster_nodes.json"})
+	c := rows["c"]
+	if r.Code != 0 || c.Scope != "cluster" || c.Status != doctorOK || c.Version != "1.328.5.20250901-090000" || c.EnvID != "" {
+		t.Errorf("code %d, row %+v", r.Code, c)
+	}
+	if a := rows["a"]; a.Scope != "environment" || a.Status != doctorOK {
+		t.Errorf("environment row %+v", a)
+	}
+}
+
+// TestDoctorClusterContextWrongToken pins doctor's answer to an environment
+// token stored for a cluster context: a failed row that says which token is
+// needed, with no fallback to the environment-only metrics check.
+func TestDoctorClusterContextWrongToken(t *testing.T) {
+	rows, r, cluster := clusterDoctor(t, route{Status: 401, File: "error_401.json"})
+	c := rows["c"]
+	if r.Code != 1 || c.Status != doctorFail || !strings.Contains(c.Detail, "ServiceProviderAPI") {
+		t.Errorf("code %d, row %+v", r.Code, c)
+	}
+	if n := cluster.totalHits(); n != 1 {
+		t.Errorf("cluster context got %d requests, want only the node list", n)
+	}
+}
+
+// TestDoctorMixedContextsTable pins doctor's table over both kinds of
+// context.
+func TestDoctorMixedContextsTable(t *testing.T) {
+	cluster := newFakeAPI(t, map[string]route{clusterVersionPath: {File: "cluster_nodes.json"}})
+	cfg := withFakeContexts(t, "a", []fakeEnv{{"a", versionAPI(t, "1.330.0.20251017-120000")}}, []fakeEnv{{"c", cluster}})
+	assertGolden(t, "doctor_mixed_table", runCLI(t, cfg, "doctor").String())
 }
