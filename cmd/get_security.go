@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
-	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
 // SecurityProblemListItem is the table row for security problems.
@@ -59,19 +58,10 @@ Examples:
   dtmgd get security-problems --selector 'managementZones("BookStore")'
   dtmgd get security-problems --env ALL_ENVIRONMENTS`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
+			params := map[string]string{
+				"fields": "+riskAssessment,+managementZones",
+				"sort":   "-riskAssessment.riskScore",
 			}
-
-			params := map[string]string{}
-			params["fields"] = "+riskAssessment,+managementZones"
-			params["sort"] = "-riskAssessment.riskScore"
-			pageSize := 200
-			if opts.limit > 0 {
-				pageSize = opts.limit
-			}
-			params["pageSize"] = fmt.Sprintf("%d", pageSize)
 
 			// Build securityProblemSelector from all filters (status, risk, and explicit selector)
 			// Note: the API list endpoint has no standalone status/riskLevel params — all
@@ -90,57 +80,15 @@ Examples:
 				params["securityProblemSelector"] = joinSelector(selectorParts...)
 			}
 
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					raw, err := c.GetV2Paged("/securityProblems", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
-					if err != nil {
-						return nil, err
-					}
-					return raw, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("securityProblems").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			raw, err := c.GetV2Paged("/securityProblems", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
-			if err != nil {
-				return err
-			}
-
-			var resp SecurityProblemsResponse
-			if err := client.DecodePaged(raw, &resp); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("securityProblems").Print(resp)
-			}
-
-			problems := resp.SecurityProblems
-			if opts.limit > 0 && len(problems) > opts.limit {
-				problems = problems[:opts.limit]
-			}
-
-			if len(problems) == 0 {
-				output.PrintInfo("No security problems found.")
-				return nil
-			}
-
-			var items []SecurityProblemListItem
-			for _, sp := range problems {
-				items = append(items, securityEntryToListItem(sp))
-			}
-			if resp.TotalCount > len(problems) {
-				output.PrintInfo("Showing %d of %d security problems.", len(problems), resp.TotalCount)
-			}
-			return a.printer("").PrintList(items)
+			return a.runFetch(fetchSpec{
+				Verb:     "get",
+				Resource: "security-problems",
+				Fetch:    pagedFetch("/securityProblems", params, "securityProblems", 200, a.Opts.MaxPages),
+				Rows:     securityProblemRows,
+				Limit:    opts.limit,
+				List:     true,
+				Empty:    "No security problems found.",
+			})
 		},
 	}
 	cmd.Flags().StringVar(&opts.risk, "risk", "", "filter by risk level: LOW, MEDIUM, HIGH, CRITICAL")
@@ -148,6 +96,19 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("BookStore")`)
 	return withScopes(cmd, "securityProblems.read")
+}
+
+// securityProblemRows turns a /securityProblems body into table rows.
+func securityProblemRows(body interface{}) (interface{}, int, error) {
+	var resp SecurityProblemsResponse
+	if err := client.DecodePaged(body.(map[string]interface{}), &resp); err != nil {
+		return nil, 0, err
+	}
+	items := make([]SecurityProblemListItem, 0, len(resp.SecurityProblems))
+	for _, sp := range resp.SecurityProblems {
+		items = append(items, securityEntryToListItem(sp))
+	}
+	return items, len(items), nil
 }
 
 // securityEntryToListItem converts a SecurityProblemEntry to a table row.

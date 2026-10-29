@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -68,23 +69,15 @@ Examples:
   dtmgd get slos --enabled false
   dtmgd get slos --env ALL_ENVIRONMENTS`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
-			// Decouple API page size from the user-visible result limit.
 			// When --evaluate is active, the Dynatrace API enforces a hard limit of 25
 			// SLOs per request. Subsequent pages use nextPageKey which encodes the
 			// evaluate=true flag, so pagination still yields evaluated results.
-			apiPageSize := 200
+			pageCap := 200
 			if opts.evaluate {
-				apiPageSize = sloEvalPageSize
+				pageCap = sloEvalPageSize
 			}
 
-			params := map[string]string{
-				"pageSize": fmt.Sprintf("%d", apiPageSize),
-			}
+			params := map[string]string{}
 			if opts.enabled != "" {
 				params["enabledSlos"] = opts.enabled
 			}
@@ -95,93 +88,31 @@ Examples:
 				params["sloSelector"] = opts.selector
 			}
 
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					raw, err := c.GetV2Paged("/slo", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
-					if err != nil {
-						return nil, err
-					}
-					return raw, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("slos").Print(data)
+			spec := fetchSpec{
+				Verb:     "get",
+				Resource: "slos",
+				Fetch:    pagedFetch("/slo", params, "slo", pageCap, a.Opts.MaxPages),
+				Rows:     sloRows,
+				Limit:    opts.limit,
+				List:     true,
+				Empty:    "No SLOs found.",
 			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			raw, err := c.GetV2Paged("/slo", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
-			if err != nil {
-				return err
-			}
-
-			var resp SLOsResponse
-			if err := client.DecodePaged(raw, &resp); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("slos").Print(resp)
-			}
-
-			slos := resp.Slo
-			if opts.limit > 0 && len(slos) > opts.limit {
-				slos = slos[:opts.limit]
-			}
-
-			if len(slos) == 0 {
-				output.PrintInfo("No SLOs found.")
-				return nil
-			}
-
-			var items []SLOListItem
-			for _, s := range slos {
-				enabled := "yes"
-				if !s.Enabled {
-					enabled = "no"
-				}
-				warningPct := "n/a"
-				if s.Warning != nil {
-					warningPct = fmt.Sprintf("%.2f%%", *s.Warning)
-				}
-				evalPct := formatEvaluatedPct(s.EvaluatedPctOf)
-				items = append(items, SLOListItem{
-					ID:           s.ID,
-					Name:         s.Name,
-					Status:       s.Status,
-					EvaluatedPct: evalPct,
-					TargetPct:    fmt.Sprintf("%.2f%%", s.TargetSuccess),
-					WarningPct:   warningPct,
-					Enabled:      enabled,
-					Description:  truncate(s.Description, 60),
-				})
-			}
-			if resp.TotalCount > len(slos) {
-				output.PrintInfo("Showing %d of %d SLOs.", len(slos), resp.TotalCount)
-			}
-			if err := a.printer("").PrintList(items); err != nil {
-				return err
-			}
-
-			// Show status summary only when evaluation was requested (otherwise status values
-			// reflect cached last-evaluation and may be stale/misleading).
+			// Show the status summary only when evaluation was requested (otherwise
+			// status values reflect cached last-evaluation and may be stale or
+			// misleading). It is a human note, so json, yaml and agent output,
+			// which never reach Human, are unaffected.
 			if opts.evaluate {
-				counts := map[string]int{}
-				for _, s := range slos {
-					st := s.Status
-					if st == "" {
-						st = "NONE"
+				table := spec
+				spec.Human = func(_ io.Writer, body interface{}) error {
+					// listFetched re-derives the same Total/HasMore pagedFetch
+					// computed, so the table keeps its empty and truncation notes.
+					if err := a.renderHuman(table, listFetched(body.(map[string]interface{}), "slo")); err != nil {
+						return err
 					}
-					counts[st]++
+					return printSLOStatusSummary(body)
 				}
-				output.PrintInfo("Status: %d SUCCESS (green)  %d WARNING (yellow)  %d FAILURE (red)  %d NONE",
-					counts["SUCCESS"], counts["WARNING"], counts["FAILURE"], counts["NONE"])
 			}
-			return nil
+			return a.runFetch(spec)
 		},
 	}
 	cmd.Flags().StringVar(&opts.enabled, "enabled", "", "filter by enabled status: true, false, or all")
@@ -189,6 +120,59 @@ Examples:
 	cmd.Flags().BoolVar(&opts.evaluate, "evaluate", false, "evaluate SLO percentages (slower; max 25 per page, auto-paged)")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", "sloSelector DSL to filter SLOs (e.g. 'managementZone(\"bookstore\")')")
 	return withScopes(cmd, "slo.read")
+}
+
+// sloRows turns a /slo body into table rows.
+func sloRows(body interface{}) (interface{}, int, error) {
+	var resp SLOsResponse
+	if err := client.DecodePaged(body.(map[string]interface{}), &resp); err != nil {
+		return nil, 0, err
+	}
+	items := make([]SLOListItem, 0, len(resp.Slo))
+	for _, s := range resp.Slo {
+		enabled := "yes"
+		if !s.Enabled {
+			enabled = "no"
+		}
+		warningPct := "n/a"
+		if s.Warning != nil {
+			warningPct = fmt.Sprintf("%.2f%%", *s.Warning)
+		}
+		items = append(items, SLOListItem{
+			ID:           s.ID,
+			Name:         s.Name,
+			Status:       s.Status,
+			EvaluatedPct: formatEvaluatedPct(s.EvaluatedPctOf),
+			TargetPct:    fmt.Sprintf("%.2f%%", s.TargetSuccess),
+			WarningPct:   warningPct,
+			Enabled:      enabled,
+			Description:  truncate(s.Description, 60),
+		})
+	}
+	return items, len(items), nil
+}
+
+// printSLOStatusSummary prints, to stderr, how many of the SLOs in a /slo
+// body are in each status. It prints nothing for an empty body.
+func printSLOStatusSummary(body interface{}) error {
+	var resp SLOsResponse
+	if err := client.DecodePaged(body.(map[string]interface{}), &resp); err != nil {
+		return err
+	}
+	if len(resp.Slo) == 0 {
+		return nil
+	}
+	counts := map[string]int{}
+	for _, s := range resp.Slo {
+		st := s.Status
+		if st == "" {
+			st = "NONE"
+		}
+		counts[st]++
+	}
+	output.PrintInfo("Status: %d SUCCESS (green)  %d WARNING (yellow)  %d FAILURE (red)  %d NONE",
+		counts["SUCCESS"], counts["WARNING"], counts["FAILURE"], counts["NONE"])
+	return nil
 }
 
 // formatEvaluatedPct formats the SLO evaluated percentage for display.

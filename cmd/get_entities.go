@@ -6,7 +6,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
-	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
 // EntityTypeListItem is the table row for entity types.
@@ -52,65 +51,44 @@ type EntityEntry struct {
 }
 
 func newGetEntityTypesCmd(a *App) *cobra.Command {
+	var opts struct {
+		limit int
+	}
 	cmd := &cobra.Command{
 		Use:     "entity-types",
 		Aliases: []string{"et", "entity-type"},
 		Short:   "List all available entity types",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					raw, err := c.GetV2Paged("/entityTypes", map[string]string{"pageSize": "500"}, client.Paging{MaxPages: a.Opts.MaxPages})
-					if err != nil {
-						return nil, err
-					}
-					return raw, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("entityTypes").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			raw, err := c.GetV2Paged("/entityTypes", map[string]string{"pageSize": "500"}, client.Paging{MaxPages: a.Opts.MaxPages})
-			if err != nil {
-				return err
-			}
-
-			var resp EntityTypesResponse
-			if err := client.DecodePaged(raw, &resp); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("entityTypes").Print(resp)
-			}
-
-			var items []EntityTypeListItem
-			for _, t := range resp.Types {
-				items = append(items, EntityTypeListItem{
-					Type:        t.Type,
-					DisplayName: t.DisplayName,
-					Properties:  len(t.Properties),
-				})
-			}
-			if len(items) == 0 {
-				output.PrintInfo("No entity types found.")
-				return nil
-			}
-			return a.printer("").PrintList(items)
+			return a.runFetch(fetchSpec{
+				Verb:     "get",
+				Resource: "entity-types",
+				Fetch:    pagedFetch("/entityTypes", nil, "types", 500, a.Opts.MaxPages),
+				Rows:     entityTypeRows,
+				Limit:    opts.limit,
+				List:     true,
+				Empty:    "No entity types found.",
+			})
 		},
 	}
+	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of entity types")
 	return withScopes(cmd, "entities.read")
+}
+
+// entityTypeRows turns an /entityTypes body into table rows.
+func entityTypeRows(body interface{}) (interface{}, int, error) {
+	var resp EntityTypesResponse
+	if err := client.DecodePaged(body.(map[string]interface{}), &resp); err != nil {
+		return nil, 0, err
+	}
+	items := make([]EntityTypeListItem, 0, len(resp.Types))
+	for _, t := range resp.Types {
+		items = append(items, EntityTypeListItem{
+			Type:        t.Type,
+			DisplayName: t.DisplayName,
+			Properties:  len(t.Properties),
+		})
+	}
+	return items, len(items), nil
 }
 
 func newGetEntitiesCmd(a *App) *cobra.Command {
@@ -135,22 +113,12 @@ Examples:
   dtmgd get entities --env ALL_ENVIRONMENTS --selector 'type(SERVICE)'`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.selector == "" {
-				return fmt.Errorf("--selector is required (e.g. 'type(SERVICE)')")
-			}
-
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
+				return &UsageError{Err: fmt.Errorf("--selector is required (e.g. 'type(SERVICE)')")}
 			}
 
 			params := map[string]string{
 				"entitySelector": opts.selector,
 			}
-			pageSize := 100
-			if opts.limit > 0 {
-				pageSize = opts.limit
-			}
-			params["pageSize"] = fmt.Sprintf("%d", pageSize)
 			if opts.from != "" {
 				params["from"] = opts.from
 			}
@@ -164,66 +132,15 @@ Examples:
 				params["mzSelector"] = opts.mz
 			}
 
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					raw, err := c.GetV2Paged("/entities", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
-					if err != nil {
-						return nil, err
-					}
-					return raw, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("entities").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			raw, err := c.GetV2Paged("/entities", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
-			if err != nil {
-				return err
-			}
-
-			var resp EntitiesResponse
-			if err := client.DecodePaged(raw, &resp); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("entities").Print(resp)
-			}
-
-			var items []EntityListItem
-			for _, e := range resp.Entities {
-				fs := ""
-				ls := ""
-				if e.FirstSeenTms > 0 {
-					fs = msToTime(e.FirstSeenTms)
-				}
-				if e.LastSeenTms > 0 {
-					ls = msToTime(e.LastSeenTms)
-				}
-				items = append(items, EntityListItem{
-					EntityID:    e.EntityID,
-					Type:        e.Type,
-					DisplayName: e.DisplayName,
-					FirstSeen:   fs,
-					LastSeen:    ls,
-				})
-			}
-
-			if len(items) == 0 {
-				output.PrintInfo("No entities found for selector: %s", opts.selector)
-				return nil
-			}
-			if resp.TotalCount > len(items) {
-				output.PrintInfo("Showing %d of %d entities. Use --limit or a more specific selector.", len(items), resp.TotalCount)
-			}
-			return a.printer("").PrintList(items)
+			return a.runFetch(fetchSpec{
+				Verb:     "get",
+				Resource: "entities",
+				Fetch:    pagedFetch("/entities", params, "entities", 100, a.Opts.MaxPages),
+				Rows:     entityRows,
+				Limit:    opts.limit,
+				List:     true,
+				Empty:    fmt.Sprintf("No entities found for selector: %s", opts.selector),
+			})
 		},
 	}
 	cmd.Flags().StringVar(&opts.selector, "selector", "", "entity selector (required), e.g. 'type(SERVICE)'")
@@ -233,4 +150,31 @@ Examples:
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (name or -name)")
 	cmd.Flags().StringVar(&opts.mz, "mz", "", "management zone selector")
 	return withScopes(cmd, "entities.read")
+}
+
+// entityRows turns an /entities body into table rows.
+func entityRows(body interface{}) (interface{}, int, error) {
+	var resp EntitiesResponse
+	if err := client.DecodePaged(body.(map[string]interface{}), &resp); err != nil {
+		return nil, 0, err
+	}
+	items := make([]EntityListItem, 0, len(resp.Entities))
+	for _, e := range resp.Entities {
+		fs := ""
+		ls := ""
+		if e.FirstSeenTms > 0 {
+			fs = msToTime(e.FirstSeenTms)
+		}
+		if e.LastSeenTms > 0 {
+			ls = msToTime(e.LastSeenTms)
+		}
+		items = append(items, EntityListItem{
+			EntityID:    e.EntityID,
+			Type:        e.Type,
+			DisplayName: e.DisplayName,
+			FirstSeen:   fs,
+			LastSeen:    ls,
+		})
+	}
+	return items, len(items), nil
 }
