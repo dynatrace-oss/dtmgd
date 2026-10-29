@@ -1,0 +1,12 @@
+== exit code: 0
+== stdout
+Enabled:                yes
+Paused:                 no
+Storage path:           /backup/test
+Datacenter:             dc-1
+Cassandra backup start: 02:00 (hour of day, cluster time)
+Bandwidth limit:        200 Mbit/s
+Includes:               time-series metric data: yes, user sessions: no, Log Monitoring v2 data: yes
+Elasticsearch snapshots to clean: 5
+== stderr
+The Cluster API reports the backup configuration only. It has no last-backup time and no backup health; check those in the Cluster Management Console.
