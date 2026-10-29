@@ -81,6 +81,9 @@ func (a *App) runFetch(s fetchSpec) error {
 	if err := a.checkEnvVarContext(cfg); err != nil {
 		return err
 	}
+	if err := a.checkEnvironmentContexts(cfg, s); err != nil {
+		return err
+	}
 	limit := s.Limit
 	if limit == 0 && s.List && a.agentMode() {
 		limit = agentDefaultLimit
