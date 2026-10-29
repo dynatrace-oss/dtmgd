@@ -2,8 +2,15 @@ package client
 
 import (
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 )
+
+// apiStatusRe finds the status of an API error in an error's text: the form
+// ErrAPI.Error writes. Any other 40x in a message (a port such as 40431, an
+// ID, a count) is not a status.
+var apiStatusRe = regexp.MustCompile(`\bAPI error (\d{3})\b`)
 
 // Diagnose returns a hint for what to do about err, or "" when it has none.
 // Callers print it separately from the error (a human hint line, or the
@@ -19,6 +26,10 @@ func Diagnose(err error) string {
 	// was previously diagnosed as a missing resource. An unrecognised status
 	// yields no hint, which is correct — falling through to substring
 	// matching is exactly the bug.
+	var partial *PartialFailureError
+	if errors.As(err, &partial) {
+		return diagnoseFailures(partial.Failed)
+	}
 	var apiErr *ErrAPI
 	if errors.As(err, &apiErr) {
 		return diagnoseStatus(apiErr.StatusCode)
@@ -26,18 +37,14 @@ func Diagnose(err error) string {
 
 	msg := err.Error()
 
+	// An API error rebuilt from text (older call paths, tests) is still
+	// answered from its status alone, read from the "API error NNN" form.
+	if m := apiStatusRe.FindStringSubmatch(msg); m != nil {
+		code, _ := strconv.Atoi(m[1])
+		return diagnoseStatus(code)
+	}
+
 	switch {
-	// The status-substring cases remain for errors that are not *ErrAPI —
-	// notably ones rebuilt from text, which the tests and older call paths
-	// still produce.
-	case strings.Contains(msg, "401"):
-		return diagnoseStatus(401)
-	case strings.Contains(msg, "403"):
-		return diagnoseStatus(403)
-	case strings.Contains(msg, "404"):
-		return diagnoseStatus(404)
-	case strings.Contains(msg, "429"):
-		return diagnoseStatus(429)
 	case strings.Contains(msg, "connection refused"):
 		return "Connection refused. Check that the host URL is correct and the cluster is reachable.\n  Run: dtmgd doctor"
 	case strings.Contains(msg, "no such host"):
@@ -52,6 +59,22 @@ func Diagnose(err error) string {
 		return "No context configured. Set one up with:\n  dtmgd config set-context <name> --host <url> --env-id <id> --token-ref <ref>"
 	}
 	return ""
+}
+
+// diagnoseFailures is the hint for a multi-environment failure: the failed
+// environments' common hint, so all 403 gets the permission hint, or none
+// when they failed for different reasons (403 and 401), since no single hint
+// would fit. The message lists every failure, so it is never text-matched.
+func diagnoseFailures(failed []EnvResult) string {
+	hint := ""
+	for i, r := range failed {
+		h := Diagnose(r.Error)
+		if i > 0 && h != hint {
+			return ""
+		}
+		hint = h
+	}
+	return hint
 }
 
 // diagnoseStatus maps an HTTP status code to its hint, so the structured and
