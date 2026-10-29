@@ -55,6 +55,9 @@ type fetchSpec struct {
 // format. It is what makes --limit, truncation notes, empty results,
 // multi-environment output and partial failures behave the same everywhere.
 func (a *App) runFetch(s fetchSpec) error {
+	if err := limitFlag(s.Limit); err != nil {
+		return err
+	}
 	cfg, err := a.loadConfig()
 	if err != nil {
 		return err

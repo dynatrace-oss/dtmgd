@@ -39,13 +39,27 @@ type SecurityProblemEntry struct {
 	CveIds []string `json:"cveIds"`
 }
 
-func newGetSecurityProblemsCmd(a *App) *cobra.Command {
-	var opts struct {
-		risk     string
-		status   string
-		limit    int
-		selector string
+// getSecurityProblemsOptions holds the flags of get security-problems.
+type getSecurityProblemsOptions struct {
+	risk     string
+	status   string
+	limit    int
+	selector string
+}
+
+// validate checks the enum flags against the API's values and replaces each
+// with its canonical (upper-case) form.
+func (o *getSecurityProblemsOptions) validate() error {
+	var err error
+	if o.status, err = enumFlag("status", o.status, securityProblemStatuses, true); err != nil {
+		return err
 	}
+	o.risk, err = enumFlag("risk", o.risk, securityRiskLevels, true)
+	return err
+}
+
+func newGetSecurityProblemsCmd(a *App) *cobra.Command {
+	var opts getSecurityProblemsOptions
 	cmd := &cobra.Command{
 		Use:     "security-problems",
 		Aliases: []string{"sp", "security", "vuln"},
@@ -58,6 +72,9 @@ Examples:
   dtmgd get security-problems --selector 'managementZones("production")'
   dtmgd get security-problems --env ALL_ENVIRONMENTS`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := opts.validate(); err != nil {
+				return err
+			}
 			params := map[string]string{
 				"fields": "+riskAssessment,+managementZones",
 				"sort":   "-riskAssessment.riskScore",
@@ -91,8 +108,8 @@ Examples:
 			})
 		},
 	}
-	cmd.Flags().StringVar(&opts.risk, "risk", "", "filter by risk level: LOW, MEDIUM, HIGH, CRITICAL")
-	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN, RESOLVED, MUTED")
+	cmd.Flags().StringVar(&opts.risk, "risk", "", "filter by risk level: CRITICAL, HIGH, MEDIUM, LOW or NONE")
+	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN or RESOLVED (muted ones: --selector 'muted(\"TRUE\")')")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("production")`)
 	return withScopes(cmd, scopeSecurityProblemsRead)

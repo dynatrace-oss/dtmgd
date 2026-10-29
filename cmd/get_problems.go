@@ -61,6 +61,17 @@ type getProblemsOptions struct {
 	sort     string
 }
 
+// validate checks the enum flags against the API's values and replaces each
+// with its canonical (upper-case) form.
+func (o *getProblemsOptions) validate() error {
+	var err error
+	if o.status, err = enumFlag("status", o.status, problemStatuses, true); err != nil {
+		return err
+	}
+	o.impact, err = enumFlag("impact", o.impact, problemImpactLevels, true)
+	return err
+}
+
 func newGetProblemsCmd(a *App) *cobra.Command {
 	var opts getProblemsOptions
 	var watch watchOptions
@@ -80,6 +91,9 @@ Multi-environment:
   dtmgd get problems --env ALL_ENVIRONMENTS
   dtmgd get problems --env "prod;staging"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := opts.validate(); err != nil {
+				return err
+			}
 			return a.watchOrRun(watch, func() error {
 				return a.runFetch(fetchSpec{
 					Verb:     "get",
@@ -99,7 +113,7 @@ Multi-environment:
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (e.g. now-24h, 2024-01-01T00:00:00Z)")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN or CLOSED (added to problemSelector)")
-	cmd.Flags().StringVar(&opts.impact, "impact", "", "filter by impact level: SERVICES, INFRASTRUCTURE, APPLICATION (added to problemSelector)")
+	cmd.Flags().StringVar(&opts.impact, "impact", "", "filter by impact level: APPLICATION, ENVIRONMENT, INFRASTRUCTURE or SERVICES (added to problemSelector)")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", `problemSelector DSL (e.g. managementZones("production"))`)
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to filter problems by entity")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of problems to return")
