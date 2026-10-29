@@ -447,3 +447,35 @@ tokens:
 		}
 	}
 }
+
+// TestImportOverwriteRestoresKeyringWhenSaveFails pins that import --overwrite
+// with a literal apiToken restores the keyring when the config cannot be
+// saved: otherwise the old context, still pointing at its old host, would
+// carry the token meant for the new one.
+func TestImportOverwriteRestoresKeyringWhenSaveFails(t *testing.T) {
+	cfgPath := withTempConfig(t, `apiVersion: dtmgd.io/v1
+kind: Config
+current-context: imp-x
+contexts:
+  - name: imp-x
+    context:
+      host: https://old.example.com
+      env-id: old
+      token-ref: imp-x-token
+tokens:
+  - name: imp-x-token
+    token: ""
+`)
+	storeKeyringTokens(t, "imp-x-token")
+	src := writeImportSource(t, "dt-config.yaml", `
+- {apiEndpointUrl: https://new.example.com/, environmentId: new, alias: imp-x, apiToken: dt0c01.NEWHOSTTOKEN}
+`)
+	readOnlyConfig(t, cfgPath)
+
+	if r := runCLI(t, cfgPath, "config", "import", src, "--overwrite"); r.Code == 0 {
+		t.Fatalf("import succeeded although the config cannot be saved: %s", r)
+	}
+	if got, err := keyring.Get("dtmgd", "imp-x-token"); err != nil || got != "dt0c01.TEST" {
+		t.Errorf("keyring imp-x-token = %q, %v; want the old token restored", got, err)
+	}
+}

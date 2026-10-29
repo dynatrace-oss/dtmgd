@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -316,13 +317,24 @@ func (a *App) setCredentials(name, token string) error {
 		}
 	}
 
-	if err := cfg.SetToken(name, token); err != nil {
+	undo, err := cfg.SetTokenUndoable(name, token)
+	if err != nil {
 		return err
 	}
 	if err := a.saveConfig(cfg); err != nil {
-		return err
+		return errors.Join(err, undoKeyring(undo))
 	}
 	reportStoredCredential(name)
+	return nil
+}
+
+// undoKeyring runs a keyring undo after a failed save. It adds to the error
+// only when the undo itself fails, because the keyring then holds a token the
+// config does not.
+func undoKeyring(undo func() error) error {
+	if err := undo(); err != nil {
+		return fmt.Errorf("the keyring could not be restored either, so it may hold a token the config does not: %w", err)
+	}
 	return nil
 }
 

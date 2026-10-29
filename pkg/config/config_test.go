@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -653,5 +654,33 @@ func TestSaveToInPlaceRefusesWhenItCannotRestrictTheFile(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != original {
 		t.Errorf("file was written anyway:\n%s", got)
+	}
+}
+
+// TestSaveToFallsBackWhenRenameIsBusy pins the bind-mount case: a config that
+// is itself a mount point (docker -v ./config:/root/.config/dtmgd/config)
+// cannot be replaced by rename, which fails with EBUSY. The save then
+// rewrites the file in place, and leaves no temporary file behind.
+func TestSaveToFallsBackWhenRenameIsBusy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	if err := os.WriteFile(path, []byte("apiVersion: dtmgd.io/v1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	renameFile = func(oldpath, newpath string) error {
+		return &os.LinkError{Op: "rename", Old: oldpath, New: newpath, Err: syscall.EBUSY}
+	}
+	t.Cleanup(func() { renameFile = os.Rename })
+
+	cfg := NewConfig()
+	cfg.CurrentContext = "saved"
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("SaveTo: %v", err)
+	}
+	if got, err := LoadFrom(path); err != nil || got.CurrentContext != "saved" {
+		t.Errorf("after save: %+v, %v", got, err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("directory holds %d entries, want only the config (no temporary file)", len(entries))
 	}
 }
