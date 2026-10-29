@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// hintNoEnvironment is describe environment's hint for a 404, which the
-// Cluster API gives both for an unknown ID and for a host without it.
-const hintNoEnvironment = "No environment %q on this cluster, or no Cluster API at this context's host. List environments with: dtmgd get environments"
+// hintNoEnvironment is describe environment's hint for a 404. The Cluster
+// API gives one for a host without it, too; runClusterFetch adds that.
+const hintNoEnvironment = "No environment %q on this cluster. List environments with: dtmgd get environments"
 
 func newDescribeEnvironmentCmd(a *App) *cobra.Command {
 	var consumption bool

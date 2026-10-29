@@ -19,7 +19,7 @@ const (
 // pagedEnvironments serves the three-environment list over two pages.
 func pagedEnvironments() map[string]route {
 	return map[string]route{
-		clusterEnvsPath:                  {File: "cluster_environments_page1.json"},
+		clusterEnvsPath:                     {File: "cluster_environments_page1.json"},
 		clusterEnvsPath + " nextPageKey=k2": {File: "cluster_environments_page2.json"},
 	}
 }
@@ -262,5 +262,37 @@ func TestSetContextScopesExcludeClusterScope(t *testing.T) {
 	block = block[:strings.Index(block, "\n\n")]
 	if strings.Contains(block, scopeServiceProviderAPI) || !strings.Contains(strings.Join(allScopes(root), ","), scopeServiceProviderAPI) {
 		t.Errorf("scope block:\n%s\nall scopes: %v", block, allScopes(root))
+	}
+}
+
+// TestClusterCommand404HintNamesHostEverywhere pins Review Focus 1 for the
+// commands with a 404 hint of their own: a wrong host (every cluster call
+// 404s) is still named, beside the command's own reading of the 404.
+func TestClusterCommand404HintNamesHostEverywhere(t *testing.T) {
+	cfg, _, _ := clusterFake(t, "c", map[string]route{})
+	for _, args := range [][]string{{"describe", "license"}, {"get", "license-usage"}, {"describe", "environment", "env-1"}} {
+		r := runCLI(t, cfg, args...)
+		if r.Code != 4 || !strings.Contains(r.Stderr, `context "c"'s host`) || !strings.Contains(r.Stderr, "port 9999") {
+			t.Errorf("%v: code %d, stderr:\n%s", args, r.Code, r.Stderr)
+		}
+	}
+}
+
+// TestClusterHelpNamesEveryClusterCommand pins that the help describing
+// cluster contexts names all of their commands, and --env-id says what
+// leaving it out does.
+func TestClusterHelpNamesEveryClusterCommand(t *testing.T) {
+	root := testRoot()
+	setContext, _, _ := root.Find([]string{"config", "set-context"})
+	for _, name := range []string{"get environments", "describe environment", "get nodes", "describe cluster", "describe license", "get license-usage", "describe backup"} {
+		if !strings.Contains(strings.Join(strings.Fields(setContext.Long), " "), name) {
+			t.Errorf("set-context help does not name %q", name)
+		}
+	}
+	for _, path := range [][]string{{"ctx", "set"}, {"config", "set-context"}} {
+		c, _, _ := root.Find(path)
+		if f := c.Flags().Lookup("env-id"); f == nil || !strings.Contains(f.Usage, "omit for a cluster context") {
+			t.Errorf("%v --env-id usage = %+v", path, f)
+		}
 	}
 }

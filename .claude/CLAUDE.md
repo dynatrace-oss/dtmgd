@@ -234,6 +234,7 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
   - A missing environment gives 404 "HTTP 404 Not Found".
   - `clusterLicense` and `/environment/total` work only with classic licensing. The prod cluster reported `licenseType FULL`, `licenseStatus VALID`, and no `overageUsage`. What a DPS cluster returns was **not observed**: the license commands give the classic-licensing hint for any client error but 401/403/429. `--consumption`'s 422 on DPS comes from the OpenAPI spec.
   - `/cluster/configuration` is `{"clusterNodes": [{id, ipAddress, webUI, agent, datacenter, kubernetesRole}]}`, and `/cluster/metadata` is `{clusterName, clusterUuid}`. `/backup/config` matches `backupConfigDto`. There is no backup health anywhere.
+  - `clusterLicense` returns the full `licenseKey`. `describe license` masks it inside Fetch, so every output format shows `****` plus 4 characters, and the `-vv` body dump redacts it too (`client.redactBody`). Add any new secret field there.
 - **When it applies**: Changing a cluster command, or meeting a DPS-licensed cluster for the first time (check what it really returns, then tighten the hint)
 - **Date**: 2026-10-29
 - **Ref**: Phase 4 Cluster API

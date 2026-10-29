@@ -89,7 +89,7 @@ func newCtxSetCmd(a *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.host, "host", "", "Managed cluster host URL")
-	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID")
+	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID (omit for a cluster context)")
 	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "description")
 	return cmd

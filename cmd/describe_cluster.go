@@ -93,26 +93,44 @@ func printClusterDetail(w io.Writer, d ClusterDetail) {
 }
 
 // versionSummary is a cluster's version from how many nodes run each: the
-// lowest, followed while they differ by every version, highest first, with
-// its node count.
+// lowest, followed while they differ by every version (see mixedVersions).
+// A node that reports no version is left out.
 func versionSummary(counts map[string]int) string {
 	versions := make([]string, 0, len(counts))
 	for v := range counts {
-		versions = append(versions, v)
+		if v != "" {
+			versions = append(versions, v)
+		}
 	}
 	lowest := client.LowestClusterVersion(versions)
 	if lowest == "" {
 		lowest = "unknown"
 	}
+	if mixed := mixedVersions(counts); mixed != "" {
+		return fmt.Sprintf("%s (mixed: %s)", lowest, mixed)
+	}
+	return lowest
+}
+
+// mixedVersions lists a cluster's versions, highest first, each with how
+// many nodes run it, or "" while its nodes agree. Nodes that report no
+// version are left out.
+func mixedVersions(counts map[string]int) string {
+	versions := make([]string, 0, len(counts))
+	for v := range counts {
+		if v != "" {
+			versions = append(versions, v)
+		}
+	}
 	if len(versions) <= 1 {
-		return lowest
+		return ""
 	}
 	sort.Slice(versions, func(i, j int) bool { return versionAbove(versions[i], versions[j]) })
 	parts := make([]string, len(versions))
 	for i, v := range versions {
 		parts[i] = fmt.Sprintf("%s on %s", v, plural(counts[v], "node"))
 	}
-	return fmt.Sprintf("%s (mixed: %s)", lowest, strings.Join(parts, ", "))
+	return strings.Join(parts, ", ")
 }
 
 // versionAbove orders versions highest first, those that do not parse last.

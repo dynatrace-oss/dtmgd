@@ -322,3 +322,24 @@ func TestDoctorMixedContextsTable(t *testing.T) {
 	cfg := withFakeContexts(t, "a", []fakeEnv{{"a", versionAPI(t, "1.330.0.20251017-120000")}}, []fakeEnv{{"c", cluster}})
 	assertGolden(t, "doctor_mixed_table", runCLI(t, cfg, "doctor").String())
 }
+
+// TestDoctorClusterMixedVersions pins Review Focus 5 for doctor: a cluster
+// mid-upgrade is judged by its lowest node, and the row says the versions
+// are mixed.
+func TestDoctorClusterMixedVersions(t *testing.T) {
+	rows, _, _ := clusterDoctor(t, route{File: "cluster_nodes.json"})
+	c := rows["c"]
+	if c.Status != doctorOK || c.Version != "1.328.5.20250901-090000" || !strings.Contains(c.Detail, "nodes on mixed versions: 1.330.18.20251017-120000 on 2 nodes, 1.328.5.20250901-090000 on 1 node") {
+		t.Errorf("row %+v", c)
+	}
+}
+
+// TestDoctorClusterNoNodes pins the row for a cluster whose node list is
+// empty: a warning that says so, rather than an unrecognised version "".
+func TestDoctorClusterNoNodes(t *testing.T) {
+	rows, _, _ := clusterDoctor(t, route{Body: `[]`})
+	c := rows["c"]
+	if c.Status != doctorWarn || c.Version != "unknown" || c.Detail != "the cluster's node list reports no version" {
+		t.Errorf("row %+v", c)
+	}
+}

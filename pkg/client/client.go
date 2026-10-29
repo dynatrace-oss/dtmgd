@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -72,6 +73,11 @@ func NewForContext(cfg *config.Config, name string, o Options) (*Client, error) 
 			return nil, uerr.InContext(name)
 		}
 		return nil, err
+	}
+	if !nc.Context.IsCluster() && resolved.EnvID == "" {
+		// Without this, an env-id: ${VAR} set to "" built a cluster-scoped
+		// client, and every command called the context a cluster context.
+		return nil, fmt.Errorf("context %q: env-id %q resolved to an empty value; set the variable, or change env-id", name, nc.Context.EnvID)
 	}
 	token, err := cfg.GetToken(resolved.TokenRef)
 	if err != nil {
@@ -235,11 +241,22 @@ func (c *Client) SetVerbosity(level int) {
 		rc.OnAfterResponse(func(_ *resty.Client, resp *resty.Response) error {
 			fmt.Fprintf(os.Stderr, "<== %d %s (%s)\n", resp.StatusCode(), resp.Status(), resp.Time())
 			if level >= 2 {
-				fmt.Fprintf(os.Stderr, "%s\n", resp.String())
+				fmt.Fprintf(os.Stderr, "%s\n", redactBody(resp.String()))
 			}
 			return nil
 		})
 	}
+}
+
+// secretFields matches the JSON fields of a response body that -vv must not
+// print: the cluster license key, which describe license masks in every
+// output format.
+var secretFields = regexp.MustCompile(`"licenseKey"\s*:\s*"(?:[^"\\]|\\.)*"`)
+
+// redactBody is a response body as -vv prints it, with secretFields' values
+// replaced by [REDACTED].
+func redactBody(body string) string {
+	return secretFields.ReplaceAllString(body, `"licenseKey":"[REDACTED]"`)
 }
 
 // printRequestHeaders writes h to stderr for verbosity 2 and above, one header
@@ -424,18 +441,28 @@ func (c *Client) ClusterVersion() (string, error) {
 	return result.Version, nil
 }
 
-// nodesVersion is the lowest buildVersion in the Cluster API's node list,
-// which is an array of nodes ("" when it holds none).
+// nodesVersion is the lowest buildVersion in the Cluster API's node list
+// ("" when it holds none).
 func (c *Client) nodesVersion() (string, error) {
+	versions, err := c.NodeVersions()
+	if err != nil {
+		return "", err
+	}
+	return LowestClusterVersion(versions), nil
+}
+
+// NodeVersions returns the buildVersion of each node in the Cluster API's
+// node list, which is an array of nodes, in its order.
+func (c *Client) NodeVersions() ([]string, error) {
 	var nodes []struct {
 		BuildVersion string `json:"buildVersion"`
 	}
 	if err := c.GetCluster("/v1.0/onpremise/cluster", nil, &nodes); err != nil {
-		return "", err
+		return nil, err
 	}
 	versions := make([]string, len(nodes))
 	for i, n := range nodes {
 		versions[i] = n.BuildVersion
 	}
-	return LowestClusterVersion(versions), nil
+	return versions, nil
 }

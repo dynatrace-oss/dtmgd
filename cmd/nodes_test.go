@@ -108,3 +108,19 @@ func TestDescribeClusterNodesUnavailable(t *testing.T) {
 	}
 	wantStderr(t, r, "node list unavailable: API error 403")
 }
+
+// TestVersionSummarySkipsUnknownVersions pins that a node reporting no
+// version neither adds an empty entry to the mixed list nor makes one known
+// version look mixed.
+func TestVersionSummarySkipsUnknownVersions(t *testing.T) {
+	if got := versionSummary(map[string]int{"1.330.1.20251017-120000": 2, "": 1}); got != "1.330.1.20251017-120000" {
+		t.Errorf("one known version: %q", got)
+	}
+	got := versionSummary(map[string]int{"1.330.1.20251017-120000": 1, "1.328.5.20250901-090000": 1, "": 1})
+	if strings.Contains(got, " on 1 node,  on") || strings.Count(got, " on ") != 2 {
+		t.Errorf("mixed: %q", got)
+	}
+	if got := versionSummary(map[string]int{"": 3}); got != "unknown" {
+		t.Errorf("no known version: %q", got)
+	}
+}

@@ -245,7 +245,8 @@ Required API token scopes:
   %SCOPES%
 
 Without --env-id the context is a cluster context, for the Cluster
-Management API (get environments, get nodes, describe cluster|license|backup).
+Management API: get environments, describe environment, get nodes, describe
+cluster, describe license, get license-usage and describe backup.
 Its --host is the cluster's own address, as used by the Cluster Management
 Console, and its token needs the ServiceProviderAPI scope.
 
@@ -262,7 +263,7 @@ Examples:
 		},
 	}
 	cmd.Flags().StringVar(&opts.host, "host", "", "Dynatrace Managed cluster URL (e.g. https://managed.company.com)")
-	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "Environment ID")
+	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID (omit for a cluster context)")
 	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name (see set-credentials)")
 	cmd.Flags().StringVar(&opts.description, "description", "", "human-readable description")
 	return cmd

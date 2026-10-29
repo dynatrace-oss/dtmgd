@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	licenseRoute = "GET /api/cluster/v2/clusterLicense"
-	licenseUsageRoute   = "GET /api/cluster/v2/clusterLicense/environment/total"
-	testLicenseKey     = "TEST-KEY0-0000-9876"
+	licenseRoute      = "GET /api/cluster/v2/clusterLicense"
+	licenseUsageRoute = "GET /api/cluster/v2/clusterLicense/environment/total"
+	testLicenseKey    = "TEST-KEY0-0000-9876"
 )
 
 // licenseRoutes serves the license, its per-environment usage, and the

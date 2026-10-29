@@ -89,10 +89,13 @@ func clusterHint(err error, ctxName string, s fetchSpec) error {
 	case 401:
 		return withHint(err, hintClusterAuth)
 	case 404:
+		noAPI := fmt.Sprintf(hintNoClusterAPI, ctxName)
 		if s.NotFound != "" {
-			return withHint(err, s.NotFound)
+			// A command's own reading of a 404 cannot rule out a wrong
+			// host, which makes every cluster call 404.
+			return withHint(err, s.NotFound+"\n  If every cluster command answers 404: "+noAPI)
 		}
-		return withHint(err, fmt.Sprintf(hintNoClusterAPI, ctxName))
+		return withHint(err, noAPI)
 	}
 	return err
 }

@@ -198,12 +198,25 @@ func checkEnvironmentVersion(row DoctorRow, c *client.Client) DoctorRow {
 // which is an environment API call, and a failure says what a cluster context
 // needs.
 func checkClusterVersion(row DoctorRow, c *client.Client) DoctorRow {
-	version, err := c.ClusterVersion()
+	versions, err := c.NodeVersions()
 	if err != nil {
 		row.Status, row.Detail = doctorFail, failDetail(clusterFailure(err, row.Context))
 		return row
 	}
-	return versionRow(row, version)
+	version := client.LowestClusterVersion(versions)
+	if version == "" {
+		row.Status, row.Version, row.Detail = doctorWarn, "unknown", "the cluster's node list reports no version"
+		return row
+	}
+	row = versionRow(row, version)
+	counts := map[string]int{}
+	for _, v := range versions {
+		counts[v]++
+	}
+	if mixed := mixedVersions(counts); mixed != "" {
+		row.Detail = strings.TrimPrefix(row.Detail+"; nodes on mixed versions: "+mixed, "; ")
+	}
+	return row
 }
 
 // clusterFailure gives a cluster context's failed check the hint a cluster
