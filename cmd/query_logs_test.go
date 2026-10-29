@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"net/url"
 	"reflect"
+	"slices"
 	"testing"
+
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 )
 
 // TestResolveLogContent_DirectContent verifies that Content field takes priority.
@@ -202,5 +205,22 @@ func TestQueryLogsSortsNewestFirst(t *testing.T) {
 		if qs := api.Queries(logsPath); r.Code != 0 || len(qs) != 1 || qs[0].Get("sort") != tc.want {
 			t.Errorf("%v: code %d, queries %v, want sort=%s", tc.args, r.Code, qs, tc.want)
 		}
+	}
+}
+
+// TestQueryLogsAgentTruncationSuggestion pins that a truncated query logs
+// result tells an agent how many records it got and how to get more, as a
+// truncated list does: query logs has no table Rows to count, so the count
+// comes from the fetch.
+func TestQueryLogsAgentTruncationSuggestion(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{logsPath: {Body: `{"results":[{"timestamp":2,"content":"b"},{"timestamp":1,"content":"a"}],"sliceSize":2,"nextSliceKey":"k"}`}})
+	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "query", "logs", "--query", "error", "--from", "now-1h", "--limit", "2", "-A")
+	var resp agentmode.Response
+	if err := json.Unmarshal([]byte(r.Stdout), &resp); err != nil {
+		t.Fatalf("stdout is not one envelope: %v\n%s", err, r.Stdout)
+	}
+	want := "Showing 2 logs, more are available; use --limit to see more"
+	if r.Code != 0 || resp.Context == nil || !resp.Context.HasMore || !slices.Contains(resp.Context.Suggestions, want) {
+		t.Errorf("code %d, context %+v; want has_more and suggestion %q", r.Code, resp.Context, want)
 	}
 }

@@ -150,7 +150,7 @@ func logsFetched(body map[string]interface{}) fetched {
 	if total > len(results) {
 		more = true
 	}
-	return fetched{Body: body, Total: total, HasMore: more}
+	return fetched{Body: body, Total: total, HasMore: more, Count: len(results)}
 }
 
 // printLogRecords writes one "[time] [STATUS] content" line per record, with

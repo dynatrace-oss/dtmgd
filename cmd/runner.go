@@ -27,6 +27,11 @@ type fetched struct {
 	// every other format prints each to stderr after the result.
 	Warnings []string
 
+	// Count is the number of items in Body, for a result that has no table
+	// Rows to count them (query logs); 0 when unknown. Set by listFetched
+	// and logsFetched.
+	Count int
+
 	// UIBase is the environment's Dynatrace UI base URL, {host}/e/{env-id},
 	// that fetchSpec.Link builds on. runFetch fills it in from the
 	// environment's own client; "" means the result gets no link.
@@ -277,10 +282,8 @@ func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext
 		total := f.Total
 		ctx.Total = &total
 	}
-	if f.HasMore && s.Rows != nil {
-		if _, n, err := s.Rows(f.Body); err == nil {
-			ctx.Suggestions = append(ctx.Suggestions, showing(n, f.Total, s.Resource)+"; use --limit to see more")
-		}
+	if n, ok := shownCount(s, f); f.HasMore && ok {
+		ctx.Suggestions = append(ctx.Suggestions, showing(n, f.Total, s.Resource)+"; use --limit to see more")
 	}
 	return ctx
 }
@@ -288,15 +291,23 @@ func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext
 // truncationNote says that f holds only part of the result: how many of how
 // many when Rows can count the items, otherwise only that more exist.
 func truncationNote(s fetchSpec, f fetched) string {
-	if s.Rows != nil {
-		if _, n, err := s.Rows(f.Body); err == nil {
-			return showing(n, f.Total, s.Resource)
-		}
+	if n, ok := shownCount(s, f); ok {
+		return showing(n, f.Total, s.Resource)
 	}
 	if f.Total >= 0 {
 		return fmt.Sprintf("Showing part of %d %s", f.Total, s.Resource)
 	}
 	return fmt.Sprintf("More %s are available", s.Resource)
+}
+
+// shownCount is how many items a result shows: the table rows Rows finds,
+// or, for a result without Rows, the fetch's Count. false when unknown.
+func shownCount(s fetchSpec, f fetched) (int, bool) {
+	if s.Rows != nil {
+		_, n, err := s.Rows(f.Body)
+		return n, err == nil
+	}
+	return f.Count, f.Count > 0
 }
 
 // humanOutput reports whether results go to a person: table or wide output,
@@ -357,5 +368,5 @@ func listFetched(body map[string]interface{}, listKey string) fetched {
 	if total > len(list) {
 		more = true
 	}
-	return fetched{Body: body, Total: total, HasMore: more}
+	return fetched{Body: body, Total: total, HasMore: more, Count: len(list)}
 }
