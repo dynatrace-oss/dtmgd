@@ -186,32 +186,44 @@ func (a *App) loadConfig() (*config.Config, error) {
 
 	// Context precedence: --env naming one context, then --context, then
 	// DTMGD_CONTEXT, then the file's current-context.
-	fromEnvVar := false
 	if ctx := os.Getenv("DTMGD_CONTEXT"); ctx != "" {
 		cfg.CurrentContext = ctx
-		fromEnvVar = true
 	}
 	// Override current context from --context flag (single-env mode)
 	if a.Opts.Context != "" {
 		cfg.CurrentContext = a.Opts.Context
-		fromEnvVar = false
 	}
 
 	// If --env is a single named context (not ALL_ENVIRONMENTS or semicolon-separated),
 	// treat it like --context so table output works correctly.
-	if env := a.Opts.Env; env != "" && env != "ALL_ENVIRONMENTS" && !strings.Contains(env, ";") {
-		cfg.CurrentContext = env
-		fromEnvVar = false
-	}
-
-	// Nothing on the command line names a context DTMGD_CONTEXT chose, so
-	// the error for a missing one names the variable and the file.
-	if fromEnvVar && !a.isMultiEnv() {
-		if _, err := cfg.GetContext(cfg.CurrentContext); err != nil {
-			return nil, fmt.Errorf("DTMGD_CONTEXT names context %q, which is not in %s", cfg.CurrentContext, config.ResolveSource(a.configPath()).Path)
-		}
+	if a.singleEnvName() != "" {
+		cfg.CurrentContext = a.Opts.Env
 	}
 	return cfg, nil
+}
+
+// singleEnvName is --env when it names one context, "" otherwise.
+func (a *App) singleEnvName() string {
+	if env := a.Opts.Env; env != "" && !a.isMultiEnv() {
+		return env
+	}
+	return ""
+}
+
+// checkEnvVarContext fails when DTMGD_CONTEXT chose the current context and
+// cfg lacks it. Nothing on the command line names that context, so the error
+// names the variable and the file. Only commands that call the API for the
+// current context check it: ctx, config view and doctor must keep working so
+// the user can find the right name.
+func (a *App) checkEnvVarContext(cfg *config.Config) error {
+	ctx := os.Getenv("DTMGD_CONTEXT")
+	if ctx == "" || a.Opts.Context != "" || a.Opts.Env != "" {
+		return nil
+	}
+	if _, err := cfg.GetContext(ctx); err != nil {
+		return fmt.Errorf("DTMGD_CONTEXT names context %q, which is not in %s", ctx, config.ResolveSource(a.configPath()).Path)
+	}
+	return nil
 }
 
 // loadConfigRaw loads config without applying the --context override.

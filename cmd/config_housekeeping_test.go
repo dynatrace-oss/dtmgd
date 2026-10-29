@@ -210,3 +210,25 @@ func TestDeleteCredentialsSavesBeforeKeyring(t *testing.T) {
 		}
 	}
 }
+
+// TestStaleDTMGDContextOnlyFailsAPICommands pins that a DTMGD_CONTEXT naming a
+// missing context fails only the commands that call the API for the current
+// context. ctx (the command to find the right name with), config view and
+// doctor (which checks every context) still work.
+func TestStaleDTMGDContextOnlyFailsAPICommands(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{
+		clusterVersionPath: {Body: `{"version":"1.330.0"}`},
+		envVersionPath:     {Body: `{"version":"1.330.0"}`},
+	})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+	env := map[string]string{"DTMGD_CONTEXT": "gone"}
+
+	for _, args := range [][]string{{"ctx"}, {"config", "view"}, {"doctor"}} {
+		if r := runCLIWithEnv(t, env, cfg, args...); r.Code != 0 {
+			t.Errorf("%v with DTMGD_CONTEXT=gone: %s", args, r)
+		}
+	}
+	if r := runCLIWithEnv(t, env, cfg, "get", "problems"); r.Code == 0 || !strings.Contains(r.Stderr, "DTMGD_CONTEXT names context") {
+		t.Errorf("get problems with DTMGD_CONTEXT=gone: %s", r)
+	}
+}
