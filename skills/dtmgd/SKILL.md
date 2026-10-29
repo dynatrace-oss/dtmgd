@@ -21,18 +21,33 @@ names configured on this system.
 
 ## Recommended Initialization
 
-At the start of any investigation, run these to confirm connectivity and current context:
+At the start of any investigation, run these to learn the commands and confirm connectivity:
 
 ```bash
+# Discover what dtmgd can do: the resources of get, describe and query
+dtmgd commands --brief
+
 # Show active context (and all configured environments)
 dtmgd ctx
 
-# Verify connectivity and get cluster version (checks all environments)
-dtmgd get environments
+# Verify connectivity, token and cluster version (checks every context; -c <name> for one)
+dtmgd doctor
 
 # Check version of the CLI itself
 dtmgd version
 ```
+
+Start with `dtmgd commands --brief` rather than parsing `--help`. For one
+command's flags and the token scopes it needs, read the full catalog,
+`dtmgd commands` (JSON, never wrapped in an agent envelope). Look up an entry by
+its `path`, for example `"get problems"`.
+
+Use `dtmgd doctor` for connectivity checks, not `dtmgd get environments`: that
+role has moved to `doctor`, and `get environments` will list environments from
+the Cluster API in a coming release. `doctor` gives one row per context with
+`status` `ok`, `warn` (the cluster version is below 1.328.0, or the token cannot
+read it) or `fail` (with the reason in `detail`), and exits 1 if any context
+fails.
 
 Agent mode is auto-detected — output will be wrapped in `{ok, result, context}` envelopes automatically.
 
@@ -381,7 +396,7 @@ dtmgd describe security-problem S-42 --env prod -o json
 
 ```bash
 # 1. Check connectivity (all environments)
-dtmgd get environments
+dtmgd doctor
 
 # 2. Find open problems (optionally across all environments)
 dtmgd get problems --status OPEN -o json

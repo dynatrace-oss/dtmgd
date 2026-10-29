@@ -123,6 +123,8 @@ Multi-environment:
 		newConfigCmd(a),
 		newCtxCmd(a),
 		newSkillsCmd(a),
+		newDoctorCmd(a),
+		newCommandsCmd(a),
 		newVersionCmd(a),
 		newCompletionCmd(a),
 	)

@@ -38,7 +38,7 @@ Detail commands print a readable summary (or YAML) by default; use -o json for t
 		newDescribeSecurityProblemCmd(a),
 		newDescribeSLOCmd(a),
 	)
-	return cmd
+	return asGroup(cmd)
 }
 
 // describeFetch is the Fetch of a v2 endpoint that returns one object. A

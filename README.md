@@ -73,8 +73,8 @@ dtmgd config set-context prod \
 #    stays out of your shell history. Saved to the OS keyring when available.
 dtmgd config set-credentials prod-token
 
-# 3. Verify connectivity
-dtmgd get environments
+# 3. Verify connectivity, token and cluster version
+dtmgd doctor
 
 # 4. List open problems
 dtmgd get problems --status OPEN
@@ -166,7 +166,7 @@ dtmgd ctx delete <name>            # delete context
 ### Get (list resources)
 
 ```
-dtmgd get environments       # verify connectivity and cluster version
+dtmgd get environments       # configured contexts and cluster version (connectivity check: use dtmgd doctor)
 dtmgd get problems           # --from, --to, --status, --impact, --selector, --entity, --limit, --sort
 dtmgd get entities           # --selector (required), --from, --to, --limit, --sort, --mz
 dtmgd get entity-types       # list all entity types
@@ -175,6 +175,11 @@ dtmgd get metrics            # --search, --entity, --limit
 dtmgd get slos               # --enabled, --limit, --evaluate, --selector (sloSelector DSL)
 dtmgd get security-problems  # --risk, --status, --selector, --limit
 ```
+
+`get environments` still runs its per-context connectivity check, and prints a
+note on stderr pointing to `dtmgd doctor`. That role has moved to `doctor`; in a
+coming release `get environments` will list environments from the Cluster API
+instead.
 
 > `describe problem` accepts the UUID from the `PROBLEM-ID` column, **not** the
 > short `P-XXXXX` display ID shown in the `DISPLAY-ID` column.
@@ -210,6 +215,36 @@ dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --
 # Note: type(SERVICE) is auto-converted to type(PROCESS_GROUP) internally (logs are attributed
 # to process groups on DT Managed Classic). Services with ERROR-only log level show 0 INFO/WARN.
 ```
+
+### Doctor (connectivity check)
+
+```
+dtmgd doctor                 # check every configured context
+dtmgd doctor -c prod         # check one context
+dtmgd doctor -o json         # rows as JSON (also -o yaml, or -A for an agent envelope)
+```
+
+For each context, `doctor` checks that it resolves, that its token is stored,
+that the cluster answers, and that the cluster version is at least 1.328.0, the
+oldest version the Dynatrace Managed MCP server supports. It prints one row per
+context (`CONTEXT HOST ENV-ID STATUS VERSION DETAIL`) with status `ok`, `warn`
+or `fail`. When the token cannot read the cluster version (401 or 403), doctor
+tries `GET /api/v2/metrics?pageSize=1` instead, as the MCP server does; if that
+works, the context is a `warn` with version `unknown`. `doctor` exits 1 when any
+context fails.
+
+### Commands (machine-readable catalog)
+
+```
+dtmgd commands               # full catalog: paths, aliases, flags, required token scopes
+dtmgd commands --brief       # just the resources of get, describe and query
+dtmgd commands -o yaml       # the same as YAML
+```
+
+The catalog is JSON by default and is never wrapped in an agent envelope, even
+with `-A`. Global flags are listed once, under `global_flags`; each command lists
+only its own flags. AI agents can start with `dtmgd commands --brief` to learn
+what exists.
 
 ## Global Flags
 

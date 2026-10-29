@@ -53,7 +53,7 @@ is automatically discovered by any agentskills.io-compatible agent.`,
 		newSkillsUninstallCmd(a),
 		newSkillsStatusCmd(a),
 	)
-	return cmd
+	return asGroup(cmd)
 }
 
 // skillsOptions holds the flags of the skills subcommands. Each subcommand

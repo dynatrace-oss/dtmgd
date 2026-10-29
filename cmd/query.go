@@ -22,5 +22,5 @@ Use 'dtmgd query <subcommand> --help' for details.`,
 		newQueryLogsCmd(a),
 		newQueryMetricsCmd(a),
 	)
-	return cmd
+	return asGroup(cmd)
 }
