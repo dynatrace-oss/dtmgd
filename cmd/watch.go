@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -28,6 +29,9 @@ func addWatchFlags(cmd *cobra.Command, w *watchOptions) {
 // watchOrRun executes fn once, or in a watch loop if --watch is set.
 func (a *App) watchOrRun(w watchOptions, fn func() error) error {
 	if w.on {
+		if w.interval <= 0 {
+			return &UsageError{Err: fmt.Errorf("--watch-interval must be positive, got %s", w.interval)}
+		}
 		return a.runWatch(w, fn)
 	}
 	return fn()
@@ -39,7 +43,7 @@ func (a *App) runWatch(w watchOptions, fn func() error) error {
 	a.clearScreen()
 	a.printWatchHeader(w)
 	if err := fn(); err != nil {
-		output.PrintHumanError("%s", err)
+		a.reportWatchError(err)
 	}
 
 	ticker := time.NewTicker(w.interval)
@@ -58,10 +62,21 @@ func (a *App) runWatch(w watchOptions, fn func() error) error {
 			a.clearScreen()
 			a.printWatchHeader(w)
 			if err := fn(); err != nil {
-				output.PrintHumanError("%s", err)
+				a.reportWatchError(err)
 			}
 		}
 	}
+}
+
+// reportWatchError reports one watch tick's error the way Run reports a
+// single run's: nothing more for one the runner already printed (a partial
+// failure's sections or envelope), otherwise a human error and hint, or an
+// error envelope in agent mode.
+func (a *App) reportWatchError(err error) {
+	if errors.Is(err, errReported) {
+		return
+	}
+	a.reportError(nil, err)
 }
 
 // clearScreen clears the terminal between watch ticks. It only does so for a
