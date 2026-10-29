@@ -326,3 +326,36 @@ func TestMultiEnvTablePartialFailure(t *testing.T) {
 		}
 	}
 }
+
+// TestAllEnvironmentsSingleContextIsMap pins that a multi-environment --env
+// (ALL_ENVIRONMENTS, or any spec with ';') renders the map keyed by context
+// name even when it selects one context, so a script's parsing does not depend
+// on how many contexts the config has; agent links are keyed the same way.
+func TestAllEnvironmentsSingleContextIsMap(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_small.json"}})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+
+	for _, env := range []string{"ALL_ENVIRONMENTS", "a;"} {
+		r := runCLI(t, cfg, "get", "problems", "--env", env, "-o", "json")
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(r.Stdout), &m); r.Code != 0 || err != nil || len(m) != 1 || m["a"] == nil {
+			t.Errorf("--env %q: code %d, want a map with only key \"a\", got %v\n%s", env, r.Code, err, r.Stdout)
+		}
+	}
+
+	r := runCLI(t, cfg, "get", "problems", "--env", "ALL_ENVIRONMENTS", "-A")
+	var resp agentmode.Response
+	if err := json.Unmarshal([]byte(r.Stdout), &resp); err != nil {
+		t.Fatalf("stdout is not one envelope: %v\n%s", err, r.Stdout)
+	}
+	if resp.Context == nil || resp.Context.Links["a"] == "" || resp.Context.Links["ui"] != "" {
+		t.Errorf("agent links = %+v, want them keyed by context name", resp.Context)
+	}
+
+	// A single named context keeps the single-result form.
+	r = runCLI(t, cfg, "get", "problems", "--env", "a", "-o", "json")
+	var single map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(r.Stdout), &single); err != nil || single["problems"] == nil {
+		t.Errorf("--env a: want the API's own object, got %v\n%s", err, r.Stdout)
+	}
+}

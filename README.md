@@ -362,12 +362,14 @@ dtmgd get problems --env "prod;staging" -o json
 # You can list any number of contexts:
 dtmgd get problems --env "eu-prod;us-prod;ap-prod;dev" -o json
 
-# Single env result  → unwrapped data
-# Multi env result   → { "<context-1>": {...}, "<context-2>": {...} }
+# One context (-c, or --env with one name) → unwrapped data
+# ALL_ENVIRONMENTS or a ';' list            → { "<context-1>": {...}, "<context-2>": {...} }
 ```
 
-With several environments, `-o json`, `-o yaml` and agent output are one map
-keyed by context name, and an environment that failed holds
+With `--env ALL_ENVIRONMENTS` or a `;`-separated list, `-o json`, `-o yaml` and
+agent output are one map keyed by context name, even when it selects only one
+context, so a script can parse it the same way whatever the config holds. An
+environment that failed holds
 `{"error": "..."}` in place of its result. A table prints a `== <name> ==`
 section per environment, with a failed environment's error on stderr. Either
 way every environment that answered is printed, and the call still exits

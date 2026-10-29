@@ -90,7 +90,10 @@ func (a *App) runFetch(s fetchSpec) error {
 	if err != nil {
 		return err
 	}
-	if len(results) == 1 {
+	// A multi-environment --env renders the map keyed by context name even
+	// when it selects one context, so the output's shape follows the
+	// command line, not the number of contexts in the config.
+	if len(results) == 1 && !a.isMultiEnv() {
 		if results[0].Error != nil {
 			return results[0].Error
 		}
