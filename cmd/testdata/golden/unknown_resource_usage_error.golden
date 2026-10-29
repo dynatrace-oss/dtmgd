@@ -1,0 +1,5 @@
+== exit code: 2
+== stdout
+== stderr
+Error: unknown resource type "prblems" for "dtmgd get"
+Hint: Did you mean: dtmgd get problems

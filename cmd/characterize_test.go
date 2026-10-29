@@ -89,12 +89,13 @@ func TestCharQueryLogsTable(t *testing.T) {
 	assertGolden(t, "char_query_logs_table", r.String())
 }
 
-// Today: a mistyped resource prints help to stdout and exits 1.
-func TestCharUnknownResource(t *testing.T) {
+// A mistyped resource is a usage error (exit 2) with a suggestion; it used to
+// dump help to stdout and exit 1.
+func TestUnknownResourceIsUsageError(t *testing.T) {
 	api := newFakeAPI(t, nil)
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "prblems")
-	assertGolden(t, "char_unknown_resource", r.String())
-	if r.Code != 1 {
-		t.Errorf("today's behaviour changed: code=%d", r.Code)
+	assertGolden(t, "unknown_resource_usage_error", r.String())
+	if r.Code != 2 {
+		t.Errorf("code = %d, want 2", r.Code)
 	}
 }

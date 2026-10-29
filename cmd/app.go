@@ -32,13 +32,17 @@ type GlobalOptions struct {
 type App struct {
 	Out, Err io.Writer
 	Opts     GlobalOptions
+
+	// args are the raw arguments, for decisions that must be made even when
+	// flag parsing failed (see rawAgentMode).
+	args []string
 }
 
 // Run executes dtmgd with args (without the program name), writing to stdout
 // and stderr, and returns the process exit code. main passes os.Args[1:];
 // tests pass their own arguments and writers.
 func Run(args []string, stdout, stderr io.Writer) int {
-	a := &App{Out: stdout, Err: stderr}
+	a := &App{Out: stdout, Err: stderr, args: args}
 	// Until flags are parsed, plain mode follows the environment alone; the
 	// persistent pre-run applies --plain once it is known.
 	output.SetStderr(stderr)
@@ -51,6 +55,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	root.SetArgs(rewriteNegativeArgs(args))
 	cmd, err := root.ExecuteC()
 	if err != nil {
+		err = classifyCobraError(err)
 		a.reportError(cmd, err)
 		return exitCode(err)
 	}
@@ -98,6 +103,7 @@ Multi-environment:
 	}
 	cmd.SetOut(a.Out)
 	cmd.SetErr(a.Err)
+	cmd.SetFlagErrorFunc(flagError)
 
 	f := cmd.PersistentFlags()
 	f.StringVar(&a.Opts.ConfigPath, "config", "", "config file (default: ~/.config/dtmgd/config)")

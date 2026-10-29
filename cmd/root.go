@@ -1,11 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-
-	"github.com/spf13/cobra"
-
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
@@ -123,12 +118,4 @@ func warnBareRefs(cfg *config.Config) {
 	for _, nt := range cfg.Tokens {
 		warn(nt.Token)
 	}
-}
-
-func requireSubcommand(cmd *cobra.Command, args []string) error {
-	if err := cmd.Help(); err != nil {
-		return err
-	}
-	fmt.Fprintln(os.Stderr)
-	return fmt.Errorf("a subcommand is required")
 }

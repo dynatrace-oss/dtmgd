@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -125,16 +126,17 @@ func TestIsMultiEnv(t *testing.T) {
 	}
 }
 
-// TestRequireSubcommand verifies that requireSubcommand always returns a non-nil error
-// (the "a subcommand is required" sentinel), regardless of the command passed in.
+// TestRequireSubcommand verifies that a verb run without a resource is a
+// usage error pointing at the verb's help.
 func TestRequireSubcommand(t *testing.T) {
 	cmd := &cobra.Command{Use: "test", Short: "test command"}
 	err := requireSubcommand(cmd, nil)
-	if err == nil {
-		t.Fatal("expected non-nil error from requireSubcommand")
+	var usage *UsageError
+	if !errors.As(err, &usage) {
+		t.Fatalf("want a *UsageError, got %v", err)
 	}
-	if err.Error() != "a subcommand is required" {
-		t.Errorf("unexpected error message: %q", err.Error())
+	if err.Error() != "a resource type is required" || len(usage.Suggestions) != 1 || !strings.Contains(usage.Suggestions[0], "test --help") {
+		t.Errorf("error = %q, suggestions = %q", err.Error(), usage.Suggestions)
 	}
 }
 
