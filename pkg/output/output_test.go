@@ -23,19 +23,6 @@ func captureStderr(fn func()) string {
 	return buf.String()
 }
 
-// captureStdout runs fn and returns everything written to os.Stdout.
-func captureStdout(fn func()) string {
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	fn()
-	w.Close()
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	os.Stdout = old
-	return buf.String()
-}
-
 func TestDetectAgent(t *testing.T) {
 	// Clean state
 	for _, v := range agentmode.EnvVars() {
