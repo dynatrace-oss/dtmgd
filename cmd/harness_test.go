@@ -15,7 +15,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/dynatrace-oss/dtmgd/pkg/output"
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 )
 
 // This file is the command-level test harness: it runs the real CLI through
@@ -47,17 +47,19 @@ type fakeAPI struct {
 	mu      sync.Mutex
 	hits    map[string]int
 	queries map[string][]url.Values
+	headers map[string][]http.Header
 }
 
 func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}}
+	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
 		q := r.URL.Query()
 		f.mu.Lock()
 		f.hits[key]++
 		f.queries[key] = append(f.queries[key], q)
+		f.headers[key] = append(f.headers[key], r.Header.Clone())
 		f.mu.Unlock()
 
 		rt, ok := routes[key]
@@ -102,6 +104,13 @@ func (f *fakeAPI) Queries(key string) []url.Values {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]url.Values(nil), f.queries[key]...)
+}
+
+// Headers returns the request headers sent to "METHOD /path", in order.
+func (f *fakeAPI) Headers(key string) []http.Header {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]http.Header(nil), f.headers[key]...)
 }
 
 // fakeEnv names one context and the fake API it points at.
@@ -149,8 +158,18 @@ var fakeURL = regexp.MustCompile(`http://127\.0\.0\.1:\d+`)
 // http://FAKE so goldens are stable.
 func runCLI(t *testing.T, cfgPath string, args ...string) cliResult {
 	t.Helper()
-	for _, v := range output.AgentEnvVars {
+	return runCLIWithEnv(t, nil, cfgPath, args...)
+}
+
+// runCLIWithEnv is runCLI with env set after agent detection is cleared, so a
+// test can opt into an agent environment (for example CLAUDECODE=1).
+func runCLIWithEnv(t *testing.T, env map[string]string, cfgPath string, args ...string) cliResult {
+	t.Helper()
+	for _, v := range agentmode.EnvVars() {
 		t.Setenv(v, "")
+	}
+	for k, v := range env {
+		t.Setenv(k, v)
 	}
 
 	outR, outW, err := os.Pipe()

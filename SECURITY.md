@@ -66,7 +66,9 @@ the Dynatrace Open Source Community, except where needed to fix the issue.
    saying so. Pass `--no-agent` to keep human-readable output, for example in
    scripts that parse tables. Outside a terminal, `dtmgd skills install` and
    `uninstall` require `--for <agent>`, so an environment variable alone
-   never chooses where files are written.
+   never chooses where files are written. Requests made from inside an agent
+   carry `(AI-Agent: <name>)` in their User-Agent, so cluster administrators
+   can tell agent traffic apart in their access logs.
 7. **Least privilege.** Give environment tokens only the read scopes dtmgd
    needs. A Cluster API token with the Service Provider API scope can also
    change the cluster, so treat it as an admin credential even though dtmgd

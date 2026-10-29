@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
@@ -170,7 +171,7 @@ func (a *App) runSkillsInstall(opts skillsOptions) error {
 	}
 
 	if a.agentMode() {
-		return output.NewAgentPrinterTo(a.Out, "skills").Print(map[string]interface{}{
+		return output.NewAgentPrinter(a.Out, &agentmode.ResponseContext{Resource: "skills"}).Print(map[string]interface{}{
 			"action":    map[bool]string{true: "updated", false: "installed"}[result.Replaced],
 			"agent":     result.Agent.Name,
 			"path":      result.Path,
@@ -215,7 +216,7 @@ func (a *App) runSkillsUninstall(opts skillsOptions) error {
 	}
 
 	if a.agentMode() {
-		return output.NewAgentPrinterTo(a.Out, "skills").Print(map[string]interface{}{
+		return output.NewAgentPrinter(a.Out, &agentmode.ResponseContext{Resource: "skills"}).Print(map[string]interface{}{
 			"agent":   agent.Name,
 			"removed": removed,
 		})

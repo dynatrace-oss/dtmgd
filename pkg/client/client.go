@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/go-resty/resty/v2"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
@@ -134,7 +135,7 @@ func newRestyClient(baseURL, token string, timeout time.Duration) *resty.Client 
 		SetBaseURL(baseURL).
 		SetHeader("Authorization", fmt.Sprintf("Api-Token %s", token)).
 		SetHeader("Content-Type", "application/json").
-		SetHeader("User-Agent", fmt.Sprintf("dtmgd/%s", version.Version)).
+		SetHeader("User-Agent", fmt.Sprintf("dtmgd/%s", version.Version)+agentmode.UserAgentSuffix()).
 		SetRetryCount(2).
 		SetRetryWaitTime(1 * time.Second).
 		SetRetryMaxWaitTime(5 * time.Second).

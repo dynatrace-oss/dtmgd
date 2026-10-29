@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dynatrace-oss/dtmgd/pkg/output"
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 )
 
 // TestChooseAgentNonInteractive pins pentest note 5's second half: without a
@@ -12,7 +12,7 @@ import (
 // is installed into. An explicit --for, or --cross-client (which does not
 // depend on detection), still works.
 func TestChooseAgentNonInteractive(t *testing.T) {
-	for _, v := range output.AgentEnvVars {
+	for _, v := range agentmode.EnvVars() {
 		t.Setenv(v, "")
 	}
 	t.Setenv("CLAUDECODE", "1")

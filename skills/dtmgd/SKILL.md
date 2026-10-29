@@ -50,7 +50,8 @@ Use `-o json` for AI/script consumption. Default is human-friendly `table`.
 ### AI Agent Envelope Mode
 
 dtmgd auto-detects AI agent environments (Claude Code, Cursor, GitHub Copilot,
-Amazon Q, Kiro, Junie, OpenCode) and wraps all output in a structured envelope:
+Codex, Gemini CLI, Amazon Q, Kiro, Junie, OpenCode, and others) and wraps all
+output in dtctl's structured envelope:
 
 ```json
 {
@@ -60,12 +61,15 @@ Amazon Q, Kiro, Junie, OpenCode) and wraps all output in a structured envelope:
 }
 ```
 
-Errors are also wrapped: `{"ok": false, "error": {"code": "error", "message": "..."}}`.
+Errors are also wrapped, with a classified code and next steps:
+`{"ok": false, "result": null, "error": {"code": "permission_denied", "message": "...", "status_code": 403, "suggestions": ["..."]}}`.
+Codes: `auth_required`, `permission_denied`, `not_found`, `bad_request`,
+`rate_limited`, `server_error`, `config_error`, `timeout`, `partial_failure`, `error`.
 
 Force with `-A`/`--agent`, disable with `--no-agent`.
 
 When agent mode is auto-detected, dtmgd also prints one line to **stderr**
-(`Agent mode is on because CLAUDECODE is set. …`). Don't merge stderr into
+(`Agent mode is on (detected claude-code). …`). Don't merge stderr into
 stdout (`2>&1`) before parsing JSON — or pass `-A` explicitly, which
 suppresses the line.
 

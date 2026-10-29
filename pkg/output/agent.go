@@ -2,97 +2,52 @@ package output
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
-	"os"
+
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 )
 
-// AgentEnvVars lists environment variables that indicate an AI agent context.
-var AgentEnvVars = []string{
-	"CLAUDECODE",
-	"CURSOR_AGENT",
-	"GITHUB_COPILOT",
-	"AMAZON_Q",
-	"KIRO",
-	"AI_AGENT",
-	"JUNIE",
-	"OPENCODE",
-}
+// The agent envelope is dtctl's shared contract (sdk/agentmode), so an agent
+// that drives both CLIs parses one shape:
+//
+//	{"ok": true,  "result": …, "context": {"verb", "resource", "total", "has_more", "warnings", "suggestions"}}
+//	{"ok": false, "result": null, "error": {"code", "message", "status_code", "suggestions"}}
 
-// DetectAgent returns true if the process is running inside an AI agent.
+// DetectAgent reports whether dtmgd is running inside an AI agent, using the
+// same signals as dtctl.
 func DetectAgent() bool {
-	return DetectedAgentVar() != ""
+	return agentmode.Detect().Detected
 }
 
-// DetectedAgentVar returns the first variable in AgentEnvVars that is set,
-// or "" when none is. It lets callers say why agent mode switched on.
-func DetectedAgentVar() string {
-	for _, v := range AgentEnvVars {
-		if os.Getenv(v) != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-// AgentResponse is the structured envelope for AI agent output.
-type AgentResponse struct {
-	OK      bool                   `json:"ok"`
-	Result  interface{}            `json:"result,omitempty"`
-	Error   *AgentError            `json:"error,omitempty"`
-	Context map[string]interface{} `json:"context,omitempty"`
-}
-
-// AgentError represents an error in agent envelope mode.
-type AgentError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-// AgentPrinter wraps output in a structured JSON envelope for AI agents.
+// AgentPrinter writes results as agent envelopes.
 type AgentPrinter struct {
-	w        io.Writer
-	resource string
+	w   io.Writer
+	ctx *agentmode.ResponseContext
 }
 
-// NewAgentPrinter creates a printer that outputs agent envelopes.
-func NewAgentPrinter(resource string) *AgentPrinter {
-	return NewAgentPrinterTo(os.Stdout, resource)
-}
-
-// NewAgentPrinterTo creates a printer that writes agent envelopes to w.
-func NewAgentPrinterTo(w io.Writer, resource string) *AgentPrinter {
-	return &AgentPrinter{w: w, resource: resource}
+// NewAgentPrinter returns a printer that writes success envelopes to w with
+// ctx as their context.
+func NewAgentPrinter(w io.Writer, ctx *agentmode.ResponseContext) *AgentPrinter {
+	return &AgentPrinter{w: w, ctx: ctx}
 }
 
 func (p *AgentPrinter) Print(v interface{}) error {
-	return p.encode(AgentResponse{
-		OK:     true,
-		Result: v,
-		Context: map[string]interface{}{
-			"resource": p.resource,
-		},
-	})
+	return agentmode.WriteSuccess(p.w, v, p.ctx)
 }
 
 func (p *AgentPrinter) PrintList(v interface{}) error {
 	return p.Print(v)
 }
 
-func (p *AgentPrinter) encode(resp AgentResponse) error {
-	enc := json.NewEncoder(p.w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(resp)
+// WriteAgentError writes an error envelope.
+func WriteAgentError(w io.Writer, d *agentmode.ErrorDetail) error {
+	return agentmode.WriteError(w, d)
 }
 
-// PrintAgentError prints an error in agent envelope format.
-func PrintAgentError(err error) {
-	resp := AgentResponse{
-		OK:    false,
-		Error: &AgentError{Code: "error", Message: err.Error()},
-	}
-	data, _ := json.MarshalIndent(resp, "", "  ")
-	// Best effort: this is the last-resort error reporter, so there is nothing
-	// useful to do if writing to stdout fails.
-	_, _ = fmt.Fprintln(os.Stdout, string(data))
+// WriteAgentPartial writes a failure envelope that still carries a result:
+// some environments of a multi-environment call answered and some did not.
+func WriteAgentPartial(w io.Writer, result interface{}, d *agentmode.ErrorDetail, ctx *agentmode.ResponseContext) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(agentmode.Response{OK: false, Result: result, Error: d, Context: ctx})
 }

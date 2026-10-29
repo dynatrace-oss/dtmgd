@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dynatrace-oss/dtmgd/pkg/output"
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 )
 
 // TestParseColumns verifies the column filter parsing logic.
@@ -240,14 +240,14 @@ func TestIsDescribeProblemArgs(t *testing.T) {
 // on by an environment variable is announced, but an explicit --agent or
 // --no-agent is the user's own choice and needs no notice.
 func TestAgentNoticeOnlyWhenAutoDetected(t *testing.T) {
-	for _, v := range output.AgentEnvVars {
+	for _, v := range agentmode.EnvVars() {
 		t.Setenv(v, "")
 	}
 	t.Setenv("CLAUDECODE", "1")
 	a := &App{}
 
 	a.Opts.Agent, a.Opts.NoAgent = false, false
-	if got := a.agentNotice(); !strings.Contains(got, "CLAUDECODE is set") {
+	if got := a.agentNotice(); !strings.Contains(got, "detected claude") {
 		t.Errorf("auto-detected: got %q", got)
 	}
 	a.Opts.Agent = true

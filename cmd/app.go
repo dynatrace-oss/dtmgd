@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
@@ -161,11 +162,11 @@ func (a *App) agentNotice() string {
 	if a.Opts.Agent || a.Opts.NoAgent {
 		return ""
 	}
-	v := output.DetectedAgentVar()
-	if v == "" {
+	info := agentmode.Detect()
+	if !info.Detected {
 		return ""
 	}
-	return fmt.Sprintf("Agent mode is on because %s is set. Use --no-agent for human-readable output.", v)
+	return fmt.Sprintf("Agent mode is on (detected %s). Use --no-agent for human-readable output.", info.Name)
 }
 
 // loadConfig loads the configuration, respecting --config and --context flags.
@@ -274,7 +275,7 @@ func (a *App) clientOptions() client.Options {
 // envelope.
 func (a *App) printer(resource string) output.Printer {
 	if a.agentMode() {
-		return output.NewAgentPrinterTo(a.Out, resource)
+		return output.NewAgentPrinter(a.Out, &agentmode.ResponseContext{Resource: resource})
 	}
 	format := a.Opts.Output
 	if format == "" {

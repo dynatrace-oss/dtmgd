@@ -263,8 +263,10 @@ dtmgd get problems --env ALL_ENVIRONMENTS --concurrency 25
 
 ## AI Agent Mode
 
-When running inside an AI agent (Claude Code, Cursor, GitHub Copilot, Kiro, etc.),
-dtmgd auto-detects the environment and wraps all output in a structured JSON envelope:
+When running inside an AI agent (Claude Code, Cursor, GitHub Copilot, Codex, Gemini
+CLI, Kiro, and others), dtmgd auto-detects the environment and wraps all output in a
+structured JSON envelope. The envelope is the one dtctl uses (its `sdk/agentmode`
+package), so an agent that drives both CLIs parses one shape:
 
 ```json
 {
@@ -274,14 +276,26 @@ dtmgd auto-detects the environment and wraps all output in a structured JSON env
 }
 ```
 
-Errors are also wrapped:
+Errors are also wrapped, with a classified `code`, the HTTP `status_code` when
+there is one, and what to do next in `suggestions`:
 
 ```json
 {
   "ok": false,
-  "error": { "code": "error", "message": "API error 401" }
+  "result": null,
+  "error": {
+    "code": "auth_required",
+    "message": "API error 401: Token Authentication failed",
+    "status_code": 401,
+    "suggestions": ["Authentication failed. Check your API token and ensure it hasn't expired. …"]
+  }
 }
 ```
+
+Error codes: `auth_required` (401), `permission_denied` (403), `not_found` (404),
+`bad_request` (400), `rate_limited` (429), `server_error` (5xx), `config_error`,
+`timeout`, `partial_failure` (some environments of an `--env` call failed), and
+`error` for anything else.
 
 API error messages carry the status code and, when the cluster returns a
 recognised error envelope, its human-readable message — but not the rest of the
@@ -289,7 +303,7 @@ response body. Run with `-vv` to see the full response.
 
 Force it on with `-A` / `--agent`, or disable auto-detection with `--no-agent`.
 When agent mode was switched on by auto-detection, dtmgd prints one line to
-stderr saying which variable did it. An explicit `-A` or `--no-agent` suppresses
+stderr naming the agent it detected (`Agent mode is on (detected claude-code). …`). An explicit `-A` or `--no-agent` suppresses
 that line, so keep stderr separate (no `2>&1`) when piping envelopes to `jq`,
 or pass `-A`.
 
