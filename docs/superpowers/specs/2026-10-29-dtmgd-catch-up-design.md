@@ -261,7 +261,14 @@ Read-only coverage of the four areas the architecture names. The endpoints below
    - The backup endpoints are in the OpenAPI spec but not in the public docs, so their required scope and stability are unconfirmed.
    - `clusterLicense` works only on classic licensing. On a DPS-licensed cluster, the command must say so clearly instead of failing obscurely.
 
-   - **How to settle them.** The owner is adding cluster-scoped contexts with Cluster API tokens (`ServiceProviderAPI`) for both clusters. Phase 4 therefore starts with a short verification spike against them, using read-only GETs only. The spike also finds out each cluster's licensing model. The cluster core source is optional backup.
+   - **Partly settled already (2026-10-29).** A status-only check with the owner's `ServiceProviderAPI` cluster tokens got HTTP 200 on both clusters for these endpoints:
+     - `GET /api/cluster/v2/environments`
+     - `GET /api/v1.0/onpremise/cluster`
+     - `GET /api/v1.0/onpremise/backup/config`
+     - `GET /api/cluster/v2/clusterLicense`
+
+     So the scope question is answered. Response shapes and licensing models are still to check.
+   - **How to settle the rest.** The owner is adding cluster-scoped contexts with Cluster API tokens (`ServiceProviderAPI`) for both clusters. Phase 4 therefore starts with a short verification spike against them, using read-only GETs only. The spike also finds out each cluster's licensing model. The cluster core source is optional backup.
    - If a backup endpoint turns out to be unusable, ship the other three areas and record the gap.
 
 ### Phase 5 — Delivery and documentation practices
