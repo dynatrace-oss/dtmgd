@@ -36,6 +36,7 @@ func newQueryLogsCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "logs",
+		Args:    noArgs,
 		Aliases: []string{"log"},
 		Short:   "Search log records",
 		Long: `Search log records using simple text queries.

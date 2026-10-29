@@ -36,6 +36,7 @@ func newGetMetricsCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "metrics",
+		Args:    noArgs,
 		Aliases: []string{"met", "metric"},
 		Short:   "List available metric descriptors",
 		Long: `List available metrics in the Managed environment, optionally filtered by text

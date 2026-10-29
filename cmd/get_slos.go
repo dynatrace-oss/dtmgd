@@ -119,6 +119,7 @@ func newGetSLOsCmd(a *App) *cobra.Command {
 	var opts getSLOsOptions
 	cmd := &cobra.Command{
 		Use:     "slos",
+		Args:    noArgs,
 		Aliases: []string{"slo"},
 		Short:   "List Service Level Objectives",
 		Long: `List SLOs from the Dynatrace Managed environment.

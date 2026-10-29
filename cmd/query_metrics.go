@@ -40,6 +40,7 @@ func newQueryMetricsCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "metrics",
+		Args:    noArgs,
 		Aliases: []string{"metric", "met"},
 		Short:   "Query metric time-series data",
 		Long: `Query metric data for a specific metric selector and time range.

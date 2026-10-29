@@ -101,3 +101,34 @@ func TestEnumFlag(t *testing.T) {
 		t.Errorf("enumFlag miss = %v", err)
 	}
 }
+
+// TestListCommandsRejectStrayArguments pins that list and query commands,
+// which take no positional arguments, reject one with a usage error instead
+// of dropping it. The common case is a bool flag's value written with a
+// space: "--show-global false" left --show-global true and sent it.
+func TestListCommandsRejectStrayArguments(t *testing.T) {
+	api := newFakeAPI(t, nil)
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+	for _, args := range [][]string{
+		{"get", "slos", "--show-global", "false"},
+		{"get", "slos", "--demo", "false"},
+		{"get", "problems", "extra"},
+		{"get", "events", "--from", "now-1h", "extra"},
+		{"get", "entities", "--selector", "type(HOST)", "extra"},
+		{"get", "entity-types", "extra"},
+		{"get", "metrics", "extra"},
+		{"get", "security-problems", "extra"},
+		{"get", "environments", "extra"},
+		{"query", "logs", "--query", "e", "--from", "now-1h", "extra"},
+		{"query", "log-counts", "--entity", "type(SERVICE)", "extra"},
+		{"query", "metrics", "--metric", "m", "--from", "now-1h", "extra"},
+	} {
+		r := runCLI(t, cfg, args...)
+		if r.Code != 2 || !strings.Contains(r.Stderr, "takes no arguments") {
+			t.Errorf("%v: want exit 2 and \"takes no arguments\", got %s", args, r)
+		}
+	}
+	if len(api.hits) != 0 {
+		t.Errorf("stray arguments still reached the API: %v", api.hits)
+	}
+}

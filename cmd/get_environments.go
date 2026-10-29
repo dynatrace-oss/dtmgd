@@ -21,6 +21,7 @@ const envDeprecationNote = `Note: "get environments" will list environments from
 func newGetEnvironmentsCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "environments",
+		Args:    noArgs,
 		Aliases: []string{"envs", "env"},
 		Short:   "List configured Dynatrace Managed environments",
 		Long: `List all contexts and verify connectivity to each Dynatrace Managed cluster.

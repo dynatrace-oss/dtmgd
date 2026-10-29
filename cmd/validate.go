@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/spf13/cobra"
 )
 
 // Values the API accepts for the enum flags, as env2temp.json lists them.
@@ -40,4 +42,15 @@ func limitFlag(n int) error {
 		return &UsageError{Err: errors.New("--limit must be 0 (no limit) or positive")}
 	}
 	return nil
+}
+
+// noArgs is the Args of commands that take no positional arguments. A stray
+// word is most often a bool flag's value written with a space
+// (--show-global false), which cobra would otherwise drop, leaving the flag
+// true and sending it.
+func noArgs(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	return &UsageError{Err: fmt.Errorf("%s takes no arguments, got %q; give a bool flag's value with '=', e.g. --show-global=false", cmd.CommandPath(), args[0])}
 }

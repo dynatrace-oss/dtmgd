@@ -65,6 +65,7 @@ func newGetSecurityProblemsCmd(a *App) *cobra.Command {
 	var opts getSecurityProblemsOptions
 	cmd := &cobra.Command{
 		Use:     "security-problems",
+		Args:    noArgs,
 		Aliases: []string{"sp", "security", "vuln"},
 		Short:   "List security vulnerabilities",
 		Long: `List security problems (CVE vulnerabilities) in the Dynatrace Managed environment.

@@ -62,6 +62,7 @@ func newQueryLogCountsCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "log-counts",
+		Args:    noArgs,
 		Aliases: []string{"log-count", "logs-count"},
 		Short:   "Aggregate log counts by service and level (INFO/WARN/ERROR)",
 		Long: `Aggregate log records from /api/v2/logs/aggregate, grouped by process group and log level.

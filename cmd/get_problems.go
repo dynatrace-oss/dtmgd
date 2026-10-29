@@ -77,6 +77,7 @@ func newGetProblemsCmd(a *App) *cobra.Command {
 	var watch watchOptions
 	cmd := &cobra.Command{
 		Use:     "problems",
+		Args:    noArgs,
 		Aliases: []string{"prob", "problem"},
 		Short:   "List problems from the Dynatrace Managed environment",
 		Long: `List active or resolved problems. Defaults to the last 24 hours.
