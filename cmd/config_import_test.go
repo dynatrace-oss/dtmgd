@@ -213,25 +213,33 @@ func TestImportRejectsDuplicateAliases(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			cfgPath := withTempConfig(t, existingConfig)
-			src := writeImportSource(t, "dt-config.yaml", tc.source)
-
-			r := runCLI(t, cfgPath, "config", "import", src)
-			if r.Code != 2 {
-				t.Fatalf("code %d, want 2; stderr %q", r.Code, r.Stderr)
-			}
-			if !strings.Contains(r.Stderr, tc.want) {
-				t.Errorf("stderr %q does not contain %q", r.Stderr, tc.want)
-			}
-			if got := readFile(t, cfgPath); got != existingConfig {
-				t.Errorf("config changed:\n%s", got)
-			}
-			for _, name := range []string{"dup-token", "a;b-token"} {
-				if _, err := keyring.Get("dtmgd", name); !errors.Is(err, keyring.ErrNotFound) {
-					t.Errorf("keyring holds %s (err %v)", name, err)
-				}
-			}
+			assertImportRejected(t, tc.source, tc.want)
 		})
+	}
+}
+
+// assertImportRejected imports source over existingConfig and checks the
+// import is a usage error whose stderr contains want, and that neither the
+// config nor the keyring changed.
+func assertImportRejected(t *testing.T, source, want string) {
+	t.Helper()
+	cfgPath := withTempConfig(t, existingConfig)
+	src := writeImportSource(t, "dt-config.yaml", source)
+
+	r := runCLI(t, cfgPath, "config", "import", src)
+	if r.Code != 2 {
+		t.Fatalf("code %d, want 2; stderr %q", r.Code, r.Stderr)
+	}
+	if !strings.Contains(r.Stderr, want) {
+		t.Errorf("stderr %q does not contain %q", r.Stderr, want)
+	}
+	if got := readFile(t, cfgPath); got != existingConfig {
+		t.Errorf("config changed:\n%s", got)
+	}
+	for _, name := range []string{"dup-token", "a;b-token"} {
+		if _, err := keyring.Get("dtmgd", name); !errors.Is(err, keyring.ErrNotFound) {
+			t.Errorf("keyring holds %s (err %v)", name, err)
+		}
 	}
 }
 

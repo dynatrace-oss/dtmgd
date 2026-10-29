@@ -45,28 +45,30 @@ func TestAgentLinksPerEnvironment(t *testing.T) {
 	problems := func(envID string) map[string]route {
 		return map[string]route{"GET /e/" + envID + "/api/v2/problems": {File: "problems_small.json"}}
 	}
+	// linksOf runs args against contexts a and b and returns context.links,
+	// failing unless dtmgd exits with code.
+	linksOf := func(t *testing.T, code int, a, b *fakeAPI, args ...string) map[string]string {
+		t.Helper()
+		r := runCLI(t, withFakeEnvIDs(t, ids, fakeEnv{"a", a}, fakeEnv{"b", b}), append(args, "--env", "a;b", "-A")...)
+		if r.Code != code {
+			t.Fatalf("code %d, want %d; stderr %q", r.Code, code, r.Stderr)
+		}
+		return agentLinks(t, r)
+	}
 
 	t.Run("every environment answers", func(t *testing.T) {
-		a, b := newFakeAPI(t, problems("envA")), newFakeAPI(t, problems("envB"))
-		r := runCLI(t, withFakeEnvIDs(t, ids, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "problems", "--env", "a;b", "-A")
-		if r.Code != 0 {
-			t.Fatalf("code %d, stderr %q", r.Code, r.Stderr)
-		}
+		got := linksOf(t, 0, newFakeAPI(t, problems("envA")), newFakeAPI(t, problems("envB")), "get", "problems")
 		want := map[string]string{"a": "http://FAKE/e/envA/ui/problems", "b": "http://FAKE/e/envB/ui/problems"}
-		if got := agentLinks(t, r); !reflect.DeepEqual(got, want) {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("context.links = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("a failed environment gets no link", func(t *testing.T) {
-		a := newFakeAPI(t, problems("envA"))
 		b := newFakeAPI(t, map[string]route{"GET /e/envB/api/v2/problems": {Status: 403, File: "error_403.json"}})
-		r := runCLI(t, withFakeEnvIDs(t, ids, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "problems", "--env", "a;b", "-A")
-		if r.Code != 1 {
-			t.Fatalf("code %d, want 1 (partial failure); stderr %q", r.Code, r.Stderr)
-		}
+		got := linksOf(t, 1, newFakeAPI(t, problems("envA")), b, "get", "problems") // 1: partial failure
 		want := map[string]string{"a": "http://FAKE/e/envA/ui/problems"}
-		if got := agentLinks(t, r); !reflect.DeepEqual(got, want) {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("context.links = %v, want %v", got, want)
 		}
 	})
@@ -74,12 +76,9 @@ func TestAgentLinksPerEnvironment(t *testing.T) {
 	t.Run("describe links each environment's own item", func(t *testing.T) {
 		a := newFakeAPI(t, map[string]route{"GET /e/envA/api/v2/entities/HOST-1": {Body: `{"entityId":"HOST-1"}`}})
 		b := newFakeAPI(t, map[string]route{"GET /e/envB/api/v2/entities/HOST-1": {Body: `{"entityId":"HOST-1"}`}})
-		r := runCLI(t, withFakeEnvIDs(t, ids, fakeEnv{"a", a}, fakeEnv{"b", b}), "describe", "entity", "HOST-1", "--env", "a;b", "-A")
-		if r.Code != 0 {
-			t.Fatalf("code %d, stderr %q", r.Code, r.Stderr)
-		}
+		got := linksOf(t, 0, a, b, "describe", "entity", "HOST-1")
 		want := map[string]string{"a": "http://FAKE/e/envA/ui/entity/HOST-1", "b": "http://FAKE/e/envB/ui/entity/HOST-1"}
-		if got := agentLinks(t, r); !reflect.DeepEqual(got, want) {
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("context.links = %v, want %v", got, want)
 		}
 	})
@@ -88,11 +87,7 @@ func TestAgentLinksPerEnvironment(t *testing.T) {
 		empty := `{"totalCount":0,"entities":[]}`
 		a := newFakeAPI(t, map[string]route{"GET /e/envA/api/v2/entities": {Body: empty}})
 		b := newFakeAPI(t, map[string]route{"GET /e/envB/api/v2/entities": {Body: empty}})
-		r := runCLI(t, withFakeEnvIDs(t, ids, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "entities", "--selector", "type(HOST)", "--env", "a;b", "-A")
-		if r.Code != 0 {
-			t.Fatalf("code %d, stderr %q", r.Code, r.Stderr)
-		}
-		if got := agentLinks(t, r); got != nil {
+		if got := linksOf(t, 0, a, b, "get", "entities", "--selector", "type(HOST)"); got != nil {
 			t.Errorf("context.links = %v, want none", got)
 		}
 	})
