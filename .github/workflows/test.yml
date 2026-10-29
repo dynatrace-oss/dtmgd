@@ -45,12 +45,10 @@ jobs:
           COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
           echo "Total coverage: ${COVERAGE}%"
           # go tool cover -func only counts statements inside named
-          # functions. Until the cmd refactor, every command's RunE was a
-          # closure in a package-level var, so most of cmd was invisible to
-          # this total (75% here while cmd itself was at 33%). Now commands
-          # are constructors and the total is honest. 54 is that honest
-          # baseline; Phase 2 raises it back to 60 once its command tests land.
-          THRESHOLD=54
+          # functions, so closures in package-level vars are invisible to this
+          # total. Commands are constructors now, so it covers them; with the
+          # command-level tests it is about 80%.
+          THRESHOLD=60
           if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
             echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1
