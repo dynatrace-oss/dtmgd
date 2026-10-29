@@ -17,6 +17,7 @@ func newConfigCmd(a *App) *cobra.Command {
 		Use:   "config",
 		Short: "Manage dtmgd configuration",
 		Long:  `View and modify dtmgd configuration including contexts (Managed environments) and credentials.`,
+		RunE:  requireSubcommand,
 	}
 	cmd.AddCommand(
 		newConfigViewCmd(a),
@@ -30,7 +31,7 @@ func newConfigCmd(a *App) *cobra.Command {
 		newConfigDeleteCredentialsCmd(a),
 		newConfigMigrateTokensCmd(a),
 	)
-	return cmd
+	return asGroup(cmd)
 }
 
 // newConfigViewCmd builds `config view`, which displays the current config.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
@@ -36,15 +37,20 @@ func newUnknownCommandError(err error, suggestions ...string) *UsageError {
 	return &UsageError{Err: err, Suggestions: suggestions, unknownCommand: true}
 }
 
-// requireSubcommand is the RunE of the verb commands (get, describe, query):
-// they only group resources, so reaching it means the resource was missing
-// or unknown. A close match is offered as the command to run instead.
+// requireSubcommand is the RunE of the group commands (get, describe, query,
+// config, skills): they only group subcommands, so reaching it means the
+// subcommand was missing or unknown. A close match is offered as the command
+// to run instead. The verbs call their subcommands resource types.
 func requireSubcommand(cmd *cobra.Command, args []string) error {
-	help := fmt.Sprintf("Run '%s --help' for available resources", cmd.CommandPath())
-	if len(args) == 0 {
-		return &UsageError{Err: errors.New("a resource type is required"), Suggestions: []string{help}}
+	what := "subcommand"
+	if slices.Contains(catalogVerbs, cmd.Name()) {
+		what = "resource type"
 	}
-	err := fmt.Errorf("unknown resource type %q for %q", args[0], cmd.CommandPath())
+	help := fmt.Sprintf("Run '%s --help' for available %ss", cmd.CommandPath(), strings.TrimSuffix(what, " type"))
+	if len(args) == 0 {
+		return &UsageError{Err: fmt.Errorf("a %s is required", what), Suggestions: []string{help}}
+	}
+	err := fmt.Errorf("unknown %s %q for %q", what, args[0], cmd.CommandPath())
 	byName := map[string]string{}
 	var names []string
 	for _, sub := range cmd.Commands() {

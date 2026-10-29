@@ -81,17 +81,23 @@ func TestIsMultiEnv(t *testing.T) {
 	}
 }
 
-// TestRequireSubcommand verifies that a verb run without a resource is a
-// usage error pointing at the verb's help.
+// TestRequireSubcommand verifies that a group run without a subcommand is a
+// usage error pointing at the group's help, worded as a resource type for the
+// verbs and as a subcommand for the other groups.
 func TestRequireSubcommand(t *testing.T) {
-	cmd := &cobra.Command{Use: "test", Short: "test command"}
-	err := requireSubcommand(cmd, nil)
-	var usage *UsageError
-	if !errors.As(err, &usage) {
-		t.Fatalf("want a *UsageError, got %v", err)
-	}
-	if err.Error() != "a resource type is required" || len(usage.Suggestions) != 1 || !strings.Contains(usage.Suggestions[0], "test --help") {
-		t.Errorf("error = %q, suggestions = %q", err.Error(), usage.Suggestions)
+	for _, tt := range []struct{ use, want string }{
+		{"get", "a resource type is required"},
+		{"config", "a subcommand is required"},
+	} {
+		cmd := &cobra.Command{Use: tt.use, Short: "test command"}
+		err := requireSubcommand(cmd, nil)
+		var usage *UsageError
+		if !errors.As(err, &usage) {
+			t.Fatalf("%s: want a *UsageError, got %v", tt.use, err)
+		}
+		if err.Error() != tt.want || len(usage.Suggestions) != 1 || !strings.Contains(usage.Suggestions[0], tt.use+" --help") {
+			t.Errorf("%s: error = %q, suggestions = %q", tt.use, err.Error(), usage.Suggestions)
+		}
 	}
 }
 

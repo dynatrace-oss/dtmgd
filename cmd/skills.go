@@ -44,9 +44,7 @@ is automatically discovered by any agentskills.io-compatible agent.`,
 
   # List all supported agents
   dtmgd skills install --list`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return cmd.Help()
-		},
+		RunE: requireSubcommand,
 	}
 	cmd.AddCommand(
 		newSkillsInstallCmd(a),

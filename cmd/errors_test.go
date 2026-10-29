@@ -68,6 +68,32 @@ func TestDidYouMeanResource(t *testing.T) {
 	}
 }
 
+// TestConfigTypoIsUsageError pins that a mistyped subcommand of config or
+// skills is a usage error with a did-you-mean, as under get: config printed
+// its help and exited 0, so a script's typo looked like success.
+func TestConfigTypoIsUsageError(t *testing.T) {
+	cfg := withFakeEnvs(t, fakeEnv{"a", newFakeAPI(t, nil)})
+
+	r := runCLI(t, cfg, "config", "delete-credential", "tok", "-A")
+	if r.Code != 2 {
+		t.Errorf("config delete-credential: code %d, want 2", r.Code)
+	}
+	var resp agentmode.Response // Unmarshal rejects a second value after the first
+	if err := json.Unmarshal([]byte(r.Stdout), &resp); err != nil {
+		t.Fatalf("stdout is not one envelope: %v\n%s", err, r.Stdout)
+	}
+	if resp.OK || resp.Error == nil || resp.Error.Code != "unknown_command" {
+		t.Fatalf("envelope = %s", r.Stdout)
+	}
+	if !strings.Contains(strings.Join(resp.Error.Suggestions, "\n"), "dtmgd config delete-credentials") {
+		t.Errorf("suggestions %q do not name dtmgd config delete-credentials", resp.Error.Suggestions)
+	}
+
+	if r := runCLI(t, cfg, "skills", "instal"); r.Code != 2 || !strings.Contains(r.Stderr, "dtmgd skills install") {
+		t.Errorf("skills instal: code %d, stderr %q; want 2 and a did-you-mean", r.Code, r.Stderr)
+	}
+}
+
 func TestDidYouMeanFlag(t *testing.T) {
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", newFakeAPI(t, nil)}), "get", "problems", "--statsu", "OPEN")
 	if r.Code != 2 || !strings.Contains(r.Stderr, "did you mean --status?") {
