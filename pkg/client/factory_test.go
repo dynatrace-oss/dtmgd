@@ -72,8 +72,10 @@ func TestDeadHostFailsFast(t *testing.T) {
 	if err := c.GetV2("/problems", nil, &out); err == nil {
 		t.Fatal("want an error from a refused connection")
 	}
-	if d := time.Since(start); d > 2*time.Second {
-		t.Errorf("took %s, want under 2s (no retries on connection refused)", d)
+	// 4s, not 2s: Windows takes about 1-2s to refuse a loopback connect. The
+	// old retry policy took 5.5s here, so 4s still tells the two apart.
+	if d := time.Since(start); d > 4*time.Second {
+		t.Errorf("took %s, want under 4s (no retries on connection refused)", d)
 	}
 }
 
