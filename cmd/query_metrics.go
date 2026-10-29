@@ -110,7 +110,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.resolution, "resolution", "", "data resolution (e.g. 5m, 1h, 1d)")
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter metric data")
-	return withScopes(cmd, "metrics.read", "entities.read")
+	return withScopes(cmd, scopeMetricsRead, scopeEntitiesRead)
 }
 
 // MetricEntitySummaryRow is a table row for per-entity single-value metric results.
@@ -134,11 +134,14 @@ func isSingleValueResult(data []MetricQueryDataPoints) bool {
 	return true
 }
 
+// entityDimensionPrefix starts every entity dimension key ("dt.entity.service").
+const entityDimensionPrefix = "dt.entity."
+
 // extractEntityLabel returns (displayName, entityID) from a dimensionMap.
 // It pairs "dt.entity.X" (entity ID) with "dt.entity.X.name" (resolved name).
 func extractEntityLabel(dimMap map[string]string) (name, id string) {
 	for k, v := range dimMap {
-		if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+		if strings.HasPrefix(k, entityDimensionPrefix) && !strings.HasSuffix(k, ".name") {
 			id = v
 			name = dimMap[k+".name"]
 			return
@@ -162,7 +165,7 @@ func resolveMetricEntityNames(c *client.Client, resp *MetricQueryResponse) error
 	for _, res := range resp.Result {
 		for _, dp := range res.Data {
 			for k, v := range dp.DimensionMap {
-				if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+				if strings.HasPrefix(k, entityDimensionPrefix) && !strings.HasSuffix(k, ".name") {
 					seen[v] = k
 				}
 			}
@@ -210,7 +213,7 @@ func injectEntityNames(resp *MetricQueryResponse, nameMap map[string]string) {
 		for di := range resp.Result[ri].Data {
 			dm := resp.Result[ri].Data[di].DimensionMap
 			for k, entityID := range dm {
-				if strings.HasPrefix(k, "dt.entity.") && !strings.HasSuffix(k, ".name") {
+				if strings.HasPrefix(k, entityDimensionPrefix) && !strings.HasSuffix(k, ".name") {
 					if name, ok := nameMap[entityID]; ok {
 						dm[k+".name"] = name
 					}

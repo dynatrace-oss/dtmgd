@@ -129,7 +129,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (default: now-1h), e.g. now-2h")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().IntVar(&opts.maxServices, "max-services", 100, "maximum number of process groups the aggregation returns per level (max: 100)")
-	return withScopes(cmd, "logs.read", "entities.read")
+	return withScopes(cmd, scopeLogsRead, scopeEntitiesRead)
 }
 
 // fetchLogCounts counts log records per level for the process groups that

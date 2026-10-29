@@ -137,7 +137,7 @@ Multi-environment:
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to filter problems by entity")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of problems to return")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. +status, -startTime)")
-	return withScopes(cmd, "problems.read")
+	return withScopes(cmd, scopeProblemsRead)
 }
 
 // problemRows turns a /problems body into table rows.

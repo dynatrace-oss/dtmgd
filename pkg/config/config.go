@@ -190,8 +190,8 @@ func (c *Config) SaveTo(path string) error {
 // file it replaces was looser: a config can hold a plaintext token. A symlink
 // is followed, so a config kept elsewhere (a dotfiles repo) stays linked.
 func writeFileAtomic(path string, data []byte) error {
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		path = real
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
 	if err != nil {

@@ -159,9 +159,9 @@ const requestTimeout = 60 * time.Second
 // replaces it.
 type quietLogger struct{}
 
-func (quietLogger) Errorf(string, ...interface{}) {}
-func (quietLogger) Warnf(string, ...interface{})  {}
-func (quietLogger) Debugf(string, ...interface{}) {}
+func (quietLogger) Errorf(string, ...interface{}) { /* discarded on purpose */ }
+func (quietLogger) Warnf(string, ...interface{})  { /* discarded on purpose */ }
+func (quietLogger) Debugf(string, ...interface{}) { /* discarded on purpose */ }
 
 // stderrLogger is resty's logger under -v.
 type stderrLogger struct{ l *log.Logger }

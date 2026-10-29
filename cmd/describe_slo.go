@@ -112,5 +112,5 @@ Examples:
 	cmd.Flags().StringVar(&opts.timeframe, "timeframe", "", "time frame: CURRENT or GTF")
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (implies --timeframe GTF)")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (implies --timeframe GTF)")
-	return withScopes(cmd, "slo.read")
+	return withScopes(cmd, scopeSLORead)
 }

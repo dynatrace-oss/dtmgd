@@ -47,7 +47,7 @@ This connectivity check is now "dtmgd doctor". In a coming release,
 			return a.printer("environments").PrintList(items)
 		},
 	}
-	return withScopes(cmd, "DataExport")
+	return withScopes(cmd, scopeDataExport)
 }
 
 // envListItem is a doctor row in the shape get environments has always

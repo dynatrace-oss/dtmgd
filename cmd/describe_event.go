@@ -21,5 +21,5 @@ func newDescribeEventCmd(a *App) *cobra.Command {
 			})
 		},
 	}
-	return withScopes(cmd, "events.read")
+	return withScopes(cmd, scopeEventsRead)
 }

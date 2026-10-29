@@ -125,28 +125,10 @@ func TestPrintProblemDetail(t *testing.T) {
 		StartTime:   1775829300000,
 		EndTime:     1775829600000,
 	}
-	d.RootCause = &struct {
-		EntityID struct {
-			ID   string `json:"id"`
-			Type string `json:"type"`
-		} `json:"entityId"`
-		Name string `json:"name"`
-	}{Name: "PaymentsController"}
+	d.RootCause = &problemEntity{Name: "PaymentsController"}
 	d.RootCause.EntityID.Type = "SERVICE"
 	d.EvidenceDetails.TotalCount = 1
-	d.EvidenceDetails.Details = []struct {
-		DisplayName       string  `json:"displayName"`
-		EvidenceType      string  `json:"evidenceType"`
-		RootCauseRelevant bool    `json:"rootCauseRelevant"`
-		StartTime         float64 `json:"startTime"`
-		Entity            struct {
-			EntityID struct {
-				ID   string `json:"id"`
-				Type string `json:"type"`
-			} `json:"entityId"`
-			Name string `json:"name"`
-		} `json:"entity"`
-	}{
+	d.EvidenceDetails.Details = []problemEvidence{
 		{DisplayName: "Failure rate", EvidenceType: "TRANSACTIONAL", RootCauseRelevant: true},
 	}
 	d.EvidenceDetails.Details[0].Entity.Name = "PaymentsController"

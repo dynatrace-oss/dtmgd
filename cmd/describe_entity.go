@@ -25,7 +25,7 @@ func newDescribeEntityCmd(a *App) *cobra.Command {
 			})
 		},
 	}
-	return withScopes(cmd, "entities.read")
+	return withScopes(cmd, scopeEntitiesRead)
 }
 
 func newDescribeEntityTypeCmd(a *App) *cobra.Command {
@@ -43,7 +43,7 @@ func newDescribeEntityTypeCmd(a *App) *cobra.Command {
 			})
 		},
 	}
-	return withScopes(cmd, "entities.read")
+	return withScopes(cmd, scopeEntitiesRead)
 }
 
 func newDescribeEntityRelationsCmd(a *App) *cobra.Command {
@@ -69,7 +69,7 @@ func newDescribeEntityRelationsCmd(a *App) *cobra.Command {
 			})
 		},
 	}
-	return withScopes(cmd, "entities.read")
+	return withScopes(cmd, scopeEntitiesRead)
 }
 
 // extractRels keeps only an entity's relationship keys, or returns the entity

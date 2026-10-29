@@ -95,7 +95,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN, RESOLVED, MUTED")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("production")`)
-	return withScopes(cmd, "securityProblems.read")
+	return withScopes(cmd, scopeSecurityProblemsRead)
 }
 
 // securityProblemRows turns a /securityProblems body into table rows.

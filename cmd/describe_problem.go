@@ -12,51 +12,55 @@ import (
 
 // ProblemDetail maps the /problems/{id} API response.
 type ProblemDetail struct {
-	ProblemID   string  `json:"problemId"`
-	DisplayID   string  `json:"displayId"`
-	Title       string  `json:"title"`
-	Status      string  `json:"status"`
-	Severity    string  `json:"severityLevel"`
-	ImpactLevel string  `json:"impactLevel"`
-	StartTime   float64 `json:"startTime"`
-	EndTime     float64 `json:"endTime"`
-	RootCause   *struct {
-		EntityID struct {
-			ID   string `json:"id"`
-			Type string `json:"type"`
-		} `json:"entityId"`
-		Name string `json:"name"`
-	} `json:"rootCauseEntity"`
-	ImpactedEntities []struct {
-		EntityID struct {
-			ID   string `json:"id"`
-			Type string `json:"type"`
-		} `json:"entityId"`
-		Name string `json:"name"`
-	} `json:"impactedEntities"`
-	ManagementZones []struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"managementZones"`
-	EvidenceDetails struct {
-		TotalCount int `json:"totalCount"`
-		Details    []struct {
-			DisplayName       string  `json:"displayName"`
-			EvidenceType      string  `json:"evidenceType"`
-			RootCauseRelevant bool    `json:"rootCauseRelevant"`
-			StartTime         float64 `json:"startTime"`
-			Entity            struct {
-				EntityID struct {
-					ID   string `json:"id"`
-					Type string `json:"type"`
-				} `json:"entityId"`
-				Name string `json:"name"`
-			} `json:"entity"`
-		} `json:"details"`
-	} `json:"evidenceDetails"`
+	ProblemID        string                  `json:"problemId"`
+	DisplayID        string                  `json:"displayId"`
+	Title            string                  `json:"title"`
+	Status           string                  `json:"status"`
+	Severity         string                  `json:"severityLevel"`
+	ImpactLevel      string                  `json:"impactLevel"`
+	StartTime        float64                 `json:"startTime"`
+	EndTime          float64                 `json:"endTime"`
+	RootCause        *problemEntity          `json:"rootCauseEntity"`
+	ImpactedEntities []problemEntity         `json:"impactedEntities"`
+	ManagementZones  []problemManagementZone `json:"managementZones"`
+	EvidenceDetails  problemEvidenceDetails  `json:"evidenceDetails"`
 	// These fields are returned as arrays (one entry per cluster/namespace).
 	K8sClusterName   []string `json:"k8s.cluster.name"`
 	K8sNamespaceName []string `json:"k8s.namespace.name"`
+}
+
+// problemEntityID identifies an entity a problem refers to.
+type problemEntityID struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+// problemEntity is an entity a problem names: its root cause, an impacted
+// entity, or the entity behind a piece of evidence.
+type problemEntity struct {
+	EntityID problemEntityID `json:"entityId"`
+	Name     string          `json:"name"`
+}
+
+// problemManagementZone is a management zone a problem belongs to.
+type problemManagementZone struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// problemEvidenceDetails is the evidence the problem was detected on.
+type problemEvidenceDetails struct {
+	TotalCount int               `json:"totalCount"`
+	Details    []problemEvidence `json:"details"`
+}
+
+// problemEvidence is one piece of evidence for a problem.
+type problemEvidence struct {
+	DisplayName       string        `json:"displayName"`
+	EvidenceType      string        `json:"evidenceType"`
+	RootCauseRelevant bool          `json:"rootCauseRelevant"`
+	StartTime         float64       `json:"startTime"`
+	Entity            problemEntity `json:"entity"`
 }
 
 // fmtMillis converts a Unix-millisecond float64 timestamp to a human-readable UTC string.
@@ -151,5 +155,5 @@ automatically — no special syntax or "--" separator is required.`,
 			})
 		},
 	}
-	return withScopes(cmd, "problems.read")
+	return withScopes(cmd, scopeProblemsRead)
 }
