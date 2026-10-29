@@ -1,0 +1,133 @@
+== exit code: 0
+== stdout
+{
+  "a": {
+    "pageSize": 10,
+    "problems": [
+      {
+        "affectedEntities": [
+          {
+            "entityId": {
+              "id": "SERVICE-0001",
+              "type": "SERVICE"
+            },
+            "name": "svc-1"
+          }
+        ],
+        "displayId": "P-2601",
+        "endTime": -1,
+        "impactLevel": "SERVICES",
+        "managementZones": [
+          {
+            "id": "1",
+            "name": "prod"
+          }
+        ],
+        "problemId": "-1001_1730000000000V2",
+        "rootCauseEntity": {
+          "entityId": {
+            "id": "SERVICE-0001",
+            "type": "SERVICE"
+          },
+          "name": "svc-1"
+        },
+        "severityLevel": "AVAILABILITY",
+        "startTime": 1730000060000,
+        "status": "OPEN",
+        "title": "Problem 1"
+      },
+      {
+        "affectedEntities": [
+          {
+            "entityId": {
+              "id": "SERVICE-0002",
+              "type": "SERVICE"
+            },
+            "name": "svc-2"
+          }
+        ],
+        "displayId": "P-2602",
+        "endTime": -1,
+        "impactLevel": "INFRASTRUCTURE",
+        "managementZones": [
+          {
+            "id": "1",
+            "name": "prod"
+          }
+        ],
+        "problemId": "-1002_1730000000000V2",
+        "rootCauseEntity": null,
+        "severityLevel": "PERFORMANCE",
+        "startTime": 1730000120000,
+        "status": "OPEN",
+        "title": "Problem 2"
+      }
+    ],
+    "totalCount": 2
+  },
+  "b": {
+    "pageSize": 10,
+    "problems": [
+      {
+        "affectedEntities": [
+          {
+            "entityId": {
+              "id": "SERVICE-0001",
+              "type": "SERVICE"
+            },
+            "name": "svc-1"
+          }
+        ],
+        "displayId": "P-2601",
+        "endTime": -1,
+        "impactLevel": "SERVICES",
+        "managementZones": [
+          {
+            "id": "1",
+            "name": "prod"
+          }
+        ],
+        "problemId": "-1001_1730000000000V2",
+        "rootCauseEntity": {
+          "entityId": {
+            "id": "SERVICE-0001",
+            "type": "SERVICE"
+          },
+          "name": "svc-1"
+        },
+        "severityLevel": "AVAILABILITY",
+        "startTime": 1730000060000,
+        "status": "OPEN",
+        "title": "Problem 1"
+      },
+      {
+        "affectedEntities": [
+          {
+            "entityId": {
+              "id": "SERVICE-0002",
+              "type": "SERVICE"
+            },
+            "name": "svc-2"
+          }
+        ],
+        "displayId": "P-2602",
+        "endTime": -1,
+        "impactLevel": "INFRASTRUCTURE",
+        "managementZones": [
+          {
+            "id": "1",
+            "name": "prod"
+          }
+        ],
+        "problemId": "-1002_1730000000000V2",
+        "rootCauseEntity": null,
+        "severityLevel": "PERFORMANCE",
+        "startTime": 1730000120000,
+        "status": "OPEN",
+        "title": "Problem 2"
+      }
+    ],
+    "totalCount": 2
+  }
+}
+== stderr

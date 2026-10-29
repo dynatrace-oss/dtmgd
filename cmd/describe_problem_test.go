@@ -3,8 +3,6 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -153,14 +151,8 @@ func TestPrintProblemDetail(t *testing.T) {
 	}
 	d.EvidenceDetails.Details[0].Entity.Name = "PaymentsController"
 
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	printProblemDetail(d)
-	w.Close()
-	os.Stdout = old
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	printProblemDetail(&buf, d)
 	out := buf.String()
 
 	checks := []string{

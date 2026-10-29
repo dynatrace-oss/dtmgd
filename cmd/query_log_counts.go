@@ -27,18 +27,18 @@ type LogCountRow struct {
 	Total   int64  `table:"TOTAL"`
 }
 
-var (
-	lcEntity         string
-	lcFrom           string
-	lcTo             string
-	lcMaxGroupValues int
-)
-
-var queryLogCountsCmd = &cobra.Command{
-	Use:     "log-counts",
-	Aliases: []string{"log-count", "logs-count"},
-	Short:   "Aggregate log counts by service and level (INFO/WARN/ERROR)",
-	Long: `Aggregate log records from /api/v2/logs/aggregate, grouped by process group and log level.
+func newQueryLogCountsCmd(a *App) *cobra.Command {
+	var opts struct {
+		entity      string
+		from        string
+		to          string
+		maxServices int
+	}
+	cmd := &cobra.Command{
+		Use:     "log-counts",
+		Aliases: []string{"log-count", "logs-count"},
+		Short:   "Aggregate log counts by service and level (INFO/WARN/ERROR)",
+		Long: `Aggregate log records from /api/v2/logs/aggregate, grouped by process group and log level.
 
 Returns INFO, WARN, and ERROR counts per service using an entitySelector to discover the
 relevant process groups, then grouping by dt.entity.process_group in the aggregate call.
@@ -57,164 +57,173 @@ where the level appears in each log line.
 Examples:
   dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-1h
   dtmgd query log-counts --entity 'type(PROCESS_GROUP),tag("[Environment]BookStore")' --from now-30m --to now`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if lcEntity == "" {
-			return fmt.Errorf("--entity is required (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
-		}
-		if lcFrom == "" {
-			lcFrom = "now-1h"
-		}
-		if lcTo == "" {
-			lcTo = "now"
-		}
-		if lcMaxGroupValues <= 0 || lcMaxGroupValues > 100 {
-			lcMaxGroupValues = 100
-		}
-
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		// On DT Managed Classic, logs are attributed to PROCESS_GROUP entities, not SERVICE.
-		// If the user passed a SERVICE selector, auto-convert to PROCESS_GROUP.
-		pgSelector := strings.Replace(lcEntity, "type(SERVICE)", "type(PROCESS_GROUP)", 1)
-
-		// Fetch process group entity IDs and display names.
-		entityNames := map[string]string{} // pgID → display name
-		var entResp EntitiesResponse
-		entParams := map[string]string{
-			"entitySelector": pgSelector,
-			"pageSize":       "500",
-		}
-		if err := c.GetV2("/entities", entParams, &entResp); err == nil {
-			for _, e := range entResp.Entities {
-				// Store with lowercase key: entities API returns "PROCESS_GROUP-UPPERCASE"
-				// but logs aggregate returns "process_group-lowercase" for the same entity.
-				entityNames[strings.ToLower(e.EntityID)] = cleanPGName(e.DisplayName)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.entity == "" {
+				return fmt.Errorf("--entity is required (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
 			}
-		}
-
-		if len(entityNames) == 0 {
-			output.PrintInfo("No entities found for the specified entity selector.")
-			return nil
-		}
-
-		// For each log level, call aggregate with groupBy=dt.entity.process_group.
-		// entitySelector is intentionally omitted: on DT Managed Classic it is a hidden
-		// parameter that does not actually filter the aggregate result (returns empty).
-		// Instead, we fetch all process groups that match, then filter client-side.
-		//
-		// Log levels use full-text matching ("INFO", "WARN", "ERROR") because
-		// structured field queries (loglevel:ERROR) are not supported on DT Managed Classic.
-		levelQueries := []struct{ level, query string }{
-			{"INFO", "INFO"},
-			{"WARN", "WARN"},
-			{"ERROR", "ERROR"},
-		}
-
-		// pgCounts[pgID][level] = count
-		pgCounts := map[string]map[string]int64{}
-
-		for _, lq := range levelQueries {
-			params := url.Values{
-				"from":           {lcFrom},
-				"to":             {lcTo},
-				"timeBuckets":    {"1"},
-				"maxGroupValues": {fmt.Sprintf("%d", lcMaxGroupValues)},
-				"groupBy":        {"dt.entity.process_group"},
-				"query":          {lq.query},
+			from := opts.from
+			if from == "" {
+				from = "now-1h"
 			}
-			var resp LogAggregateResponse
-			if err := c.GetV2WithValues("/logs/aggregate", params, &resp); err != nil {
-				return fmt.Errorf("aggregate %s: %w", lq.level, err)
+			to := opts.to
+			if to == "" {
+				to = "now"
+			}
+			maxGroupValues := opts.maxServices
+			if maxGroupValues <= 0 || maxGroupValues > 100 {
+				maxGroupValues = 100
 			}
 
-			// aggregationResult["dt.entity.process_group"][bucket][PROCESS_GROUP-xxx] = count
-			if pgBuckets, ok := resp.AggregationResult["dt.entity.process_group"]; ok {
-				for _, bucketMap := range pgBuckets {
-					for pgID, cnt := range bucketMap {
-						// Client-side filter: only include process groups from our entity lookup.
-						if _, known := entityNames[pgID]; !known {
-							continue
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
+
+			c, err := a.newClient(cfg)
+			if err != nil {
+				return err
+			}
+
+			// On DT Managed Classic, logs are attributed to PROCESS_GROUP entities, not SERVICE.
+			// If the user passed a SERVICE selector, auto-convert to PROCESS_GROUP.
+			pgSelector := strings.Replace(opts.entity, "type(SERVICE)", "type(PROCESS_GROUP)", 1)
+
+			// Fetch process group entity IDs and display names.
+			entityNames := map[string]string{} // pgID → display name
+			var entResp EntitiesResponse
+			entParams := map[string]string{
+				"entitySelector": pgSelector,
+				"pageSize":       "500",
+			}
+			if err := c.GetV2("/entities", entParams, &entResp); err == nil {
+				for _, e := range entResp.Entities {
+					// Store with lowercase key: entities API returns "PROCESS_GROUP-UPPERCASE"
+					// but logs aggregate returns "process_group-lowercase" for the same entity.
+					entityNames[strings.ToLower(e.EntityID)] = cleanPGName(e.DisplayName)
+				}
+			}
+
+			if len(entityNames) == 0 {
+				output.PrintInfo("No entities found for the specified entity selector.")
+				return nil
+			}
+
+			// For each log level, call aggregate with groupBy=dt.entity.process_group.
+			// entitySelector is intentionally omitted: on DT Managed Classic it is a hidden
+			// parameter that does not actually filter the aggregate result (returns empty).
+			// Instead, we fetch all process groups that match, then filter client-side.
+			//
+			// Log levels use full-text matching ("INFO", "WARN", "ERROR") because
+			// structured field queries (loglevel:ERROR) are not supported on DT Managed Classic.
+			levelQueries := []struct{ level, query string }{
+				{"INFO", "INFO"},
+				{"WARN", "WARN"},
+				{"ERROR", "ERROR"},
+			}
+
+			// pgCounts[pgID][level] = count
+			pgCounts := map[string]map[string]int64{}
+
+			for _, lq := range levelQueries {
+				params := url.Values{
+					"from":           {from},
+					"to":             {to},
+					"timeBuckets":    {"1"},
+					"maxGroupValues": {fmt.Sprintf("%d", maxGroupValues)},
+					"groupBy":        {"dt.entity.process_group"},
+					"query":          {lq.query},
+				}
+				var resp LogAggregateResponse
+				if err := c.GetV2WithValues("/logs/aggregate", params, &resp); err != nil {
+					return fmt.Errorf("aggregate %s: %w", lq.level, err)
+				}
+
+				// aggregationResult["dt.entity.process_group"][bucket][PROCESS_GROUP-xxx] = count
+				if pgBuckets, ok := resp.AggregationResult["dt.entity.process_group"]; ok {
+					for _, bucketMap := range pgBuckets {
+						for pgID, cnt := range bucketMap {
+							// Client-side filter: only include process groups from our entity lookup.
+							if _, known := entityNames[pgID]; !known {
+								continue
+							}
+							if _, exists := pgCounts[pgID]; !exists {
+								pgCounts[pgID] = map[string]int64{}
+							}
+							pgCounts[pgID][lq.level] += cnt
 						}
-						if _, exists := pgCounts[pgID]; !exists {
-							pgCounts[pgID] = map[string]int64{}
-						}
-						pgCounts[pgID][lq.level] += cnt
 					}
 				}
 			}
-		}
 
-		// Build rows: include zero rows for all known entities so that services
-		// with no log ingestion are visible (rather than silently omitted).
-		rows := make([]LogCountRow, 0, len(entityNames))
-		for pgID, name := range entityNames {
-			levels := pgCounts[pgID] // nil if no logs found for this PG
-			info := levels["INFO"]
-			warn := levels["WARN"]
-			errCount := levels["ERROR"]
+			// Build rows: include zero rows for all known entities so that services
+			// with no log ingestion are visible (rather than silently omitted).
+			rows := make([]LogCountRow, 0, len(entityNames))
+			for pgID, name := range entityNames {
+				levels := pgCounts[pgID] // nil if no logs found for this PG
+				info := levels["INFO"]
+				warn := levels["WARN"]
+				errCount := levels["ERROR"]
 
-			rows = append(rows, LogCountRow{
-				Service: name,
-				Info:    info,
-				Warn:    warn,
-				Error:   errCount,
-				Total:   info + warn + errCount,
+				rows = append(rows, LogCountRow{
+					Service: name,
+					Info:    info,
+					Warn:    warn,
+					Error:   errCount,
+					Total:   info + warn + errCount,
+				})
+			}
+
+			// Aggregate rows with the same service name.
+			// Multiple process group entities (e.g. per-pod PGs, shell startup scripts)
+			// can map to the same logical service name; sum their counts so the caller
+			// sees one row per logical service.
+			aggMap := map[string]*LogCountRow{}
+			for i := range rows {
+				r := &rows[i]
+				if existing, ok := aggMap[r.Service]; ok {
+					existing.Info += r.Info
+					existing.Warn += r.Warn
+					existing.Error += r.Error
+					existing.Total = existing.Info + existing.Warn + existing.Error
+				} else {
+					cp := *r
+					aggMap[r.Service] = &cp
+				}
+			}
+			rows = rows[:0]
+			for _, r := range aggMap {
+				rows = append(rows, *r)
+			}
+
+			// Sort by ERROR desc, then WARN desc, then Total desc.
+			sort.Slice(rows, func(i, j int) bool {
+				if rows[i].Error != rows[j].Error {
+					return rows[i].Error > rows[j].Error
+				}
+				if rows[i].Warn != rows[j].Warn {
+					return rows[i].Warn > rows[j].Warn
+				}
+				if rows[i].Total != rows[j].Total {
+					return rows[i].Total > rows[j].Total
+				}
+				return rows[i].Service < rows[j].Service
 			})
-		}
 
-		// Aggregate rows with the same service name.
-		// Multiple process group entities (e.g. per-pod PGs, shell startup scripts)
-		// can map to the same logical service name; sum their counts so the caller
-		// sees one row per logical service.
-		aggMap := map[string]*LogCountRow{}
-		for i := range rows {
-			r := &rows[i]
-			if existing, ok := aggMap[r.Service]; ok {
-				existing.Info += r.Info
-				existing.Warn += r.Warn
-				existing.Error += r.Error
-				existing.Total = existing.Info + existing.Warn + existing.Error
-			} else {
-				cp := *r
-				aggMap[r.Service] = &cp
+			if a.Opts.Output == "json" || a.agentMode() {
+				return a.printer("log-counts").Print(rows)
 			}
-		}
-		rows = rows[:0]
-		for _, r := range aggMap {
-			rows = append(rows, *r)
-		}
 
-		// Sort by ERROR desc, then WARN desc, then Total desc.
-		sort.Slice(rows, func(i, j int) bool {
-			if rows[i].Error != rows[j].Error {
-				return rows[i].Error > rows[j].Error
-			}
-			if rows[i].Warn != rows[j].Warn {
-				return rows[i].Warn > rows[j].Warn
-			}
-			if rows[i].Total != rows[j].Total {
-				return rows[i].Total > rows[j].Total
-			}
-			return rows[i].Service < rows[j].Service
-		})
-
-		if outputFormat == "json" || agentMode() {
-			return NewPrinterForResource("log-counts").Print(rows)
-		}
-
-		// Print table.
-		fmt.Printf("Log counts for entity selector: %s\n", lcEntity)
-		fmt.Printf("Time range: %s → %s\n\n", lcFrom, lcTo)
-		return NewPrinter().Print(rows)
-	},
+			// Print table.
+			_, _ = fmt.Fprintf(a.Out, "Log counts for entity selector: %s\n", opts.entity)
+			_, _ = fmt.Fprintf(a.Out, "Time range: %s → %s\n\n", from, to)
+			return a.printer("").Print(rows)
+		},
+	}
+	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log aggregation (required)")
+	cmd.Flags().StringVar(&opts.from, "from", "", "start time (default: now-1h), e.g. now-2h")
+	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
+	cmd.Flags().IntVar(&opts.maxServices, "max-services", 100, "maximum number of services to return per level (max: 100)")
+	return cmd
 }
 
 // cleanPGName extracts a short service name from a Dynatrace process group display name.
@@ -254,13 +263,4 @@ func cleanPGName(name string) string {
 		}
 	}
 	return name
-}
-
-func init() {
-	queryCmd.AddCommand(queryLogCountsCmd)
-
-	queryLogCountsCmd.Flags().StringVar(&lcEntity, "entity", "", "entitySelector to scope log aggregation (required)")
-	queryLogCountsCmd.Flags().StringVar(&lcFrom, "from", "", "start time (default: now-1h), e.g. now-2h")
-	queryLogCountsCmd.Flags().StringVar(&lcTo, "to", "", "end time (default: now)")
-	queryLogCountsCmd.Flags().IntVar(&lcMaxGroupValues, "max-services", 100, "maximum number of services to return per level (max: 100)")
 }

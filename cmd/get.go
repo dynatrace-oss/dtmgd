@@ -2,11 +2,12 @@ package cmd
 
 import "github.com/spf13/cobra"
 
-// getCmd is the parent for all "get" subcommands.
-var getCmd = &cobra.Command{
-	Use:   "get",
-	Short: "List or retrieve resources",
-	Long: `List resources from a Dynatrace Managed environment.
+// newGetCmd builds the parent for all "get" subcommands.
+func newGetCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "get",
+		Short: "List or retrieve resources",
+		Long: `List resources from a Dynatrace Managed environment.
 
 Supported resources:
   environments          Configured Managed environments and cluster info
@@ -19,9 +20,17 @@ Supported resources:
   security-problems (sp) Security vulnerabilities
 
 Use 'dtmgd get <resource> --help' for resource-specific options.`,
-	RunE: requireSubcommand,
-}
-
-func init() {
-	rootCmd.AddCommand(getCmd)
+		RunE: requireSubcommand,
+	}
+	cmd.AddCommand(
+		newGetEntityTypesCmd(a),
+		newGetEntitiesCmd(a),
+		newGetEnvironmentsCmd(a),
+		newGetEventsCmd(a),
+		newGetMetricsCmd(a),
+		newGetProblemsCmd(a),
+		newGetSecurityProblemsCmd(a),
+		newGetSLOsCmd(a),
+	)
+	return cmd
 }

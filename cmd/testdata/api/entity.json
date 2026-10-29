@@ -1,0 +1,33 @@
+{
+  "entityId": "HOST-1",
+  "displayName": "host-1",
+  "type": "HOST",
+  "firstSeenTms": 1729000000000,
+  "lastSeenTms": 1730000000000,
+  "properties": {
+    "osType": "LINUX",
+    "cpuCores": 4
+  },
+  "tags": [
+    {
+      "context": "CONTEXTLESS",
+      "key": "team",
+      "value": "core"
+    }
+  ],
+  "managementZones": [
+    {
+      "id": "1",
+      "name": "prod"
+    }
+  ],
+  "toRelationships": {},
+  "fromRelationships": {
+    "isProcessOf": [
+      {
+        "id": "PROCESS_GROUP_INSTANCE-1",
+        "type": "PROCESS_GROUP_INSTANCE"
+      }
+    ]
+  }
+}

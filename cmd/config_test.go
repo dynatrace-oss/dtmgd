@@ -23,8 +23,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// withTempConfig points the cmd package at a temp config file for one test and
-// restores the previous value afterwards.
+// withTempConfig writes contents to a temp config file for one test and
+// returns its path, which the test passes to newTestApp as --config.
 func withTempConfig(t *testing.T, contents string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -32,9 +32,6 @@ func withTempConfig(t *testing.T, contents string) string {
 	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
 		t.Fatal(err)
 	}
-	prev := cfgFile
-	cfgFile = path
-	t.Cleanup(func() { cfgFile = prev })
 	return path
 }
 
@@ -61,12 +58,13 @@ tokens:
 // scenario that wrote a live token into .dtmgd.yaml before this change.
 func TestUseContextPreservesPlaceholders(t *testing.T) {
 	path := withTempConfig(t, placeholderConfig)
+	a := newTestApp(path)
 
 	t.Setenv("DT_MANAGED_HOST", "https://managed.example.com")
 	t.Setenv("DT_ENV_ID", "abc12345")
 	t.Setenv("DT_API_TOKEN", "dt0c01.LIVESECRET")
 
-	if err := useContext("staging"); err != nil {
+	if err := a.useContext("staging"); err != nil {
 		t.Fatalf("useContext() error = %v", err)
 	}
 
@@ -101,6 +99,7 @@ func TestUseContextPreservesPlaceholders(t *testing.T) {
 // the config file. Host and env-id are unaffected by the keyring either way.
 func TestSetCredentialsPreservesOtherPlaceholders(t *testing.T) {
 	path := withTempConfig(t, placeholderConfig)
+	a := newTestApp(path)
 
 	// Variables deliberately unset — the wipe case.
 	t.Setenv("DT_MANAGED_HOST", "")
@@ -108,7 +107,7 @@ func TestSetCredentialsPreservesOtherPlaceholders(t *testing.T) {
 	t.Setenv("DT_ENV_ID", "")
 	os.Unsetenv("DT_ENV_ID")
 
-	if err := setCredentials("prod-token", "dt0c01.REAL"); err != nil {
+	if err := a.setCredentials("prod-token", "dt0c01.REAL"); err != nil {
 		t.Fatalf("setCredentials() error = %v", err)
 	}
 
@@ -150,8 +149,9 @@ tokens:
     token: ""
 `
 	path := withTempConfig(t, cfg)
+	a := newTestApp(path)
 
-	if err := useContext("staging"); err != nil {
+	if err := a.useContext("staging"); err != nil {
 		t.Fatalf("useContext() error = %v", err)
 	}
 
@@ -168,12 +168,13 @@ tokens:
 // left by PR #27 is gone.
 func TestSetContextOnPlaceholderConfigSucceeds(t *testing.T) {
 	path := withTempConfig(t, placeholderConfig)
+	a := newTestApp(path)
 
 	t.Setenv("DT_MANAGED_HOST", "https://managed.example.com")
 	t.Setenv("DT_ENV_ID", "abc12345")
 	t.Setenv("DT_API_TOKEN", "dt0c01.LIVESECRET")
 
-	if err := setContext("newenv", "https://new.example.com", "xyz99999", "prod-token", ""); err != nil {
+	if err := a.setContext("newenv", "https://new.example.com", "xyz99999", "prod-token", ""); err != nil {
 		t.Fatalf("setContext() error = %v", err)
 	}
 
@@ -199,8 +200,9 @@ func TestSetContextOnPlaceholderConfigSucceeds(t *testing.T) {
 func TestSetCredentialsRefusesToOverwriteUnparseableConfig(t *testing.T) {
 	bad := "tokens:\n  - name: a\n    token: x\n  - name\n"
 	path := withTempConfig(t, bad)
+	a := newTestApp(path)
 
-	if err := setCredentials("prod-token", "dt0c01.TEST"); err == nil {
+	if err := a.setCredentials("prod-token", "dt0c01.TEST"); err == nil {
 		t.Fatal("want parse error")
 	}
 	after, _ := os.ReadFile(path)

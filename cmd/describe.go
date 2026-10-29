@@ -2,11 +2,12 @@ package cmd
 
 import "github.com/spf13/cobra"
 
-// describeCmd is the parent for all "describe" subcommands.
-var describeCmd = &cobra.Command{
-	Use:   "describe",
-	Short: "Show detailed information about a specific resource",
-	Long: `Show detailed information about a resource by its ID.
+// newDescribeCmd builds the parent for all "describe" subcommands.
+func newDescribeCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "describe",
+		Short: "Show detailed information about a specific resource",
+		Long: `Show detailed information about a resource by its ID.
 
 Supported resources:
   problem <id>              Detailed problem with evidence and affected entities
@@ -19,9 +20,17 @@ Supported resources:
   security-problem <id>     Security vulnerability details with CVE info
 
 Output defaults to JSON for detail commands (use -o yaml for YAML).`,
-	RunE: requireSubcommand,
-}
-
-func init() {
-	rootCmd.AddCommand(describeCmd)
+		RunE: requireSubcommand,
+	}
+	cmd.AddCommand(
+		newDescribeEntityCmd(a),
+		newDescribeEntityTypeCmd(a),
+		newDescribeEntityRelationsCmd(a),
+		newDescribeEventCmd(a),
+		newDescribeMetricCmd(a),
+		newDescribeProblemCmd(a),
+		newDescribeSecurityProblemCmd(a),
+		newDescribeSLOCmd(a),
+	)
+	return cmd
 }

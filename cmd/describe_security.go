@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
 	"strings"
@@ -74,7 +75,7 @@ type SecurityProblemDetail struct {
 }
 
 // printSecurityProblemDetail renders a SecurityProblemDetail as a human-readable summary.
-func printSecurityProblemDetail(d SecurityProblemDetail) {
+func printSecurityProblemDetail(w io.Writer, d SecurityProblemDetail) {
 	ra := d.RiskAssessment
 
 	// Vulnerable package: prefer the versioned component display name.
@@ -109,100 +110,99 @@ func printSecurityProblemDetail(d SecurityProblemDetail) {
 		mzNames = append(mzNames, mz.Name)
 	}
 
-	fmt.Printf("%-22s %s\n", "ID:", d.SecurityProblemID)
-	fmt.Printf("%-22s %s\n", "Display ID:", d.DisplayID)
-	fmt.Printf("%-22s %s\n", "Title:", d.Title)
-	fmt.Printf("%-22s %s\n", "CVE IDs:", strings.Join(d.CVEIds, ", "))
-	fmt.Printf("%-22s %s\n", "Package:", pkg)
-	fmt.Printf("%-22s %s\n", "Technology:", d.Technology)
-	fmt.Printf("%-22s %s\n", "Status:", d.Status)
-	fmt.Println()
-	fmt.Printf("%-22s %s (score: %.1f)\n", "Risk Level:", ra.RiskLevel, ra.RiskScore)
-	fmt.Printf("%-22s %s (base score: %.1f)\n", "CVSS Base Level:", ra.BaseRiskLevel, ra.BaseRiskScore)
-	fmt.Printf("%-22s %s\n", "CVSS Vector:", ra.BaseRiskVector)
-	fmt.Printf("%-22s %s\n", "Public Exploit:", ra.PublicExploit)
-	fmt.Printf("%-22s %s\n", "Data Assets:", ra.DataAssets)
-	fmt.Printf("%-22s %s\n", "Exposure:", ra.Exposure)
-	fmt.Println()
-	fmt.Printf("%-22s %d\n", "Affected Processes:", affected)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "ID:", d.SecurityProblemID)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Display ID:", d.DisplayID)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Title:", d.Title)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "CVE IDs:", strings.Join(d.CVEIds, ", "))
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Package:", pkg)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Technology:", d.Technology)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Status:", d.Status)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "%-22s %s (score: %.1f)\n", "Risk Level:", ra.RiskLevel, ra.RiskScore)
+	_, _ = fmt.Fprintf(w, "%-22s %s (base score: %.1f)\n", "CVSS Base Level:", ra.BaseRiskLevel, ra.BaseRiskScore)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "CVSS Vector:", ra.BaseRiskVector)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Public Exploit:", ra.PublicExploit)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Data Assets:", ra.DataAssets)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Exposure:", ra.Exposure)
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "%-22s %d\n", "Affected Processes:", affected)
 	if len(mzNames) > 0 {
-		fmt.Printf("%-22s %s\n", "Management Zones:", strings.Join(mzNames, ", "))
+		_, _ = fmt.Fprintf(w, "%-22s %s\n", "Management Zones:", strings.Join(mzNames, ", "))
 	}
 	if shortDesc != "" {
-		fmt.Println()
-		fmt.Printf("Description: %s\n", shortDesc)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "Description: %s\n", shortDesc)
 	}
 	if d.URL != "" {
-		fmt.Println()
-		fmt.Printf("URL: %s\n", d.URL)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "URL: %s\n", d.URL)
 	}
 }
 
-var describeSecurityProblemCmd = &cobra.Command{
-	Use:     "security-problem <security-problem-id>",
-	Aliases: []string{"sp", "vuln"},
-	Short:   "Show detailed information about a security vulnerability",
-	Long: `Show full CVE details, risk assessment, affected entities, and remediation hints
+func newDescribeSecurityProblemCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "security-problem <security-problem-id>",
+		Aliases: []string{"sp", "vuln"},
+		Short:   "Show detailed information about a security vulnerability",
+		Long: `Show full CVE details, risk assessment, affected entities, and remediation hints
 for a specific security problem.
 
 Accepts either the display ID (e.g. S-281) from 'dtmgd get security-problems'
 or the internal UUID. Display IDs are resolved automatically.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		spFields := "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description"
-
-		if isMultiEnv() {
-			data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-				resolvedID := resolveSecurityProblemID(c, args[0])
-				path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
-				var result map[string]interface{}
-				if err := c.GetV2(path, map[string]string{"fields": spFields}, &result); err != nil {
-					return nil, err
-				}
-				return result, nil
-			})
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := a.loadConfig()
 			if err != nil {
 				return err
 			}
-			return NewPrinterForResource("securityProblem").Print(data)
-		}
 
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
+			spFields := "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description"
 
-		resolvedID := resolveSecurityProblemID(c, args[0])
-		path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
+			if a.isMultiEnv() {
+				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
+					resolvedID := resolveSecurityProblemID(c, args[0])
+					path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
+					var result map[string]interface{}
+					if err := c.GetV2(path, map[string]string{"fields": spFields}, &result); err != nil {
+						return nil, err
+					}
+					return result, nil
+				})
+				if err != nil {
+					return err
+				}
+				return a.printer("securityProblem").Print(data)
+			}
 
-		var raw map[string]interface{}
-		if err := c.GetV2(path, map[string]string{"fields": spFields}, &raw); err != nil {
-			return err
-		}
+			c, err := a.newClient(cfg)
+			if err != nil {
+				return err
+			}
 
-		if outputFormat == "json" || outputFormat == "yaml" || agentMode() {
-			return NewPrinterForResource("securityProblem").Print(raw)
-		}
+			resolvedID := resolveSecurityProblemID(c, args[0])
+			path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
 
-		// Re-decode to typed struct for human-readable output.
-		b, err := json.Marshal(raw)
-		if err != nil {
-			return err
-		}
-		var detail SecurityProblemDetail
-		if err := json.Unmarshal(b, &detail); err != nil {
-			return err
-		}
-		printSecurityProblemDetail(detail)
-		return nil
-	},
-}
+			var raw map[string]interface{}
+			if err := c.GetV2(path, map[string]string{"fields": spFields}, &raw); err != nil {
+				return err
+			}
 
-func init() {
-	describeCmd.AddCommand(describeSecurityProblemCmd)
+			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
+				return a.printer("securityProblem").Print(raw)
+			}
+
+			// Re-decode to typed struct for human-readable output.
+			b, err := json.Marshal(raw)
+			if err != nil {
+				return err
+			}
+			var detail SecurityProblemDetail
+			if err := json.Unmarshal(b, &detail); err != nil {
+				return err
+			}
+			printSecurityProblemDetail(a.Out, detail)
+			return nil
+		},
+	}
+	return cmd
 }

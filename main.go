@@ -1,7 +1,11 @@
 package main
 
-import "github.com/dynatrace-oss/dtmgd/cmd"
+import (
+	"os"
+
+	"github.com/dynatrace-oss/dtmgd/cmd"
+)
 
 func main() {
-	cmd.Execute()
+	os.Exit(cmd.Run(os.Args[1:], os.Stdout, os.Stderr))
 }

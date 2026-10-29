@@ -1,0 +1,64 @@
+{
+  "totalCount": 2,
+  "pageSize": 10,
+  "problems": [
+    {
+      "problemId": "-1001_1730000000000V2",
+      "displayId": "P-2601",
+      "title": "Problem 1",
+      "status": "OPEN",
+      "severityLevel": "AVAILABILITY",
+      "impactLevel": "SERVICES",
+      "startTime": 1730000060000,
+      "endTime": -1,
+      "rootCauseEntity": {
+        "entityId": {
+          "id": "SERVICE-0001",
+          "type": "SERVICE"
+        },
+        "name": "svc-1"
+      },
+      "affectedEntities": [
+        {
+          "entityId": {
+            "id": "SERVICE-0001",
+            "type": "SERVICE"
+          },
+          "name": "svc-1"
+        }
+      ],
+      "managementZones": [
+        {
+          "id": "1",
+          "name": "prod"
+        }
+      ]
+    },
+    {
+      "problemId": "-1002_1730000000000V2",
+      "displayId": "P-2602",
+      "title": "Problem 2",
+      "status": "OPEN",
+      "severityLevel": "PERFORMANCE",
+      "impactLevel": "INFRASTRUCTURE",
+      "startTime": 1730000120000,
+      "endTime": -1,
+      "rootCauseEntity": null,
+      "affectedEntities": [
+        {
+          "entityId": {
+            "id": "SERVICE-0002",
+            "type": "SERVICE"
+          },
+          "name": "svc-2"
+        }
+      ],
+      "managementZones": [
+        {
+          "id": "1",
+          "name": "prod"
+        }
+      ]
+    }
+  ]
+}

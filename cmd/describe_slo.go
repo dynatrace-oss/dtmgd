@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 
 	"github.com/spf13/cobra"
@@ -32,7 +33,7 @@ type SLODetail struct {
 	} `json:"errorBudgetBurnRate"`
 }
 
-func printSLODetail(d SLODetail) {
+func printSLODetail(w io.Writer, d SLODetail) {
 	enabled := "no"
 	if d.Enabled {
 		enabled = "yes"
@@ -45,110 +46,107 @@ func printSLODetail(d SLODetail) {
 	if d.ErrorBudgetBurnRate != nil {
 		burnRate = fmt.Sprintf("%.2f (%s)", d.ErrorBudgetBurnRate.BurnRateValue, d.ErrorBudgetBurnRate.BurnRateType)
 	}
-	fmt.Printf("ID:                   %s\n", d.ID)
-	fmt.Printf("Name:                 %s\n", d.Name)
-	fmt.Printf("Status:               %s\n", d.Status)
-	fmt.Printf("Enabled:              %s\n", enabled)
-	fmt.Printf("Target:               %.2f%%\n", d.Target)
-	fmt.Printf("Warning:              %s\n", warn)
-	fmt.Printf("Evaluated:            %.4f%%\n", d.EvaluatedPct)
-	fmt.Printf("Error Budget:         %.4f\n", d.ErrorBudget)
-	fmt.Printf("Burn Rate:            %s\n", burnRate)
-	fmt.Printf("Timeframe:            %s\n", d.Timeframe)
-	fmt.Printf("Evaluation Type:      %s\n", d.EvaluationType)
+	_, _ = fmt.Fprintf(w, "ID:                   %s\n", d.ID)
+	_, _ = fmt.Fprintf(w, "Name:                 %s\n", d.Name)
+	_, _ = fmt.Fprintf(w, "Status:               %s\n", d.Status)
+	_, _ = fmt.Fprintf(w, "Enabled:              %s\n", enabled)
+	_, _ = fmt.Fprintf(w, "Target:               %.2f%%\n", d.Target)
+	_, _ = fmt.Fprintf(w, "Warning:              %s\n", warn)
+	_, _ = fmt.Fprintf(w, "Evaluated:            %.4f%%\n", d.EvaluatedPct)
+	_, _ = fmt.Fprintf(w, "Error Budget:         %.4f\n", d.ErrorBudget)
+	_, _ = fmt.Fprintf(w, "Burn Rate:            %s\n", burnRate)
+	_, _ = fmt.Fprintf(w, "Timeframe:            %s\n", d.Timeframe)
+	_, _ = fmt.Fprintf(w, "Evaluation Type:      %s\n", d.EvaluationType)
 	if d.Filter != "" {
-		fmt.Printf("Filter:               %s\n", d.Filter)
+		_, _ = fmt.Fprintf(w, "Filter:               %s\n", d.Filter)
 	}
 	if d.MetricExpression != "" {
-		fmt.Printf("Metric Expression:    %s\n", d.MetricExpression)
+		_, _ = fmt.Fprintf(w, "Metric Expression:    %s\n", d.MetricExpression)
 	}
 	if d.RelatedOpenProblems > 0 || d.RelatedTotalProblems > 0 {
-		fmt.Printf("Related Problems:     %d open / %d total\n", d.RelatedOpenProblems, d.RelatedTotalProblems)
+		_, _ = fmt.Fprintf(w, "Related Problems:     %d open / %d total\n", d.RelatedOpenProblems, d.RelatedTotalProblems)
 	}
 }
 
-var (
-	sloDescFrom      string
-	sloDescTo        string
-	sloDescTimeframe string
-)
-
-var describeSLOCmd = &cobra.Command{
-	Use:     "slo <slo-id>",
-	Aliases: []string{"slos"},
-	Short:   "Show detailed information about a specific SLO",
-	Long: `Show SLO details including evaluation, error budget, and burn rate.
+func newDescribeSLOCmd(a *App) *cobra.Command {
+	var opts struct {
+		timeframe string
+		from      string
+		to        string
+	}
+	cmd := &cobra.Command{
+		Use:     "slo <slo-id>",
+		Aliases: []string{"slos"},
+		Short:   "Show detailed information about a specific SLO",
+		Long: `Show SLO details including evaluation, error budget, and burn rate.
 
 Examples:
   dtmgd describe slo <id>
   dtmgd describe slo <id> --timeframe CURRENT
   dtmgd describe slo <id> --from now-2w --to now --timeframe GTF`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		params := map[string]string{}
-		if sloDescTimeframe != "" {
-			params["timeFrame"] = sloDescTimeframe
-		}
-		if sloDescFrom != "" {
-			params["from"] = sloDescFrom
-		}
-		if sloDescTo != "" {
-			params["to"] = sloDescTo
-		}
-
-		path := fmt.Sprintf("/slo/%s", url.PathEscape(args[0]))
-
-		if isMultiEnv() {
-			data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-				var result map[string]interface{}
-				if err := c.GetV2(path, params, &result); err != nil {
-					return nil, err
-				}
-				return result, nil
-			})
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := a.loadConfig()
 			if err != nil {
 				return err
 			}
-			return NewPrinterForResource("slo").Print(data)
-		}
 
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
+			params := map[string]string{}
+			if opts.timeframe != "" {
+				params["timeFrame"] = opts.timeframe
+			}
+			if opts.from != "" {
+				params["from"] = opts.from
+			}
+			if opts.to != "" {
+				params["to"] = opts.to
+			}
 
-		var result map[string]interface{}
-		if err := c.GetV2(path, params, &result); err != nil {
-			return err
-		}
+			path := fmt.Sprintf("/slo/%s", url.PathEscape(args[0]))
 
-		if outputFormat == "json" || outputFormat == "yaml" || agentMode() {
-			return NewPrinterForResource("slo").Print(result)
-		}
+			if a.isMultiEnv() {
+				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
+					var result map[string]interface{}
+					if err := c.GetV2(path, params, &result); err != nil {
+						return nil, err
+					}
+					return result, nil
+				})
+				if err != nil {
+					return err
+				}
+				return a.printer("slo").Print(data)
+			}
 
-		// Table mode: unmarshal into typed struct for human-readable output.
-		b, err := json.Marshal(result)
-		if err != nil {
-			return err
-		}
-		var detail SLODetail
-		if err := json.Unmarshal(b, &detail); err != nil {
-			return err
-		}
-		printSLODetail(detail)
-		return nil
-	},
-}
+			c, err := a.newClient(cfg)
+			if err != nil {
+				return err
+			}
 
-func init() {
-	describeCmd.AddCommand(describeSLOCmd)
+			var result map[string]interface{}
+			if err := c.GetV2(path, params, &result); err != nil {
+				return err
+			}
 
-	describeSLOCmd.Flags().StringVar(&sloDescTimeframe, "timeframe", "", "time frame: CURRENT or GTF")
-	describeSLOCmd.Flags().StringVar(&sloDescFrom, "from", "", "start time (used with --timeframe GTF)")
-	describeSLOCmd.Flags().StringVar(&sloDescTo, "to", "", "end time (used with --timeframe GTF)")
+			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
+				return a.printer("slo").Print(result)
+			}
+
+			// Table mode: unmarshal into typed struct for human-readable output.
+			b, err := json.Marshal(result)
+			if err != nil {
+				return err
+			}
+			var detail SLODetail
+			if err := json.Unmarshal(b, &detail); err != nil {
+				return err
+			}
+			printSLODetail(a.Out, detail)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&opts.timeframe, "timeframe", "", "time frame: CURRENT or GTF")
+	cmd.Flags().StringVar(&opts.from, "from", "", "start time (used with --timeframe GTF)")
+	cmd.Flags().StringVar(&opts.to, "to", "", "end time (used with --timeframe GTF)")
+	return cmd
 }
