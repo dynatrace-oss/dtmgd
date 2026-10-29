@@ -97,7 +97,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records, at most 1000 (default: 100)")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. -timestamp for newest first)")
-	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
+	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag(\"env:prod\")')")
 	return withScopes(cmd, "logs.read")
 }
 

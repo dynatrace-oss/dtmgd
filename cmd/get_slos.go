@@ -64,8 +64,8 @@ The --selector flag accepts the Dynatrace sloSelector DSL for server-side filter
 
 Examples:
   dtmgd get slos
-  dtmgd get slos --selector 'managementZone("bookstore")' --evaluate
-  dtmgd get slos --selector 'text("BookController")' --evaluate
+  dtmgd get slos --selector 'managementZone("production")' --evaluate
+  dtmgd get slos --selector 'text("checkout")' --evaluate
   dtmgd get slos --enabled false
   dtmgd get slos --env ALL_ENVIRONMENTS`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -118,7 +118,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.enabled, "enabled", "", "filter by enabled status: true, false, or all")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results to show")
 	cmd.Flags().BoolVar(&opts.evaluate, "evaluate", false, "evaluate SLO percentages (slower; max 25 per page, auto-paged)")
-	cmd.Flags().StringVar(&opts.selector, "selector", "", "sloSelector DSL to filter SLOs (e.g. 'managementZone(\"bookstore\")')")
+	cmd.Flags().StringVar(&opts.selector, "selector", "", "sloSelector DSL to filter SLOs (e.g. 'managementZone(\"production\")')")
 	return withScopes(cmd, "slo.read")
 }
 

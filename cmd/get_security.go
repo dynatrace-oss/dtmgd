@@ -55,7 +55,7 @@ func newGetSecurityProblemsCmd(a *App) *cobra.Command {
 Examples:
   dtmgd get security-problems
   dtmgd get security-problems --risk CRITICAL
-  dtmgd get security-problems --selector 'managementZones("BookStore")'
+  dtmgd get security-problems --selector 'managementZones("production")'
   dtmgd get security-problems --env ALL_ENVIRONMENTS`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := map[string]string{
@@ -94,7 +94,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.risk, "risk", "", "filter by risk level: LOW, MEDIUM, HIGH, CRITICAL")
 	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN, RESOLVED, MUTED")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results")
-	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("BookStore")`)
+	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("production")`)
 	return withScopes(cmd, "securityProblems.read")
 }
 

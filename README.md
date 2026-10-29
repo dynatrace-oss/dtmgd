@@ -39,7 +39,7 @@ brew install dynatrace-oss/tap/dtmgd
 brew upgrade dtmgd
 ```
 
-**Option 2 — go install (requires Go 1.25+)**
+**Option 2 — go install (requires Go 1.26+)**
 
 ```bash
 go install github.com/dynatrace-oss/dtmgd@latest
@@ -167,10 +167,10 @@ dtmgd ctx delete <name>            # delete context
 
 ```
 dtmgd get environments       # configured contexts and cluster version (connectivity check: use dtmgd doctor)
-dtmgd get problems           # --from, --to, --status, --impact, --selector, --entity, --limit, --sort
+dtmgd get problems           # --from, --to, --status, --impact, --selector, --entity, --limit, --sort, --watch
 dtmgd get entities           # --selector (required), --from, --to, --limit, --sort, --mz
-dtmgd get entity-types       # list all entity types
-dtmgd get events             # --from (required), --to, --type, --entity, --limit
+dtmgd get entity-types       # list all entity types; --limit
+dtmgd get events             # --from (required), --to, --type, --entity, --limit, --watch
 dtmgd get metrics            # --search, --entity, --limit
 dtmgd get slos               # --enabled, --limit, --evaluate, --selector (sloSelector DSL)
 dtmgd get security-problems  # --risk, --status, --selector, --limit
@@ -190,7 +190,7 @@ instead.
 > dtmgd describe problem -- -6546711275898328738_1776193140000V2
 > ```
 
-### Describe (detail view, outputs JSON by default)
+### Describe (detail view)
 
 ```
 dtmgd describe problem <problem-id>
@@ -199,9 +199,15 @@ dtmgd describe entity-type <type>
 dtmgd describe entity-relations <entity-id>
 dtmgd describe event <event-id>
 dtmgd describe metric <metric-id>
-dtmgd describe slo <slo-id>  [--timeframe CURRENT|GTF --from ... --to ...]
+dtmgd describe slo <slo-id>  [--timeframe CURRENT|GTF] [--from ... --to ...]
 dtmgd describe security-problem <security-problem-id>
 ```
+
+By default `describe problem`, `describe slo` and `describe security-problem`
+print a readable summary, and the other describe commands print the API object
+as YAML. `-o json` or `-o yaml` prints the API object as it is. For
+`describe slo`, `--from`/`--to` imply `--timeframe GTF` when `--timeframe` is
+not given, so the dates are honoured.
 
 ### Query (time-range data)
 
@@ -210,11 +216,18 @@ dtmgd query metrics --metric builtin:service.response.time --from now-1h --to no
 dtmgd query metrics --metric builtin:host.cpu.usage --from now-24h --resolution 1h
 dtmgd query logs --query "error" --from now-1h --to now
 dtmgd query logs --query "timeout" --from now-30m --limit 50
-dtmgd query logs --query "error" --from now-1h --entity 'type(PROCESS_GROUP),tag("[Environment]BookStore")'
-dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]BookStore")' --from now-1h
+dtmgd query logs --query "error" --from now-1h --entity 'type(PROCESS_GROUP),tag("[Environment]Production")'
+dtmgd query log-counts --entity 'type(SERVICE),tag("[Environment]Production")' --from now-1h
 # Note: type(SERVICE) is auto-converted to type(PROCESS_GROUP) internally (logs are attributed
 # to process groups on DT Managed Classic). Services with ERROR-only log level show 0 INFO/WARN.
 ```
+
+`query log-counts` is computed by dtmgd, so its json, yaml and agent output is
+its own shape rather than an API response:
+`{"logCounts": [{"service": …, "info": …, "warn": …, "error": …, "total": …}]}`.
+A count is `null` (`-` in the table) when the process group fell outside the
+API's top-N aggregation window for that level (`--max-services`, at most 100),
+so its true count is unknown rather than 0.
 
 ### Doctor (connectivity check)
 
@@ -253,16 +266,51 @@ what exists.
 | `--config <file>` | Config file path (default: `~/.config/dtmgd/config`) |
 | `-c, --context <name>` | Override current context |
 | `-e, --env <spec>` | Target environment(s): context name, `"prod;staging"`, or `ALL_ENVIRONMENTS` |
-| `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` |
+| `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` (or `yml`); any other value fails before a request is made |
 | `-A, --agent` | Force AI agent envelope output (`{ok, result, context}`) |
 | `--no-agent` | Disable auto-detected agent mode |
+| `--plain` | Words instead of symbols on stderr, no screen control (automatic when stdout is not a terminal) |
 | `--max-pages <n>` | Maximum pages to fetch (0 = all, default). Pagination is automatic. |
 | `--concurrency <n>` | Maximum environments queried at once with `--env` (default: `10`) |
 | `--columns <cols>` | Comma-separated columns to show in table output |
-| `-w, --watch` | Re-run the command periodically |
-| `--watch-interval <d>` | Interval between watch refreshes (default: `5s`) |
 | `-v` | Verbose: show HTTP request/response summaries |
 | `-vv` | Extra verbose: full headers and body |
+
+`--watch` and `--watch-interval` are flags of `get problems` and `get events`
+only; see [Watch Mode](#watch-mode).
+
+## Output
+
+stdout carries only data. Everything meant for a person — "No problems found",
+"Showing 10 of 15 problems", warnings, errors and hints — goes to stderr, so
+`dtmgd get problems -o json | jq` never sees it.
+
+For every `get`, `describe` and `query` command except `get environments` and
+`query log-counts`, `-o json`, `-o yaml` and the agent envelope's `result` are
+the API's own response, with its camelCase keys (`problemId`, `totalCount`, `nextPageKey`),
+not the table's columns. An empty result prints that object with an empty list
+(`"problems": []`) rather than nothing.
+
+`--plain` replaces the stderr symbols (`⚠ ✗ 💡`) with words (`Warning:`,
+`Error:`, `Hint:`) and stops `--watch` from clearing the screen. It is on
+automatically when stdout is not a terminal or `NO_COLOR` is set, unless
+`FORCE_COLOR` is set.
+
+## Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Any other error |
+| `2` | Usage error: unknown command, resource or flag, a missing argument or required flag |
+| `3` | Authentication failed (HTTP 401) |
+| `4` | Not found (HTTP 404) |
+| `5` | Permission denied (HTTP 403) |
+
+The codes are the ones `dtctl` uses. A multi-environment (`--env`) call exits
+non-zero if any environment fails: with the shared code when every environment
+failed the same way (all 403 → `5`), otherwise `1`. The environments that
+answered are still printed.
 
 ## Multi-Environment Queries
 
@@ -286,7 +334,17 @@ dtmgd get problems --env "eu-prod;us-prod;ap-prod;dev" -o json
 # Multi env result   → { "<context-1>": {...}, "<context-2>": {...} }
 ```
 
-The `--env` flag works with all `get`, `describe`, and `query` commands.
+With several environments, `-o json`, `-o yaml` and agent output are one map
+keyed by context name, and an environment that failed holds
+`{"error": "..."}` in place of its result. A table prints a `== <name> ==`
+section per environment, with a failed environment's error on stderr. Either
+way every environment that answered is printed, and the call still exits
+non-zero if any failed (see [Exit Codes](#exit-codes)).
+
+The `--env` flag works with every `get`, `describe` and `query` command except
+`get environments`, which always checks every configured context. `config`,
+`ctx`, `skills`, `doctor` and `commands` ignore it; `doctor` takes `-c` to
+check a single context.
 
 Environments are queried in parallel, up to 10 at a time. Since a Managed
 cluster commonly hosts 20-50 environment IDs, firing them all at once draws
@@ -310,9 +368,14 @@ package), so an agent that drives both CLIs parses one shape:
 {
   "ok": true,
   "result": { "problems": [...], "totalCount": 5 },
-  "context": { "resource": "problems" }
+  "context": { "verb": "get", "resource": "problems", "total": 5 }
 }
 ```
+
+`result` is the API's own response. In agent mode a list returns at most 50
+items when `--limit` is not given; `context.total` says how many exist (when
+the API reports it) and `context.has_more` is `true` when there are more than
+`result` holds. Pass `--limit` to get more or fewer.
 
 Errors are also wrapped, with a classified `code`, the HTTP `status_code` when
 there is one, and what to do next in `suggestions`:
@@ -332,8 +395,9 @@ there is one, and what to do next in `suggestions`:
 
 Error codes: `auth_required` (401), `permission_denied` (403), `not_found` (404),
 `bad_request` (400), `rate_limited` (429), `server_error` (5xx), `config_error`,
-`timeout`, `partial_failure` (some environments of an `--env` call failed), and
-`error` for anything else.
+`timeout`, `partial_failure` (some environments of an `--env` call failed),
+`validation_error` and `unknown_command` (usage errors), and `error` for
+anything else.
 
 API error messages carry the status code and, when the cluster returns a
 recognised error envelope, its human-readable message — but not the rest of the
@@ -389,12 +453,18 @@ existing installation.
 ## Pagination
 
 All list commands (`get problems`, `get entities`, etc.) automatically follow
-`nextPageKey` to fetch all pages. Use `--limit` to cap results to a single page,
-or `--max-pages` to limit the number of pages fetched.
+`nextPageKey` to fetch all pages. `--limit <n>` returns at most `n` items in
+every output format and stops paging as soon as it has them, so a small limit
+costs one or two requests. Use `--max-pages` to limit the number of pages
+fetched. When the result is truncated, `-o json` and `-o yaml` keep the API's
+`nextPageKey`, and a table is followed by a `Showing n of m` note on stderr.
+In agent mode, lists return at most 50 items unless you pass `--limit` (see
+[AI Agent Mode](#ai-agent-mode)).
 
 ## Watch Mode
 
-Monitor resources in real-time with `--watch`:
+Monitor resources in real-time with `--watch`, a flag of `get problems` and
+`get events` only:
 
 ```bash
 dtmgd get problems --status OPEN --watch
@@ -521,7 +591,7 @@ file explicitly and bypass the search.
 ## Building
 
 ```bash
-# Requires Go 1.25+
+# Requires Go 1.26+
 make build        # produces ./dtmgd
 make install      # installs to $GOPATH/bin (or $HOME/go/bin)
 make vet          # run go vet
@@ -546,12 +616,11 @@ dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
 
 | MCP Tool | dtmgd command |
 |---|---|
-| `get_environments_info` | `dtmgd get environments` |
+| `get_environments_info` | `dtmgd doctor` |
 | `list_available_metrics` | `dtmgd get metrics` |
 | `get_metric_details` | `dtmgd describe metric <id>` |
 | `query_metrics_data` | `dtmgd query metrics` |
 | `query_logs` | `dtmgd query logs --query <text> --from <t> --to <t>` |
-| `aggregate_logs` | `dtmgd query log-counts --entity <sel> --from <t> --to <t>` |
 | `list_events` | `dtmgd get events` |
 | `get_event_details` | `dtmgd describe event <id>` |
 | `list_entity_types` | `dtmgd get entity-types` |
@@ -565,3 +634,6 @@ dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
 | `get_security_problem_details` | `dtmgd describe security-problem <id>` |
 | `list_slos` | `dtmgd get slos` |
 | `get_slo_details` | `dtmgd describe slo <id>` |
+
+`dtmgd query log-counts` (log counts per process group and level) has no MCP
+server counterpart.

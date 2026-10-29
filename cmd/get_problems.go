@@ -70,7 +70,7 @@ func newGetProblemsCmd(a *App) *cobra.Command {
 
 Filter examples:
   --status OPEN          only active problems
-  --impact SERVICE        service-level impact
+  --impact SERVICES       service-level impact
   --entity type(SERVICE),entityName.contains("checkout")
   --sort "+status"        open first
 
@@ -132,8 +132,8 @@ Multi-environment:
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (e.g. now-24h, 2024-01-01T00:00:00Z)")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN or CLOSED (added to problemSelector)")
-	cmd.Flags().StringVar(&opts.impact, "impact", "", "filter by impact level: SERVICE, INFRASTRUCTURE, APPLICATION (added to problemSelector)")
-	cmd.Flags().StringVar(&opts.selector, "selector", "", `problemSelector DSL (e.g. managementZones("bookstore"))`)
+	cmd.Flags().StringVar(&opts.impact, "impact", "", "filter by impact level: SERVICES, INFRASTRUCTURE, APPLICATION (added to problemSelector)")
+	cmd.Flags().StringVar(&opts.selector, "selector", "", `problemSelector DSL (e.g. managementZones("production"))`)
 	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to filter problems by entity")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of problems to return")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. +status, -startTime)")

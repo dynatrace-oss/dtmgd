@@ -39,7 +39,7 @@ func Diagnose(err error) string {
 	case strings.Contains(msg, "429"):
 		return diagnoseStatus(429)
 	case strings.Contains(msg, "connection refused"):
-		return "Connection refused. Check that the host URL is correct and the cluster is reachable.\n  Run: dtmgd get environments"
+		return "Connection refused. Check that the host URL is correct and the cluster is reachable.\n  Run: dtmgd doctor"
 	case strings.Contains(msg, "no such host"):
 		return "DNS resolution failed. Check the host URL in your context.\n  Run: dtmgd ctx"
 	case strings.Contains(msg, "certificate"):
