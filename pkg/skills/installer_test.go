@@ -3,6 +3,9 @@ package skills
 import (
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -137,4 +140,126 @@ func TestStatusAll(t *testing.T) {
 			t.Errorf("agent %q should not be installed in fresh dir", r.Agent.Name)
 		}
 	}
+}
+
+// fakeHome points the home directory at a temp dir for one test, so the
+// global location Uninstall removes is never the developer's real one.
+func fakeHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows
+	return home
+}
+
+// mkSkillDir creates dir with a file in it.
+func mkSkillDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestUninstallLocations pins what Uninstall removes and reports: the
+// project location, then the global one, each only if it exists; an agent
+// without a global path has only the project location.
+func TestUninstallLocations(t *testing.T) {
+	agent := Agent{Name: "test", ProjectPath: filepath.Join(".test", "skills", "dtmgd"), GlobalPath: filepath.Join(".test-global", "skills", "dtmgd")}
+	projectOnly := Agent{Name: "test", ProjectPath: agent.ProjectPath}
+
+	cases := []struct {
+		name            string
+		agent           Agent
+		project, global bool // which locations exist beforehand
+	}{
+		{"both", agent, true, true},
+		{"project only", agent, true, false},
+		{"global only", agent, false, true},
+		{"neither", agent, false, false},
+		{"no global path", projectOnly, true, true},
+	}
+	for _, tc := range cases {
+		base, home := t.TempDir(), fakeHome(t)
+		projectDir := filepath.Join(base, agent.ProjectPath)
+		globalDir := filepath.Join(home, agent.GlobalPath)
+		var want []string
+		if tc.project {
+			mkSkillDir(t, projectDir)
+			want = append(want, projectDir)
+		}
+		if tc.global {
+			mkSkillDir(t, globalDir)
+			if tc.agent.GlobalPath != "" {
+				want = append(want, globalDir)
+			}
+		}
+		removed, err := Uninstall(tc.agent, base)
+		if err != nil || !reflect.DeepEqual(removed, want) {
+			t.Errorf("%s: Uninstall = %q, %v; want %q, nil", tc.name, removed, err, want)
+		}
+		for _, dir := range want {
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("%s: %s still exists (%v)", tc.name, dir, err)
+			}
+		}
+		if tc.agent.GlobalPath == "" && tc.global {
+			if _, err := os.Stat(globalDir); err != nil {
+				t.Errorf("%s: %s was removed without a global path: %v", tc.name, globalDir, err)
+			}
+		}
+	}
+}
+
+// TestUninstallErrors pins Uninstall's failures: without a home directory the
+// project location is still removed and the error says so; a location that
+// cannot be removed is reported, and the next one still tried, with the
+// messages joined by "; ".
+func TestUninstallErrors(t *testing.T) {
+	agent := Agent{Name: "test", ProjectPath: filepath.Join(".test", "skills", "dtmgd"), GlobalPath: filepath.Join(".test-global", "skills", "dtmgd")}
+
+	t.Run("no home directory", func(t *testing.T) {
+		base := t.TempDir()
+		projectDir := filepath.Join(base, agent.ProjectPath)
+		mkSkillDir(t, projectDir)
+		t.Setenv("HOME", "")
+		t.Setenv("USERPROFILE", "")
+		_, homeErr := os.UserHomeDir()
+		if homeErr == nil {
+			t.Skip("no way to make os.UserHomeDir fail here")
+		}
+		removed, err := Uninstall(agent, base)
+		want := "failed to determine home directory: " + homeErr.Error()
+		if err == nil || err.Error() != want || !reflect.DeepEqual(removed, []string{projectDir}) {
+			t.Errorf("Uninstall = %q, %v; want [%s], %s", removed, err, projectDir, want)
+		}
+	})
+
+	t.Run("cannot remove", func(t *testing.T) {
+		if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+			t.Skip("needs POSIX permissions enforced")
+		}
+		base, home := t.TempDir(), fakeHome(t)
+		projectDir := filepath.Join(base, agent.ProjectPath)
+		globalDir := filepath.Join(home, agent.GlobalPath)
+		for _, dir := range []string{projectDir, globalDir} {
+			mkSkillDir(t, dir)
+			parent := filepath.Dir(dir)
+			if err := os.Chmod(parent, 0o500); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(parent, 0o750) })
+		}
+		removed, err := Uninstall(agent, base)
+		if removed != nil || err == nil {
+			t.Fatalf("Uninstall = %q, %v; want nil and an error", removed, err)
+		}
+		parts := strings.Split(err.Error(), "; ")
+		if len(parts) != 2 || !strings.HasPrefix(parts[0], "failed to remove "+projectDir+": ") ||
+			!strings.HasPrefix(parts[1], "failed to remove "+globalDir+": ") {
+			t.Errorf("err = %v, want one failure per location, project first", err)
+		}
+	})
 }

@@ -9,11 +9,15 @@ linters:
     - ineffassign
     - unused
     - misspell
+    # Matches SonarCloud's go:S3776 limit, so the gate is checked locally.
+    - gocognit
 
   settings:
     gosec:
       severity: medium
       confidence: medium
+    gocognit:
+      min-complexity: 15
 
   exclusions:
     rules:
@@ -22,3 +26,4 @@ linters:
         linters:
           - gosec
           - errcheck
+          - gocognit

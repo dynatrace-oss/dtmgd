@@ -167,3 +167,80 @@ func TestTableFallbackRendersYAML(t *testing.T) {
 		t.Errorf("want YAML, got:\n%s", buf.String())
 	}
 }
+
+// shapeRow has a column of each kind: skipped ("-" and untagged), a
+// non-string value, a wide column whose tag option is upper case, and an
+// unknown tag option, which leaves a column ordinary.
+type shapeRow struct {
+	Name   string `table:"NAME"`
+	Skip   string `table:"-"`
+	Untag  string
+	Count  int    `table:"COUNT"`
+	Detail string `table:"DETAIL,WIDE"`
+	Note   string `table:"NOTE,extra"`
+}
+
+// TestTablePrinterExactOutput pins PrintList's exact output for every shape
+// it accepts: a slice of structs or of pointers to them, a pointer to such a
+// slice, a struct or a pointer to one. Columns follow the struct's field
+// order whatever order --columns names them in; --columns matches headers
+// case-insensitively and shows a wide column it names; with no column left,
+// the original value is printed as YAML.
+func TestTablePrinterExactOutput(t *testing.T) {
+	rows := []shapeRow{{Name: "a", Skip: "s", Untag: "u", Count: 1, Detail: "d", Note: "n"}, {Name: "b", Count: 2}}
+	shapes := map[string]interface{}{
+		"slice":             rows,
+		"pointer to slice":  &rows,
+		"slice of pointers": []*shapeRow{&rows[0], &rows[1]},
+	}
+	single := map[string]interface{}{"struct": rows[0], "pointer to struct": &rows[0]}
+
+	cases := []struct {
+		name string
+		p    TablePrinter
+		want string // for both rows; the single-row shapes print its first two lines
+	}{
+		{"default", TablePrinter{}, " NAME  COUNT  NOTE \n a     1      n    \n b     2           \n"},
+		{"wide", TablePrinter{wide: true}, " NAME  COUNT  DETAIL  NOTE \n a     1      d       n    \n b     2                   \n"},
+		{"columns in another order", TablePrinter{columns: []string{"count", "name"}}, " NAME  COUNT \n a     1     \n b     2     \n"},
+		{"columns name a wide one", TablePrinter{columns: []string{"detail"}}, " DETAIL \n d      \n        \n"},
+		{"columns with wide", TablePrinter{wide: true, columns: []string{"NOTE"}}, " NOTE \n n    \n      \n"},
+	}
+	for _, tc := range cases {
+		for shape, v := range shapes {
+			var buf bytes.Buffer
+			p := tc.p
+			p.w = &buf
+			if err := p.PrintList(v); err != nil || buf.String() != tc.want {
+				t.Errorf("%s, %s: err %v\n--- want\n%s--- got\n%s", tc.name, shape, err, tc.want, buf.String())
+			}
+		}
+		lines := strings.SplitAfter(tc.want, "\n")
+		wantOne := lines[0] + lines[1]
+		for shape, v := range single {
+			var buf bytes.Buffer
+			p := tc.p
+			p.w = &buf
+			if err := p.PrintList(v); err != nil || buf.String() != wantOne {
+				t.Errorf("%s, %s: err %v\n--- want\n%s--- got\n%s", tc.name, shape, err, wantOne, buf.String())
+			}
+		}
+	}
+
+	for shape, v := range map[string]interface{}{"empty slice of pointers": []*shapeRow{}, "pointer to empty slice": &[]shapeRow{}} {
+		var buf bytes.Buffer
+		if err := (&TablePrinter{w: &buf}).PrintList(v); err != nil || buf.String() != "No items found.\n" {
+			t.Errorf("%s: err %v, output %q", shape, err, buf.String())
+		}
+	}
+
+	for shape, v := range map[string]interface{}{"no column matches": shapes["slice of pointers"], "pointer to scalars": &[]string{"x"}} {
+		var want, got bytes.Buffer
+		if err := (&YAMLPrinter{w: &want}).Print(v); err != nil {
+			t.Fatal(err)
+		}
+		if err := (&TablePrinter{w: &got, columns: []string{"NONE"}}).PrintList(v); err != nil || got.String() != want.String() {
+			t.Errorf("%s: err %v\n--- want\n%s--- got\n%s", shape, err, want.String(), got.String())
+		}
+	}
+}

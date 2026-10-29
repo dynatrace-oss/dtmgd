@@ -33,14 +33,9 @@ func (c *Client) GetV2Paged(path string, params map[string]string, p Paging) (ma
 	var merged map[string]interface{}
 	npk := ""
 	for page := 1; ; page++ {
-		raw, err := c.getV2Raw(path, params)
+		parsed, err := c.getV2Object(path, params)
 		if err != nil {
 			return nil, err
-		}
-
-		var parsed map[string]interface{}
-		if err := json.Unmarshal(raw, &parsed); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
 
 		if merged == nil {
@@ -50,7 +45,7 @@ func (c *Client) GetV2Paged(path string, params map[string]string, p Paging) (ma
 		}
 
 		npk, _ = parsed["nextPageKey"].(string)
-		if npk == "" || (p.MaxPages > 0 && page >= p.MaxPages) || p.limitReached(merged) {
+		if p.done(page, npk, merged) {
 			break
 		}
 
@@ -82,10 +77,30 @@ func (p Paging) limitReached(m map[string]interface{}) bool {
 	return p.Limit > 0 && len(p.list(m)) >= p.Limit
 }
 
+// done reports whether paging stops after page: there is no next page
+// (npk is empty), MaxPages is reached, or merged holds Limit items.
+func (p Paging) done(page int, npk string, merged map[string]interface{}) bool {
+	return npk == "" || (p.MaxPages > 0 && page >= p.MaxPages) || p.limitReached(merged)
+}
+
 func (p Paging) truncate(m map[string]interface{}) {
 	if l := p.list(m); p.Limit > 0 && len(l) > p.Limit {
 		m[p.ListKey] = l[:p.Limit]
 	}
+}
+
+// getV2Object performs a single GET and parses the response body as a JSON
+// object (nil for a JSON null).
+func (c *Client) getV2Object(path string, params map[string]string) (map[string]interface{}, error) {
+	raw, err := c.getV2Raw(path, params)
+	if err != nil {
+		return nil, err
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return parsed, nil
 }
 
 // getV2Raw performs a single GET and returns the raw response body.

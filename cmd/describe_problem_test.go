@@ -154,3 +154,81 @@ func TestPrintProblemDetail(t *testing.T) {
 		}
 	}
 }
+
+// TestPrintProblemDetailEverySection pins printProblemDetail's exact output
+// for each optional section: a root cause without a name is left out, the
+// list sections join names, and evidence without an entity name shows the
+// entity ID. The other cases pin what is left when every section is empty,
+// and the root-cause line.
+func TestPrintProblemDetailEverySection(t *testing.T) {
+	full := ProblemDetail{
+		ProblemID:        "p1",
+		DisplayID:        "P-1",
+		Title:            "Failure rate increase",
+		Status:           "OPEN",
+		Severity:         "ERROR",
+		ImpactLevel:      "SERVICES",
+		StartTime:        1775829300000,
+		RootCause:        &problemEntity{EntityID: problemEntityID{ID: "SERVICE-1", Type: "SERVICE"}},
+		ImpactedEntities: []problemEntity{{Name: "payments"}, {Name: ""}, {Name: "orders"}},
+		ManagementZones:  []problemManagementZone{{ID: "1", Name: "bookstore"}, {ID: "2", Name: "prod"}},
+		K8sClusterName:   []string{"aks-1"},
+		K8sNamespaceName: []string{"shop", "infra"},
+	}
+	full.EvidenceDetails.TotalCount = 3
+	full.EvidenceDetails.Details = []problemEvidence{
+		{DisplayName: "Failure rate", EvidenceType: "TRANSACTIONAL", RootCauseRelevant: true, Entity: problemEntity{Name: "payments"}},
+		{DisplayName: "CPU saturation", EvidenceType: "METRIC", Entity: problemEntity{EntityID: problemEntityID{ID: "HOST-1"}}},
+	}
+	minimal := ProblemDetail{ProblemID: "p2", EndTime: 1775829600000}
+	minimal.EvidenceDetails.Details = []problemEvidence{{DisplayName: "ignored without a total"}}
+	named := ProblemDetail{ProblemID: "p3", RootCause: &problemEntity{EntityID: problemEntityID{Type: "SERVICE"}, Name: "checkout"}}
+
+	cases := []struct {
+		name string
+		d    ProblemDetail
+		want string
+	}{
+		{"every section", full, "ID:                    p1\n" +
+			"Display ID:            P-1\n" +
+			"Title:                 Failure rate increase\n" +
+			"Status:                OPEN\n" +
+			"Severity:              ERROR\n" +
+			"Impact:                SERVICES\n" +
+			"Start:                 2026-04-10 13:55:00 UTC\n" +
+			"\n" +
+			"Impacted Entities:     payments, , orders\n" +
+			"Management Zones:      bookstore, prod\n" +
+			"Cluster:               aks-1\n" +
+			"Namespace:             shop, infra\n" +
+			"\n" +
+			"Evidence (3):\n" +
+			"  Failure rate                     [TRANSACTIONAL]    payments [root cause]\n" +
+			"  CPU saturation                   [METRIC]           HOST-1\n"},
+		{"nothing optional", minimal, "ID:                    p2\n" +
+			"Display ID:            \n" +
+			"Title:                 \n" +
+			"Status:                \n" +
+			"Severity:              \n" +
+			"Impact:                \n" +
+			"Start:                 —\n" +
+			"End:                   2026-04-10 14:00:00 UTC\n" +
+			"\n"},
+		{"named root cause", named, "ID:                    p3\n" +
+			"Display ID:            \n" +
+			"Title:                 \n" +
+			"Status:                \n" +
+			"Severity:              \n" +
+			"Impact:                \n" +
+			"Start:                 —\n" +
+			"\n" +
+			"Root Cause:            checkout (SERVICE)\n"},
+	}
+	for _, tc := range cases {
+		var buf bytes.Buffer
+		printProblemDetail(&buf, tc.d)
+		if got := buf.String(); got != tc.want {
+			t.Errorf("%s:\n--- want\n%s\n--- got\n%s", tc.name, tc.want, got)
+		}
+	}
+}

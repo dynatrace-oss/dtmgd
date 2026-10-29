@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -50,17 +49,20 @@ type ProblemEntry struct {
 	} `json:"managementZones"`
 }
 
+// getProblemsOptions holds the flags of get problems.
+type getProblemsOptions struct {
+	from     string
+	to       string
+	status   string
+	impact   string
+	selector string
+	entity   string
+	limit    int
+	sort     string
+}
+
 func newGetProblemsCmd(a *App) *cobra.Command {
-	var opts struct {
-		from     string
-		to       string
-		status   string
-		impact   string
-		selector string
-		entity   string
-		limit    int
-		sort     string
-	}
+	var opts getProblemsOptions
 	var watch watchOptions
 	cmd := &cobra.Command{
 		Use:     "problems",
@@ -79,47 +81,12 @@ Multi-environment:
   dtmgd get problems --env "prod;staging"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.watchOrRun(watch, func() error {
-				from := opts.from
-				if from == "" {
-					from = "now-24h"
-				}
-				to := opts.to
-				if to == "" {
-					to = "now"
-				}
-
-				params := map[string]string{
-					"from":   from,
-					"to":     to,
-					"fields": "+affectedEntities,+managementZones",
-				}
-				// Build problemSelector DSL: status(), impactLevel(), and any user-supplied selector
-				var selectorParts []string
-				if opts.status != "" {
-					selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", opts.status))
-				}
-				if opts.impact != "" {
-					selectorParts = append(selectorParts, fmt.Sprintf("impactLevel(%q)", opts.impact))
-				}
-				if opts.selector != "" {
-					selectorParts = append(selectorParts, opts.selector)
-				}
-				if sel := joinSelector(selectorParts...); sel != "" {
-					params["problemSelector"] = sel
-				}
-				if opts.entity != "" {
-					params["entitySelector"] = opts.entity
-				}
-				if opts.sort != "" {
-					params["sort"] = opts.sort
-				}
-
 				return a.runFetch(fetchSpec{
 					Verb:     "get",
 					Resource: "problems",
 					// DT Managed limits pageSize to 10 when the fields parameter
 					// is set; paging fulfils larger or unlimited requests.
-					Fetch: pagedFetch("/problems", params, "problems", 10, a.Opts.MaxPages),
+					Fetch: pagedFetch("/problems", problemsParams(opts), "problems", 10, a.Opts.MaxPages),
 					Rows:  problemRows,
 					Limit: opts.limit,
 					List:  true,
@@ -140,6 +107,48 @@ Multi-environment:
 	return withScopes(cmd, scopeProblemsRead)
 }
 
+// problemsParams is the /problems query for the flags: the time range (by
+// default the last 24 hours), the fields the table shows, and the filters
+// given, with --status, --impact and --selector joined into one
+// problemSelector.
+func problemsParams(opts getProblemsOptions) map[string]string {
+	from := opts.from
+	if from == "" {
+		from = "now-24h"
+	}
+	to := opts.to
+	if to == "" {
+		to = "now"
+	}
+
+	params := map[string]string{
+		"from":   from,
+		"to":     to,
+		"fields": "+affectedEntities,+managementZones",
+	}
+	// Build problemSelector DSL: status(), impactLevel(), and any user-supplied selector
+	var selectorParts []string
+	if opts.status != "" {
+		selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", opts.status))
+	}
+	if opts.impact != "" {
+		selectorParts = append(selectorParts, fmt.Sprintf("impactLevel(%q)", opts.impact))
+	}
+	if opts.selector != "" {
+		selectorParts = append(selectorParts, opts.selector)
+	}
+	if sel := joinSelector(selectorParts...); sel != "" {
+		params["problemSelector"] = sel
+	}
+	if opts.entity != "" {
+		params["entitySelector"] = opts.entity
+	}
+	if opts.sort != "" {
+		params["sort"] = opts.sort
+	}
+	return params
+}
+
 // problemRows turns a /problems body into table rows.
 func problemRows(body interface{}) (interface{}, int, error) {
 	var resp ProblemsResponse
@@ -148,27 +157,6 @@ func problemRows(body interface{}) (interface{}, int, error) {
 	}
 	items := make([]ProblemListItem, 0, len(resp.Problems))
 	for _, p := range resp.Problems {
-		rootCause := ""
-		if p.RootCauseEntity != nil {
-			eid := ""
-			switch v := p.RootCauseEntity.EntityID.(type) {
-			case string:
-				eid = v
-			case map[string]interface{}:
-				if id, ok := v["id"].(string); ok {
-					eid = id
-				}
-			}
-			if eid != "" {
-				rootCause = fmt.Sprintf("%s (%s)", p.RootCauseEntity.Name, eid)
-			} else {
-				rootCause = p.RootCauseEntity.Name
-			}
-		}
-		st := ""
-		if p.StartTime > 0 {
-			st = time.UnixMilli(p.StartTime).UTC().Format("2006-01-02 15:04:05")
-		}
 		items = append(items, ProblemListItem{
 			ProblemID: p.ProblemID,
 			DisplayID: p.DisplayID,
@@ -176,9 +164,31 @@ func problemRows(body interface{}) (interface{}, int, error) {
 			Status:    p.Status,
 			Severity:  p.SeverityLevel,
 			Impact:    p.ImpactLevel,
-			StartTime: st,
-			RootCause: rootCause,
+			StartTime: msToTime(p.StartTime),
+			RootCause: rootCauseLabel(p),
 		})
 	}
 	return items, len(items), nil
+}
+
+// rootCauseLabel is a problem's ROOT-CAUSE cell: the root-cause entity's name,
+// followed by its ID when the API gives one as a string or as an object's
+// "id"; "" when the problem has no root cause.
+func rootCauseLabel(p ProblemEntry) string {
+	if p.RootCauseEntity == nil {
+		return ""
+	}
+	eid := ""
+	switch v := p.RootCauseEntity.EntityID.(type) {
+	case string:
+		eid = v
+	case map[string]interface{}:
+		if id, ok := v["id"].(string); ok {
+			eid = id
+		}
+	}
+	if eid == "" {
+		return p.RootCauseEntity.Name
+	}
+	return fmt.Sprintf("%s (%s)", p.RootCauseEntity.Name, eid)
 }

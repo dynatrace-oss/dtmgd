@@ -113,25 +113,32 @@ func printProblemDetail(w io.Writer, d ProblemDetail) {
 		_, _ = fmt.Fprintf(w, "%-22s %s\n", "Namespace:", strings.Join(d.K8sNamespaceName, ", "))
 	}
 
-	if d.EvidenceDetails.TotalCount > 0 {
-		_, _ = fmt.Fprintln(w)
-		_, _ = fmt.Fprintf(w, "Evidence (%d):\n", d.EvidenceDetails.TotalCount)
-		for _, ev := range d.EvidenceDetails.Details {
-			rcMark := ""
-			if ev.RootCauseRelevant {
-				rcMark = " [root cause]"
-			}
-			entityName := ev.Entity.Name
-			if entityName == "" {
-				entityName = ev.Entity.EntityID.ID
-			}
-			_, _ = fmt.Fprintf(w, "  %-32s %-18s %s%s\n",
-				ev.DisplayName,
-				"["+ev.EvidenceType+"]",
-				entityName,
-				rcMark,
-			)
+	printProblemEvidence(w, d.EvidenceDetails)
+}
+
+// printProblemEvidence writes the evidence section of a problem summary, one
+// line per piece of evidence, or nothing when the problem reports none.
+func printProblemEvidence(w io.Writer, evidence problemEvidenceDetails) {
+	if evidence.TotalCount <= 0 {
+		return
+	}
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintf(w, "Evidence (%d):\n", evidence.TotalCount)
+	for _, ev := range evidence.Details {
+		rcMark := ""
+		if ev.RootCauseRelevant {
+			rcMark = " [root cause]"
 		}
+		entityName := ev.Entity.Name
+		if entityName == "" {
+			entityName = ev.Entity.EntityID.ID
+		}
+		_, _ = fmt.Fprintf(w, "  %-32s %-18s %s%s\n",
+			ev.DisplayName,
+			"["+ev.EvidenceType+"]",
+			entityName,
+			rcMark,
+		)
 	}
 }
 

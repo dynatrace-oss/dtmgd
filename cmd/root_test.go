@@ -222,3 +222,77 @@ func TestAgentNoticeOnlyWhenAutoDetected(t *testing.T) {
 		t.Errorf("--no-agent given: want no notice, got %q", got)
 	}
 }
+
+// TestRewriteNegativeArgsTrailingTokens pins how rewriteNegativeArgs sorts
+// the tokens after a negative ID: a flag takes the next token as its value
+// unless that starts with "-" (an empty token counts as a value), and the
+// first token that is not flag-like ends the flags, passing the rest through.
+func TestRewriteNegativeArgsTrailingTokens(t *testing.T) {
+	neg := "-6546711275898328738_1776193140000V2"
+	tests := []struct {
+		name  string
+		input []string
+		want  []string
+	}{
+		{
+			name:  "positional after the ID: passed through with what follows",
+			input: []string{"describe", "problem", neg, "extra", "-o", "json"},
+			want:  []string{"describe", "problem", "--", neg, "extra", "-o", "json"},
+		},
+		{
+			name:  "flags then a positional: flags moved, rest passed through",
+			input: []string{"describe", "problem", neg, "-o", "json", "extra", "-c", "prod"},
+			want:  []string{"describe", "problem", "-o", "json", "--", neg, "extra", "-c", "prod"},
+		},
+		{
+			name:  "flag followed by a flag takes no value",
+			input: []string{"describe", "problem", neg, "-v", "-o", "json"},
+			want:  []string{"describe", "problem", "-v", "-o", "json", "--", neg},
+		},
+		{
+			name:  "empty token is a flag value",
+			input: []string{"describe", "problem", neg, "-c", ""},
+			want:  []string{"describe", "problem", "-c", "", "--", neg},
+		},
+		{
+			name:  "negative number after a flag is not its value",
+			input: []string{"describe", "problem", neg, "--limit", "-5"},
+			want:  []string{"describe", "problem", "--limit", "--", neg, "-5"},
+		},
+		{
+			name:  "second negative ID passed through",
+			input: []string{"describe", "problem", neg, "-12_V2"},
+			want:  []string{"describe", "problem", "--", neg, "-12_V2"},
+		},
+		{
+			name:  "--flag=value form is moved",
+			input: []string{"describe", "problem", neg, "--output=json"},
+			want:  []string{"describe", "problem", "--output=json", "--", neg},
+		},
+		{
+			name:  "lone dash is positional",
+			input: []string{"describe", "problem", neg, "-"},
+			want:  []string{"describe", "problem", "--", neg, "-"},
+		},
+		{
+			name:  "upper-case short flag is moved",
+			input: []string{"desc", "prob", neg, "-A"},
+			want:  []string{"desc", "prob", "-A", "--", neg},
+		},
+		{
+			name:  "-- after a flag: hard stop, flag keeps no value",
+			input: []string{"describe", "problem", neg, "-o", "--", "x"},
+			want:  []string{"describe", "problem", "-o", "--", neg, "--", "x"},
+		},
+		{
+			name:  "negative token before the subcommand",
+			input: []string{"-5", "describe", "problem", "x"},
+			want:  []string{"--", "-5", "describe", "problem", "x"},
+		},
+	}
+	for _, tt := range tests {
+		if got := rewriteNegativeArgs(tt.input); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s: rewriteNegativeArgs(%q)\n  got:  %q\n  want: %q", tt.name, tt.input, got, tt.want)
+		}
+	}
+}

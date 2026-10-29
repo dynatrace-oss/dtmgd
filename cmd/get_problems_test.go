@@ -3,6 +3,8 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"reflect"
 	"testing"
 )
 
@@ -112,5 +114,95 @@ func TestProblemEntryUnmarshal_Empty(t *testing.T) {
 	}
 	if len(p.ManagementZones) != 0 {
 		t.Errorf("expected empty ManagementZones, got %d entries", len(p.ManagementZones))
+	}
+}
+
+// TestGetProblemsQueryParams pins the query get problems sends: its defaults,
+// and each filter flag mapped to its parameter, with --status, --impact and
+// --selector joined into one problemSelector in that order.
+func TestGetProblemsQueryParams(t *testing.T) {
+	base := func(extra map[string]string) url.Values {
+		v := url.Values{
+			"from":     {"now-24h"},
+			"to":       {"now"},
+			"fields":   {"+affectedEntities,+managementZones"},
+			"pageSize": {"10"},
+		}
+		for k, val := range extra {
+			v.Set(k, val)
+		}
+		return v
+	}
+	cases := []struct {
+		name string
+		args []string
+		want url.Values
+	}{
+		{"defaults", nil, base(nil)},
+		{"every flag", []string{
+			"--from", "now-2h", "--to", "now-1h", "--status", "OPEN", "--impact", "SERVICES",
+			"--selector", `managementZones("prod")`, "--entity", "type(SERVICE)", "--sort", "-startTime",
+		}, base(map[string]string{
+			"from":            "now-2h",
+			"to":              "now-1h",
+			"problemSelector": `status("OPEN"),impactLevel("SERVICES"),managementZones("prod")`,
+			"entitySelector":  "type(SERVICE)",
+			"sort":            "-startTime",
+		})},
+		{"status only", []string{"--status", "CLOSED"}, base(map[string]string{"problemSelector": `status("CLOSED")`})},
+		{"impact only", []string{"--impact", "INFRASTRUCTURE"}, base(map[string]string{"problemSelector": `impactLevel("INFRASTRUCTURE")`})},
+		{"selector only", []string{"--selector", `managementZones("prod")`}, base(map[string]string{"problemSelector": `managementZones("prod")`})},
+	}
+	for _, tc := range cases {
+		api := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_small.json"}})
+		args := append([]string{"get", "problems", "-o", "json"}, tc.args...)
+		r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), args...)
+		qs := api.Queries(problemsPath)
+		if r.Code != 0 || len(qs) != 1 || !reflect.DeepEqual(qs[0], tc.want) {
+			t.Errorf("%s: code %d, queries %v, want one with %v", tc.name, r.Code, qs, tc.want)
+		}
+	}
+}
+
+// TestProblemRowsRootCause pins how problemRows labels a root cause from each
+// shape of entityId the API returns, and formats the start time.
+func TestProblemRowsRootCause(t *testing.T) {
+	raw := `{"problems":[
+		{"problemId":"p1","displayId":"P-1","title":"t1","status":"OPEN","severityLevel":"ERROR","impactLevel":"SERVICES","startTime":1775829300000,
+		 "rootCauseEntity":{"entityId":"SERVICE-1","name":"svc"}},
+		{"problemId":"p2","rootCauseEntity":{"entityId":{"id":"HOST-1","type":"HOST"},"name":"host"}},
+		{"problemId":"p3","rootCauseEntity":{"entityId":{"type":"HOST"},"name":"no-id"}},
+		{"problemId":"p4","rootCauseEntity":{"entityId":{"id":7},"name":"numeric-id"}},
+		{"problemId":"p5","rootCauseEntity":{"entityId":42,"name":"numeric"}},
+		{"problemId":"p6","rootCauseEntity":{"entityId":"","name":"empty-id"}},
+		{"problemId":"p7","rootCauseEntity":{"name":"absent-id"}},
+		{"problemId":"p8"}
+	]}`
+	var body map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		t.Fatal(err)
+	}
+	rows, n, err := problemRows(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ProblemListItem{
+		{ProblemID: "p1", DisplayID: "P-1", Title: "t1", Status: "OPEN", Severity: "ERROR", Impact: "SERVICES", StartTime: "2026-04-10 13:55:00", RootCause: "svc (SERVICE-1)"},
+		{ProblemID: "p2", RootCause: "host (HOST-1)"},
+		{ProblemID: "p3", RootCause: "no-id"},
+		{ProblemID: "p4", RootCause: "numeric-id"},
+		{ProblemID: "p5", RootCause: "numeric"},
+		{ProblemID: "p6", RootCause: "empty-id"},
+		{ProblemID: "p7", RootCause: "absent-id"},
+		{ProblemID: "p8"},
+	}
+	if n != len(want) || !reflect.DeepEqual(rows, want) {
+		t.Errorf("problemRows = %d, %+v\nwant %d, %+v", n, rows, len(want), want)
+	}
+
+	// A body that does not decode is an error, with no rows.
+	rows, n, err = problemRows(map[string]interface{}{"problems": "not a list"})
+	if err == nil || rows != nil || n != 0 {
+		t.Errorf("undecodable body: rows %v, n %d, err %v; want nil, 0, an error", rows, n, err)
 	}
 }

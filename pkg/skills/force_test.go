@@ -1,9 +1,16 @@
 package skills
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
+	"strings"
+	"syscall"
 	"testing"
+	"testing/fstest"
 
 	dtmgdskill "github.com/dynatrace-oss/dtmgd/skills/dtmgd"
 )
@@ -94,5 +101,78 @@ func TestUnmanagedFilesOnMissingDir(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("unmanagedFiles() = %v, want empty", got)
+	}
+}
+
+// failFS is an embedded filesystem that cannot be read.
+type failFS struct{}
+
+func (failFS) Open(string) (fs.File, error) { return nil, errors.New("boom") }
+
+// TestUnmanagedFilesListsOnlyUserFiles pins what unmanagedFiles reports:
+// every file under dir the embedded skill does not ship, nested ones too,
+// sorted; Go sources in the embedded skill are not shipped, so a user's file
+// of that name is reported. Nothing to report is a nil list.
+func TestUnmanagedFilesListsOnlyUserFiles(t *testing.T) {
+	embedded := fstest.MapFS{
+		"SKILL.md":        {Data: []byte("skill")},
+		"references/a.md": {Data: []byte("a")},
+		"embed.go":        {Data: []byte("package dtmgd")},
+	}
+	dir := t.TempDir()
+	for _, f := range []string{"SKILL.md", "references/a.md", "references/mine.md", "notes.txt", "embed.go"} {
+		path := filepath.Join(dir, filepath.FromSlash(f))
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "empty"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := unmanagedFiles(dir, embedded)
+	want := []string{"embed.go", "notes.txt", filepath.Join("references", "mine.md")}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Errorf("unmanagedFiles() = %q, %v; want %q", got, err, want)
+	}
+
+	onlyManaged := t.TempDir()
+	if err := os.WriteFile(filepath.Join(onlyManaged, "SKILL.md"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := unmanagedFiles(onlyManaged, embedded); err != nil || got != nil {
+		t.Errorf("only managed files: %#v, %v; want nil, nil", got, err)
+	}
+
+	// dir naming a file reports the file itself, as ".".
+	file := filepath.Join(onlyManaged, "SKILL.md")
+	if got, err := unmanagedFiles(file, embedded); err != nil || !reflect.DeepEqual(got, []string{"."}) {
+		t.Errorf("dir is a file: %q, %v; want [.]", got, err)
+	}
+}
+
+// TestUnmanagedFilesErrors pins unmanagedFiles' errors: an unreadable
+// embedded skill, and a dir that cannot be inspected for a reason other than
+// not existing.
+func TestUnmanagedFilesErrors(t *testing.T) {
+	got, err := unmanagedFiles(t.TempDir(), failFS{})
+	if got != nil || err == nil || err.Error() != "reading embedded skill: boom" {
+		t.Errorf("unreadable embedded skill: %q, %v", got, err)
+	}
+
+	if runtime.GOOS == "windows" {
+		t.Skip("a path below a file is not-exist on Windows, not ENOTDIR")
+	}
+	file := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(file, "skill")
+	got, err = unmanagedFiles(dir, dtmgdskill.Content)
+	if got != nil || err == nil || !strings.HasPrefix(err.Error(), "inspecting "+dir+": ") || !errors.Is(err, syscall.ENOTDIR) {
+		t.Errorf("uninspectable dir: %q, %v", got, err)
 	}
 }
