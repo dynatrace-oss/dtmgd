@@ -173,3 +173,42 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **When it applies**: Writing any test that runs a command or loads or saves config
 - **Date**: 2026-10-29
 - **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+
+### SonarCloud automatic analysis reads `.sonarcloud.properties`, and S3776 still runs on tests
+- **Context**: `sonar-project.properties` declared `sonar.tests`, yet SonarCloud kept analysing `_test.go` files as production code (qualifier `FIL`) and reporting cognitive-complexity smells on table-driven tests.
+- **Insight**: SonarCloud's automatic analysis (the `SonarCloud Code Analysis` app) reads only `.sonarcloud.properties`; `sonar-project.properties` is for scanner-based analysis, which the `sonar` job cannot run. With `.sonarcloud.properties` in place, test files show qualifier `UTS` (check with `curl -s "https://sonarcloud.io/api/components/show?component=dynatrace-oss_dtmgd:<path>"`). Even so, Go's `go:S3776` still reports test functions above 15, so keep new tests under the limit with helpers. Locally, `gocognit` in `.golangci.yml` checks only non-test code; `go run github.com/uudashr/gocognit/cmd/gocognit@v1.2.0 -over 15 <file>_test.go` measures a test (its counts run a little higher than Sonar's, which counts `t.Run` closures separately).
+- **When it applies**: Changing Sonar configuration, or a SonarCloud PR comment flags a test
+- **Date**: 2026-10-29
+- **Ref**: Phase 3 (1/2) code health (#52)
+
+### `/securityProblems` has no `entitySelector`; scope with `securityProblemSelector`
+- **Context**: The Dynatrace Managed MCP server's `list_security_problems` sends a top-level `entitySelector`, and a `--entity` flag for `get security-problems` looked like a parity gap.
+- **Insight**: `GET /api/v2/securityProblems` documents only `nextPageKey`, `pageSize`, `securityProblemSelector`, `sort`, `fields`, `from` and `to` (`env2temp.json`). Entity scoping goes through selector criteria: `relatedHostIds("HOST-…")`, `affectedPgIds("PROCESS_GROUP-…")`, `managementZoneIds("…")`, `relatedKubernetesClusterIds(…)`, and so on. So dtmgd adds no `--entity` there; `get security-problems --help` shows the `--selector` forms. Without `from` the API returns the last 30 days.
+- **When it applies**: Adding filters to security-problem commands, or comparing with the MCP server
+- **Date**: 2026-10-29
+- **Ref**: Phase 3 (2/2) MCP parity
+
+### `/logs/search` returns no `totalCount` and does not document `entitySelector`
+- **Context**: Phase 3 planned to verify `query logs --entity` by comparing `jq .totalCount` with and without a nonexistent-host selector on a live environment.
+- **Insight**: `/logs/search` returns `{results, sliceSize, nextSliceKey}` with no `totalCount`, and its documented parameters are only `from`, `to`, `limit`, `query`, `sort` and `nextSliceKey`. Count `.results | length` instead. The 2026-10-29 check on the owner's `stage` environment was inconclusive: `--query error` matched 0 records over both 1 hour and 24 hours, with and without `--entity`. `--entity` was therefore kept, and its help says the parameter is undocumented. To settle it, repeat the comparison against a query and time range that return records. `sort` takes only `+timestamp` and `-timestamp`; dtmgd now always sends `-timestamp` unless `--sort` says otherwise.
+- **When it applies**: Changing `query logs`, or deciding whether `--entity` can be trusted
+- **Date**: 2026-10-29
+- **Ref**: Phase 3 (2/2) MCP parity
+
+### Change the keyring only after the config save succeeds
+- **Context**: `config delete-credentials`, `delete-context --delete-credentials` and `config import` (when a `${VAR}` reference replaces a keyring token) deleted the keyring entry first and saved the config afterwards. When the save failed (for example, a read-only config), the token was gone while the config still pointed at it.
+- **Insight**: `Config.DeleteToken` only edits the in-memory config and returns `deleteFromKeyring func() error`; callers save first and run it only after the save succeeds. Tests reproduce a failing save with `readOnlyConfig` (`cmd/config_housekeeping_test.go`), which makes the file and its directory read-only. That defeats `writeFileAtomic` and its in-place fallback alike; skip on Windows and as root.
+- **When it applies**: Any command that changes both the keyring and the config file
+- **Date**: 2026-10-29
+- **Ref**: Phase 3 (2/2) MCP parity
+
+### Parameters the MCP server and dtmgd send that the API does not document
+- **Context**: Comparing the Dynatrace Managed MCP server (2.0.0) with dtmgd request by request for the Phase 3 parity table, against `env2temp.json`.
+- **Insight**:
+  - The MCP server alone sends top-level `impactLevel` on `/problems`, and `riskLevel` and `entitySelector` on `/securityProblems`. dtmgd uses `problemSelector` / `securityProblemSelector` criteria instead.
+  - Both send `entitySelector` on `/metrics` (`get metrics --entity`), `eventType` on `/events` (`get events --type`; the spec documents `eventSelector=eventType("…")`) and `mzSelector` on `/entities` (`get entities --mz`).
+  - dtmgd alone sends `entitySelector` on `/logs/search` (`query logs --entity`) and `fields=+affectedEntities,+managementZones` on `/problems`.
+  - Whether a cluster honours any of these is unverified. Before trusting one, compare a filtered and an unfiltered call on a live environment, choosing a query and time range that return results. The parity table in README and SKILL.md marks them "undocumented".
+- **When it applies**: Adding or debugging a filter flag; deciding whether dtmgd's own undocumented parameters should move to documented selectors
+- **Date**: 2026-10-29
+- **Ref**: Phase 3 (2/2) MCP parity
