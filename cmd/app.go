@@ -183,20 +183,31 @@ func (a *App) loadConfig() (*config.Config, error) {
 
 	// Context precedence: --env naming one context, then --context, then
 	// DTMGD_CONTEXT, then the file's current-context.
+	fromEnvVar := false
 	if ctx := os.Getenv("DTMGD_CONTEXT"); ctx != "" {
 		cfg.CurrentContext = ctx
+		fromEnvVar = true
 	}
 	// Override current context from --context flag (single-env mode)
 	if a.Opts.Context != "" {
 		cfg.CurrentContext = a.Opts.Context
+		fromEnvVar = false
 	}
 
 	// If --env is a single named context (not ALL_ENVIRONMENTS or semicolon-separated),
 	// treat it like --context so table output works correctly.
 	if env := a.Opts.Env; env != "" && env != "ALL_ENVIRONMENTS" && !strings.Contains(env, ";") {
 		cfg.CurrentContext = env
+		fromEnvVar = false
 	}
 
+	// Nothing on the command line names a context DTMGD_CONTEXT chose, so
+	// the error for a missing one names the variable and the file.
+	if fromEnvVar && !a.isMultiEnv() {
+		if _, err := cfg.GetContext(cfg.CurrentContext); err != nil {
+			return nil, fmt.Errorf("DTMGD_CONTEXT names context %q, which is not in %s", cfg.CurrentContext, config.ResolveSource(a.configPath()).Path)
+		}
+	}
 	return cfg, nil
 }
 

@@ -146,3 +146,22 @@ tokens:
 		t.Errorf("context b is still in the config:\n%s", after)
 	}
 }
+
+// TestDTMGDContextMissingContextNamesVariable pins that a DTMGD_CONTEXT naming
+// a context the config lacks fails with an error that names the variable and
+// the file, since nothing on the command line mentions that context, and that
+// --context still overrides it.
+func TestDTMGDContextMissingContextNamesVariable(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_small.json"}})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+	env := map[string]string{"DTMGD_CONTEXT": "nope"}
+
+	r := runCLIWithEnv(t, env, cfg, "get", "problems", "-o", "json")
+	want := `DTMGD_CONTEXT names context "nope", which is not in ` + cfg
+	if r.Code == 0 || !strings.Contains(r.Stderr, want) {
+		t.Errorf("want a failure containing %q, got %s", want, r)
+	}
+	if r := runCLIWithEnv(t, env, cfg, "get", "problems", "-o", "json", "-c", "a"); r.Code != 0 {
+		t.Errorf("-c a should override DTMGD_CONTEXT: %s", r)
+	}
+}
