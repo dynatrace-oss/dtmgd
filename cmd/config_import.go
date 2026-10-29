@@ -474,8 +474,8 @@ func (a *App) printImportPlan(plan []importAction) error {
 			EnvID:      nc.Context.EnvID,
 			TokenRef:   nc.Context.TokenRef,
 			Token:      importTokenDisplay(act.env.APIToken),
-			HTTPProxy:  nc.Context.HTTPProxyURL,
-			HTTPSProxy: nc.Context.HTTPSProxyURL,
+			HTTPProxy:  maskProxyPassword(nc.Context.HTTPProxyURL),
+			HTTPSProxy: maskProxyPassword(nc.Context.HTTPSProxyURL),
 		})
 	}
 	output.PrintInfo("Dry run: nothing was written.")

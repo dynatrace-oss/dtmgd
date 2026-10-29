@@ -393,3 +393,17 @@ tokens:
 		t.Errorf("keyring imp-x-token = %q, %v; want it untouched when the save fails", got, err)
 	}
 }
+
+// TestImportDryRunMasksProxyPasswords pins that --dry-run, in table and json
+// output, never shows a proxy password from the MCP config.
+func TestImportDryRunMasksProxyPasswords(t *testing.T) {
+	src := writeImportSource(t, "dt-config.yaml", `
+- {apiEndpointUrl: https://p.example.com/, environmentId: p1, alias: imp-p, httpsProxyUrl: "http://svc:Pr0xyPw@proxy.example:3128", httpProxyUrl: "user:Pr0xyPw@plain:8080"}
+`)
+	for _, args := range [][]string{{"-o", "wide"}, {"-o", "json"}} {
+		r := runCLI(t, newConfigPath(t), append([]string{"config", "import", src, "--dry-run"}, args...)...)
+		if r.Code != 0 || strings.Contains(r.Stdout+r.Stderr, "Pr0xyPw") {
+			t.Errorf("%v: code %d, dry run shows the proxy password:\n%s%s", args, r.Code, r.Stdout, r.Stderr)
+		}
+	}
+}

@@ -152,3 +152,21 @@ contexts:
 		t.Error("config view changed the file")
 	}
 }
+
+// TestConfigViewMasksUnparseableProxyPasswords pins that proxy masking fails
+// closed: a proxy URL that url.Parse rejects or misreads (an invalid port or
+// escape, no scheme, a ${VAR} host) still never shows its password.
+func TestConfigViewMasksUnparseableProxyPasswords(t *testing.T) {
+	for _, proxy := range []string{
+		"http://user:pa/ssA1@proxy:3128",
+		"http://u:50%offA1@p:1",
+		"user:secretA1@proxy:3128",
+		"http://svc:literalA1@${PROXY_HOST}:3128",
+	} {
+		path := withTempConfig(t, "apiVersion: dtmgd.io/v1\nkind: Config\ncontexts:\n  - name: p\n    context:\n      host: https://example.invalid\n      env-id: env1\n      https-proxy: '"+proxy+"'\n")
+		r := runCLI(t, path, "config", "view")
+		if r.Code != 0 || strings.Contains(r.Stdout, "A1") {
+			t.Errorf("%s: code %d, config view shows the password:\n%s", proxy, r.Code, r.Stdout)
+		}
+	}
+}

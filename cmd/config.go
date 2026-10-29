@@ -2,12 +2,12 @@ package cmd
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
@@ -102,17 +102,14 @@ func withMaskedTokens(cfg *config.Config) *config.Config {
 }
 
 // maskProxyPassword masks the password in a proxy URL (user:xxxxx@host) and
-// keeps the rest, so the output still shows which proxy and user a context
-// uses. A ${VAR} reference, or a value that is not a URL, is left as is.
+// keeps the rest, so the output still shows which proxy a context uses. It is
+// client.RedactProxy, which fails closed on URLs url.Parse rejects or
+// misreads; a ${VAR} reference with no userinfo is left as written.
 func maskProxyPassword(proxy string) string {
-	if proxy == "" || config.HasPlaceholder(proxy) {
+	if proxy == "" {
 		return proxy
 	}
-	u, err := url.Parse(proxy)
-	if err != nil {
-		return proxy
-	}
-	return u.Redacted()
+	return client.RedactProxy(proxy)
 }
 
 // newConfigInitCmd builds `config init`, which creates a .dtmgd.yaml template
