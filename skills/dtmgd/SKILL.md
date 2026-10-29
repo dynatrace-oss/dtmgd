@@ -229,6 +229,13 @@ dtmgd config set-context <context-name> \
 dtmgd config set-credentials <context-name>-token
 echo "$DT_API_TOKEN" | dtmgd config set-credentials <context-name>-token --token-stdin
 
+# Create contexts from a Dynatrace Managed MCP server config (DT_CONFIG_FILE's
+# YAML/JSON file, or DT_ENVIRONMENT_CONFIGS with --from-env). Each alias becomes
+# a context; ${VAR} tokens stay references. Preview with --dry-run; existing
+# contexts are skipped unless --overwrite.
+dtmgd config import dt-config.yaml --dry-run
+dtmgd config import dt-config.yaml
+
 # Delete context
 dtmgd ctx delete <name>
 ```

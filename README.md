@@ -157,11 +157,42 @@ dtmgd config migrate-tokens        # move plaintext tokens to OS keyring
 dtmgd config view                  # dump full config (token values masked)
 dtmgd config view --show-tokens    # ... including token values
 dtmgd config init                  # create .dtmgd.yaml in current directory
+dtmgd config import <file>         # create contexts from an MCP server config (see below)
+dtmgd config import --from-env     # ... from DT_ENVIRONMENT_CONFIGS
 dtmgd ctx                          # shortcut: list or switch contexts
 dtmgd ctx [context-name]           # switch context
 dtmgd ctx current                  # show current context
 dtmgd ctx delete <name>            # delete context
 ```
+
+#### Importing a Dynatrace Managed MCP server config
+
+If you already run the [Dynatrace Managed MCP server](https://github.com/dynatrace-oss/dynatrace-managed-mcp),
+`config import` turns its environments into dtmgd contexts. It reads the file
+`DT_CONFIG_FILE` points at (a YAML or JSON array; the extension decides which), or,
+with `--from-env`, the JSON in `DT_ENVIRONMENT_CONFIGS`:
+
+```bash
+dtmgd config import dt-config.yaml --dry-run   # show what would be created; writes nothing
+dtmgd config import dt-config.yaml
+dtmgd config import --from-env --overwrite     # replace contexts that already exist
+```
+
+| MCP field | dtmgd setting |
+|---|---|
+| `alias` | context name |
+| `apiEndpointUrl` | `host` (trailing `/` trimmed) |
+| `environmentId` | `env-id` (trailing `/` trimmed) |
+| `apiToken` | token `<alias>-token`, the context's `token-ref` |
+| `httpProxyUrl` / `httpsProxyUrl` | `http-proxy` / `https-proxy` |
+
+Other fields, such as `dynatraceUrl`, are ignored with a note. A literal `apiToken` is
+stored as `set-credentials` stores one: in the OS keyring, or in the config file when no
+keyring is available. An `apiToken` such as `${DT_PROD_TOKEN}` is written to the config as
+that reference, never expanded, so the secret stays in the environment variable. An alias
+that names an existing context is skipped unless you pass `--overwrite`. If any environment
+is invalid (a missing `alias`, `apiEndpointUrl` or `environmentId`, a duplicate alias, or
+an alias containing `;`), nothing is written and the command exits 2.
 
 ### Get (list resources)
 

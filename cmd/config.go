@@ -30,6 +30,7 @@ func newConfigCmd(a *App) *cobra.Command {
 		newConfigDeleteContextCmd(a),
 		newConfigDeleteCredentialsCmd(a),
 		newConfigMigrateTokensCmd(a),
+		newConfigImportCmd(a),
 	)
 	return asGroup(cmd)
 }
@@ -301,13 +302,18 @@ func (a *App) setCredentials(name, token string) error {
 	if err := a.saveConfig(cfg); err != nil {
 		return err
 	}
+	reportStoredCredential(name)
+	return nil
+}
 
+// reportStoredCredential says where cfg.SetToken put a literal token: the OS
+// keyring, or the config file in plaintext when no keyring is available.
+func reportStoredCredential(name string) {
 	if config.IsKeyringAvailable() {
 		output.PrintSuccess("Credential %q stored securely in %s", name, config.KeyringBackend())
 	} else {
 		output.PrintWarning("Credential %q saved (plaintext — keyring not available)", name)
 	}
-	return nil
 }
 
 // newConfigDeleteContextCmd builds `config delete-context`, which removes a
