@@ -52,7 +52,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	root.SetArgs(rewriteNegativeArgs(args))
 	cmd, err := root.ExecuteC()
 	if err != nil {
-		err = classifyCobraError(err)
+		err = classifyCobraError(root, err)
 		a.reportError(cmd, err)
 		return exitCode(err)
 	}
@@ -67,6 +67,9 @@ func newRootCmd(a *App) *cobra.Command {
 		Short:         "Dynatrace Managed CLI",
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		// classifyCobraError offers its own did-you-mean as a suggestion;
+		// cobra's would be appended to the error message itself.
+		DisableSuggestions: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			output.SetPlain(a.plain())
 			f, err := output.ParseFormat(a.Opts.Output)

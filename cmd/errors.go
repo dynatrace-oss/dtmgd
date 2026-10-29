@@ -51,6 +51,16 @@ func requireSubcommand(cmd *cobra.Command, args []string) error {
 		return &UsageError{Err: fmt.Errorf("a %s is required", what), Suggestions: []string{help}}
 	}
 	err := fmt.Errorf("unknown %s %q for %q", what, args[0], cmd.CommandPath())
+	if suggestion, ok := closestSubcommand(cmd, args[0]); ok {
+		return newUnknownCommandError(err, suggestion)
+	}
+	return newUnknownCommandError(err, help)
+}
+
+// closestSubcommand is the command to run instead of the unknown subcommand
+// name of cmd ("dtmgd get" for "dtmgd gett"): the available subcommand whose
+// name or alias is closest to name, if any is close enough.
+func closestSubcommand(cmd *cobra.Command, name string) (string, bool) {
 	byName := map[string]string{}
 	var names []string
 	for _, sub := range cmd.Commands() {
@@ -62,10 +72,11 @@ func requireSubcommand(cmd *cobra.Command, args []string) error {
 			names = append(names, n)
 		}
 	}
-	if match, ok := closest(args[0], names); ok {
-		return newUnknownCommandError(err, cmd.CommandPath()+" "+byName[match])
+	match, ok := closest(name, names)
+	if !ok {
+		return "", false
 	}
-	return newUnknownCommandError(err, help)
+	return cmd.CommandPath() + " " + byName[match], true
 }
 
 // flagError is the root's FlagErrorFunc (cobra hands it to every
@@ -96,9 +107,14 @@ var usagePrefixes = []string{
 	"flag needs an argument", "required flag(s)",
 }
 
+var unknownCommandRe = regexp.MustCompile(`^unknown command "([^"]*)" for `)
+
 // classifyCobraError turns cobra's untyped command-line errors into usage
-// errors, so they exit 2 like the ones dtmgd raises itself.
-func classifyCobraError(err error) error {
+// errors, so they exit 2 like the ones dtmgd raises itself. An unknown
+// top-level command gets dtmgd's own did-you-mean over root's commands: the
+// root disables cobra's, which appended a "Did you mean this?" block to the
+// error text itself.
+func classifyCobraError(root *cobra.Command, err error) error {
 	var usage *UsageError
 	if err == nil || errors.As(err, &usage) {
 		return err
@@ -106,6 +122,12 @@ func classifyCobraError(err error) error {
 	msg := err.Error()
 	for _, p := range usagePrefixes {
 		if strings.HasPrefix(msg, p) {
+			if m := unknownCommandRe.FindStringSubmatch(msg); m != nil {
+				if suggestion, ok := closestSubcommand(root, m[1]); ok {
+					return newUnknownCommandError(err, suggestion)
+				}
+				return newUnknownCommandError(err)
+			}
 			if strings.HasPrefix(msg, "unknown command") {
 				return newUnknownCommandError(err)
 			}

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -127,5 +128,32 @@ func TestParseFailureEnvelope(t *testing.T) {
 	r := runCLIWithEnv(t, map[string]string{"CLAUDECODE": "1"}, cfg, "get", "problems", "--bogus", "--no-agent")
 	if r.Stdout != "" || !strings.HasPrefix(r.Stderr, "Error: ") || r.Code != 2 {
 		t.Errorf("--no-agent: stdout = %q, stderr = %q, code = %d", r.Stdout, r.Stderr, r.Code)
+	}
+}
+
+// TestUnknownTopLevelCommandSuggestion pins an unknown top-level command: a
+// usage error whose message is only the error (cobra's "Did you mean this?"
+// block no longer leaks into error.message), with the close match offered as
+// a suggestion, in agent and in human output.
+func TestUnknownTopLevelCommandSuggestion(t *testing.T) {
+	cfg := withFakeEnvs(t, fakeEnv{"a", newFakeAPI(t, nil)})
+
+	r := runCLI(t, cfg, "gett", "problems", "-A")
+	var resp agentmode.Response
+	if err := json.Unmarshal([]byte(r.Stdout), &resp); err != nil {
+		t.Fatalf("stdout is not one envelope: %v\n%s", err, r.Stdout)
+	}
+	if r.Code != 2 || resp.Error == nil || resp.Error.Code != "unknown_command" {
+		t.Fatalf("code %d, envelope %s", r.Code, r.Stdout)
+	}
+	if msg := resp.Error.Message; msg != `unknown command "gett" for "dtmgd"` {
+		t.Errorf("error.message = %q", msg)
+	}
+	if !slices.Contains(resp.Error.Suggestions, "dtmgd get") {
+		t.Errorf("suggestions = %q, want dtmgd get", resp.Error.Suggestions)
+	}
+
+	if r := runCLI(t, cfg, "gett"); r.Code != 2 || !strings.Contains(r.Stderr, "dtmgd get") || strings.Contains(r.Stderr, "Did you mean this?") {
+		t.Errorf("human: code %d, stderr %q", r.Code, r.Stderr)
 	}
 }
