@@ -146,12 +146,12 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **Date**: 2026-10-29
 - **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
 
-### SonarCloud githubactions:S8545 on a pinned `go install …@vX.Y.Z` is a false positive
-- **Context**: SonarCloud reports `githubactions:S8545` ("Dependency versions are not predictable") on steps such as `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0` (`security.yml`, `drift.yml`).
-- **Insight**: The version is pinned, and `go install pkg@version` verifies the module against sum.golang.org, so the install is reproducible. dtctl's workflows do the same (`govulncheck@v1.8.0`, `goimports@v0.50.0`). Resolve the finding as a false positive rather than rewriting the step.
-- **When it applies**: Triaging SonarCloud findings on workflow files
+### CI tools come from the checksum-locked `tools/` module, never `go install …@version`
+- **Context**: SonarCloud's `githubactions:S8545` ("Dependency versions are not predictable") flagged `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0` in `security.yml` and `drift.yml`, which turned `main`'s quality gate red. The install was in fact pinned and verified against sum.golang.org, but the owner chose to remove the pattern rather than dismiss the finding.
+- **Insight**: govulncheck is a `tool` directive in `tools/go.mod`, locked by `tools/go.sum`. Workflows build it with `go -C tools build -o "$RUNNER_TEMP/govulncheck" golang.org/x/vuln/cmd/govulncheck` and run the binary, not `go tool …`, so its exit code 3 still fails the job; `make vulncheck` does the same locally. To add a tool: `go -C tools get -tool <pkg>@<version>`. To bump one: `go -C tools get <module>@<version> && go -C tools mod tidy`; `lint.yml` fails if `tools/` is not tidy. `go get -tool` marks the module `// indirect`, which Dependabot skips on schedule (see the indirect-deps entry), so the `/tools` Dependabot entry sets `allow: dependency-type: all`. A newer tool may raise `tools/go.mod`'s `go` line above the root's; setup-go then fails the build (`GOTOOLCHAIN=local`), so bump the root's Go first. `go -C` changes directory before reading `-o`, so a relative `-o` path lands under `tools/`. The root module's `go list ./...` does not include `tools/`.
+- **When it applies**: Adding or bumping a CI tool, or seeing `go install` reappear in a workflow
 - **Date**: 2026-10-29
-- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+- **Ref**: Phase 3 (1/2) code health
 
 ### Command behaviour is tested end to end with the harness in cmd/harness_test.go
 - **Context**: Phase 2 replaced `Execute()` with `Run(args, stdout, stderr) int` and builds the command tree per invocation (`newRootCmd(a *App)`), so tests can run the real CLI and see its exit code.
