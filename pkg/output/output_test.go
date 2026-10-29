@@ -202,3 +202,18 @@ func TestDescribeKV(t *testing.T) {
 		t.Errorf("unexpected DescribeKV output: %q", out)
 	}
 }
+
+// TestDetectedAgentVar pins which variable switched agent mode on, so the
+// auto-detection notice can name it.
+func TestDetectedAgentVar(t *testing.T) {
+	for _, v := range AgentEnvVars {
+		t.Setenv(v, "")
+	}
+	if got := DetectedAgentVar(); got != "" {
+		t.Fatalf("want empty, got %q", got)
+	}
+	t.Setenv("KIRO", "1")
+	if got := DetectedAgentVar(); got != "KIRO" {
+		t.Fatalf("want KIRO, got %q", got)
+	}
+}

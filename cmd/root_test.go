@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
 // TestParseColumns verifies the column filter parsing logic.
@@ -236,5 +239,30 @@ func TestIsDescribeProblemArgs(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("isDescribeProblemArgs(%v) = %v, want %v", tt.args, got, tt.want)
 		}
+	}
+}
+
+// TestAgentNoticeOnlyWhenAutoDetected pins pentest note 5: agent mode switched
+// on by an environment variable is announced, but an explicit --agent or
+// --no-agent is the user's own choice and needs no notice.
+func TestAgentNoticeOnlyWhenAutoDetected(t *testing.T) {
+	for _, v := range output.AgentEnvVars {
+		t.Setenv(v, "")
+	}
+	t.Setenv("CLAUDECODE", "1")
+	pa, pn := agentFlag, noAgentFlag
+	t.Cleanup(func() { agentFlag, noAgentFlag = pa, pn })
+
+	agentFlag, noAgentFlag = false, false
+	if got := agentNotice(); !strings.Contains(got, "CLAUDECODE is set") {
+		t.Errorf("auto-detected: got %q", got)
+	}
+	agentFlag = true
+	if got := agentNotice(); got != "" {
+		t.Errorf("--agent given: want no notice, got %q", got)
+	}
+	agentFlag, noAgentFlag = false, true
+	if got := agentNotice(); got != "" {
+		t.Errorf("--no-agent given: want no notice, got %q", got)
 	}
 }

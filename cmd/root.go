@@ -35,12 +35,35 @@ func agentMode() bool {
 	return agentFlag || output.DetectAgent()
 }
 
+// agentNotice returns the stderr line announcing that agent mode was switched
+// on by an environment variable, or "" when no notice is due.
+//
+// Pentest note 5: with CLAUDECODE (or similar) exported in a CI job, every
+// dtmgd call there silently switched to JSON envelopes, and table-parsing
+// scripts broke without an error. An explicit --agent or --no-agent is the
+// user's own choice, so only auto-detection is announced.
+func agentNotice() string {
+	if agentFlag || noAgentFlag {
+		return ""
+	}
+	v := output.DetectedAgentVar()
+	if v == "" {
+		return ""
+	}
+	return fmt.Sprintf("Agent mode is on because %s is set. Use --no-agent for human-readable output.", v)
+}
+
 // rootCmd is the base command.
 var rootCmd = &cobra.Command{
 	Use:           "dtmgd",
 	Short:         "Dynatrace Managed CLI",
 	SilenceErrors: true,
 	SilenceUsage:  true,
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		if n := agentNotice(); n != "" {
+			output.PrintInfo("%s", n)
+		}
+	},
 	Long: `dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
 
 It provides read access to problems, entities, events, logs, metrics, SLOs,
