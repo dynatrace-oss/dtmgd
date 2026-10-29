@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -100,6 +101,23 @@ func Load() (*Config, error) {
 	return LoadFrom(DefaultConfigPath())
 }
 
+// NotFoundError reports that no config file exists at Path.
+//
+// It unwraps to fs.ErrNotExist so callers can tell "no config yet" apart from
+// every other load failure. Commands that create a config on first use must
+// start from an empty one only in this case: falling back on any error turned
+// a single YAML typo into a silently wiped config.
+type NotFoundError struct {
+	Path string
+}
+
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("config file not found at %s. Run 'dtmgd config set-context' to create one", e.Path)
+}
+
+// Unwrap makes errors.Is(err, fs.ErrNotExist) true.
+func (e *NotFoundError) Unwrap() error { return fs.ErrNotExist }
+
 // LoadFrom loads config from the given path.
 func LoadFrom(path string) (*Config, error) {
 	// #nosec G304 -- reading a caller-supplied config path is this function's
@@ -109,7 +127,7 @@ func LoadFrom(path string) (*Config, error) {
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("config file not found at %s. Run 'dtmgd config set-context' to create one", path)
+			return nil, &NotFoundError{Path: path}
 		}
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}

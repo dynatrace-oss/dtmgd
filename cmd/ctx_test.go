@@ -3,6 +3,8 @@ package cmd
 import (
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -111,5 +113,63 @@ func TestSetContextNewContextIsSilent(t *testing.T) {
 
 	if strings.Contains(stderr, "Replaced") {
 		t.Errorf("warned when creating a new context:\n%s", stderr)
+	}
+}
+
+// TestSetContextRefusesToOverwriteUnparseableConfig is the regression test for
+// the config wipe: setContext used to start a fresh config on any load error,
+// so one YAML typo plus `ctx set` silently replaced every context and token.
+func TestSetContextRefusesToOverwriteUnparseableConfig(t *testing.T) {
+	bad := "contexts:\n  - name: prod\n    context:\n      host: https://h\n    - name: broken\n"
+	path := withTempConfig(t, bad)
+
+	err := setContext("new", "https://new.example.com", "env1", "tok", "")
+	if err == nil || !strings.Contains(err.Error(), "failed to parse config file") {
+		t.Fatalf("want parse error, got %v", err)
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != bad {
+		t.Errorf("config was modified:\n%s", after)
+	}
+}
+
+// TestSetContextRefusesUnreadableConfig covers load failures other than a
+// parse error: they must abort just the same. The file is write-only (0200)
+// so that the load fails while a save would still succeed — with 0000 the
+// save fails too and hides the wipe.
+func TestSetContextRefusesUnreadableConfig(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("permission bits are not enforced here")
+	}
+	path := withTempConfig(t, placeholderConfig)
+	if err := os.Chmod(path, 0o200); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+
+	if err := setContext("new", "https://new.example.com", "env1", "tok", ""); err == nil {
+		t.Fatal("want an error for an unreadable config")
+	}
+	_ = os.Chmod(path, 0o600)
+	after, _ := os.ReadFile(path)
+	if string(after) != placeholderConfig {
+		t.Errorf("config was modified:\n%s", after)
+	}
+}
+
+// TestSetContextCreatesMissingConfig pins the one case where starting from an
+// empty config is right: there is no file yet.
+func TestSetContextCreatesMissingConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "new.yaml")
+	prev := cfgFile
+	cfgFile = path
+	t.Cleanup(func() { cfgFile = prev })
+
+	if err := setContext("prod", "https://h.example.com", "env1", "tok", ""); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if !strings.Contains(string(after), "name: prod") {
+		t.Errorf("context not written:\n%s", after)
 	}
 }

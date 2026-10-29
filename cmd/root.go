@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -199,6 +201,18 @@ func LoadConfig() (*config.Config, error) {
 // Used by config management commands.
 func loadConfigRaw() (*config.Config, error) {
 	return loadFromSource()
+}
+
+// loadConfigForUpdate loads the config that a command is about to modify and
+// save. Only a missing file yields a fresh config; any other failure — a parse
+// error, a permission problem — is returned, because saving over a file that
+// could not be read would replace every context and token in it.
+func loadConfigForUpdate() (*config.Config, error) {
+	cfg, err := loadConfigRaw()
+	if errors.Is(err, fs.ErrNotExist) {
+		return config.NewConfig(), nil
+	}
+	return cfg, err
 }
 
 // loadFromSource reads whichever config file ResolveSource selects, reporting

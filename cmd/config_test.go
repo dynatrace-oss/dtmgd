@@ -193,3 +193,18 @@ func TestSetContextOnPlaceholderConfigSucceeds(t *testing.T) {
 		t.Errorf("the live token was written into the config:\n%s", got)
 	}
 }
+
+// TestSetCredentialsRefusesToOverwriteUnparseableConfig is the
+// set-credentials half of the config-wipe regression.
+func TestSetCredentialsRefusesToOverwriteUnparseableConfig(t *testing.T) {
+	bad := "tokens:\n  - name: a\n    token: x\n  - name\n"
+	path := withTempConfig(t, bad)
+
+	if err := setCredentials("prod-token", "dt0c01.TEST"); err == nil {
+		t.Fatal("want parse error")
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != bad {
+		t.Errorf("config was modified:\n%s", after)
+	}
+}
