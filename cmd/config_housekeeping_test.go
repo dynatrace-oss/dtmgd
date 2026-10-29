@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -230,5 +231,26 @@ func TestStaleDTMGDContextOnlyFailsAPICommands(t *testing.T) {
 	}
 	if r := runCLIWithEnv(t, env, cfg, "get", "problems"); r.Code == 0 || !strings.Contains(r.Stderr, "DTMGD_CONTEXT names context") {
 		t.Errorf("get problems with DTMGD_CONTEXT=gone: %s", r)
+	}
+}
+
+// TestSetCredentialsRestoresKeyringWhenSaveFails pins that set-credentials
+// leaves the keyring as it found it when the config cannot be saved: an
+// existing token keeps its old value, and a new one is not left behind.
+func TestSetCredentialsRestoresKeyringWhenSaveFails(t *testing.T) {
+	path := withTempConfig(t, credsConfig)
+	storeKeyringTokens(t, "own")
+	readOnlyConfig(t, path)
+
+	for _, name := range []string{"own", "brand-new"} {
+		if r := runCLI(t, path, "config", "set-credentials", name, "--token", "dt0c01.NEWVALUE"); r.Code == 0 {
+			t.Errorf("%s: succeeded although the config cannot be saved", name)
+		}
+	}
+	if got, err := keyring.Get("dtmgd", "own"); err != nil || got != "dt0c01.TEST" {
+		t.Errorf("keyring own = %q, %v; want the old value restored", got, err)
+	}
+	if got, err := keyring.Get("dtmgd", "brand-new"); !errors.Is(err, keyring.ErrNotFound) {
+		t.Errorf("keyring brand-new = %q, %v; want it removed again", got, err)
 	}
 }

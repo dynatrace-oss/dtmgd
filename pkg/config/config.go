@@ -394,21 +394,56 @@ func (c *Config) DeleteContext(name string) error {
 // SetToken creates or updates a token.
 // Uses OS keyring when available; stores empty string in config as reference.
 func (c *Config) SetToken(name, token string) error {
+	_, err := c.SetTokenUndoable(name, token)
+	return err
+}
+
+// SetTokenUndoable is SetToken that also returns undo, which puts the OS
+// keyring entry back as it was: the previous value, or no entry. Call it
+// when saving the config fails, so the keyring never holds a token the file
+// does not (a replaced context's old host paired with the new token, say).
+// undo does nothing when no keyring is in use: the token then lives only in
+// the unsaved config.
+func (c *Config) SetTokenUndoable(name, token string) (undo func() error, err error) {
+	undo = func() error { return nil }
 	if IsKeyringAvailable() {
-		ts := NewTokenStore()
-		if err := ts.SetToken(name, token); err != nil {
-			return fmt.Errorf("failed to store token in keyring: %w", err)
+		if undo, err = setKeyringToken(name, token); err != nil {
+			return nil, err
 		}
 		token = ""
 	}
 	for i, nt := range c.Tokens {
 		if nt.Name == name {
 			c.Tokens[i].Token = token
-			return nil
+			return undo, nil
 		}
 	}
 	c.Tokens = append(c.Tokens, NamedToken{Name: name, Token: token})
-	return nil
+	return undo, nil
+}
+
+// setKeyringToken stores token in the OS keyring under name and returns the
+// function that restores the entry it replaced, or removes the entry if there
+// was none.
+func setKeyringToken(name, token string) (undo func() error, err error) {
+	ts := NewTokenStore()
+	prev, err := ts.GetToken(name)
+	hadPrev := err == nil
+	if err != nil && !errors.Is(err, keyring.ErrNotFound) {
+		return nil, fmt.Errorf("failed to read token from keyring: %w", err)
+	}
+	if err := ts.SetToken(name, token); err != nil {
+		return nil, fmt.Errorf("failed to store token in keyring: %w", err)
+	}
+	return func() error {
+		if hadPrev {
+			return ts.SetToken(name, prev)
+		}
+		if err := ts.DeleteToken(name); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			return err
+		}
+		return nil
+	}, nil
 }
 
 // ErrTokenNotFound is DeleteToken's error when neither the OS keyring nor
