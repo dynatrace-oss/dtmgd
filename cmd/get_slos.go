@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -42,15 +43,83 @@ type SLOEntry struct {
 	Warning        *float64 `json:"warning"`
 }
 
-func newGetSLOsCmd(a *App) *cobra.Command {
-	var opts struct {
-		enabled  string
-		limit    int
-		evaluate bool
-		selector string
+// Values the /slo endpoints accept, sent as spelled here.
+var (
+	sloTimeFrames    = []string{"CURRENT", "GTF"}
+	sloEnabledStates = []string{"true", "false", "all"}
+	sloSortOrders    = []string{"name", "-name"}
+)
+
+// getSLOsOptions holds the flags of get slos.
+type getSLOsOptions struct {
+	enabled    string
+	limit      int
+	evaluate   bool
+	selector   string
+	timeframe  string
+	from       string
+	to         string
+	sort       string
+	showGlobal bool
+	demo       bool
+	// showGlobalSet and demoSet record whether --show-global and --demo were
+	// given; only then are they sent, false included.
+	showGlobalSet bool
+	demoSet       bool
+}
+
+// validate checks the enum flags against the API's values and replaces each
+// with its canonical form.
+func (o *getSLOsOptions) validate() error {
+	var err error
+	if o.timeframe, err = enumFlag("timeframe", o.timeframe, sloTimeFrames, true); err != nil {
+		return err
 	}
+	if o.enabled, err = enumFlag("enabled", o.enabled, sloEnabledStates, false); err != nil {
+		return err
+	}
+	o.sort, err = enumFlag("sort", o.sort, sloSortOrders, false)
+	return err
+}
+
+// slosParams is the /slo query for the flags. Only given flags are sent, so
+// the API's defaults apply otherwise; --from or --to without --timeframe
+// imply GTF, because the API ignores them for any other timeframe.
+func slosParams(opts getSLOsOptions) map[string]string {
+	timeframe := opts.timeframe
+	if timeframe == "" && (opts.from != "" || opts.to != "") {
+		timeframe = "GTF"
+	}
+	params := map[string]string{}
+	for key, v := range map[string]string{
+		"enabledSlos": opts.enabled,
+		"sloSelector": opts.selector,
+		"timeFrame":   timeframe,
+		"from":        opts.from,
+		"to":          opts.to,
+		"sort":        opts.sort,
+	} {
+		if v != "" {
+			params[key] = v
+		}
+	}
+	if opts.evaluate {
+		params["evaluate"] = "true"
+	}
+	if opts.showGlobalSet {
+		params["showGlobalSlos"] = strconv.FormatBool(opts.showGlobal)
+	}
+	if opts.demoSet {
+		params["demo"] = strconv.FormatBool(opts.demo)
+	}
+	return params
+}
+
+func newGetSLOsCmd(a *App) *cobra.Command {
+	var opts getSLOsOptions
 	cmd := &cobra.Command{
 		Use:     "slos",
+		Args:    noArgs,
 		Aliases: []string{"slo"},
 		Short:   "List Service Level Objectives",
 		Long: `List SLOs from the Dynatrace Managed environment.
@@ -67,8 +136,19 @@ Examples:
   dtmgd get slos --selector 'managementZone("production")' --evaluate
   dtmgd get slos --selector 'text("checkout")' --evaluate
   dtmgd get slos --enabled false
-  dtmgd get slos --env ALL_ENVIRONMENTS`,
+  dtmgd get slos --evaluate --from now-7d          # evaluate over the last 7 days
+  dtmgd get slos --show-global=false               # leave out global SLOs
+  dtmgd get slos --env ALL_ENVIRONMENTS
+
+SLOs are evaluated over their own timeframe (--timeframe CURRENT, the
+default). --from or --to evaluate over the given dates instead and imply
+--timeframe GTF.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := opts.validate(); err != nil {
+				return err
+			}
+			opts.showGlobalSet = cmd.Flags().Changed("show-global")
+			opts.demoSet = cmd.Flags().Changed("demo")
 			// When --evaluate is active, the Dynatrace API enforces a hard limit of 25
 			// SLOs per request. Subsequent pages use nextPageKey which encodes the
 			// evaluate=true flag, so pagination still yields evaluated results.
@@ -77,22 +157,12 @@ Examples:
 				pageCap = sloEvalPageSize
 			}
 
-			params := map[string]string{}
-			if opts.enabled != "" {
-				params["enabledSlos"] = opts.enabled
-			}
-			if opts.evaluate {
-				params["evaluate"] = "true"
-			}
-			if opts.selector != "" {
-				params["sloSelector"] = opts.selector
-			}
-
 			spec := fetchSpec{
 				Verb:     "get",
 				Resource: "slos",
-				Fetch:    pagedFetch("/slo", params, "slo", pageCap, a.Opts.MaxPages),
+				Fetch:    pagedFetch("/slo", slosParams(opts), "slo", pageCap, a.Opts.MaxPages),
 				Rows:     sloRows,
+				Link:     uiPage(uiSLOs),
 				Limit:    opts.limit,
 				List:     true,
 				Empty:    "No SLOs found.",
@@ -119,6 +189,12 @@ Examples:
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results to show")
 	cmd.Flags().BoolVar(&opts.evaluate, "evaluate", false, "evaluate SLO percentages (slower; max 25 per page, auto-paged)")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", "sloSelector DSL to filter SLOs (e.g. 'managementZone(\"production\")')")
+	cmd.Flags().StringVar(&opts.timeframe, "timeframe", "", "time frame: CURRENT (the SLO's own, the default) or GTF (--from/--to)")
+	cmd.Flags().StringVar(&opts.from, "from", "", "start time (implies --timeframe GTF)")
+	cmd.Flags().StringVar(&opts.to, "to", "", "end time (implies --timeframe GTF)")
+	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order: name or -name (default: name)")
+	cmd.Flags().BoolVar(&opts.showGlobal, "show-global", true, "include global SLOs whatever the filter (sent only when given; the API default is true)")
+	cmd.Flags().BoolVar(&opts.demo, "demo", false, "return demo SLOs only (sent only when given)")
 	return withScopes(cmd, scopeSLORead)
 }
 

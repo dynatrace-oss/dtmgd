@@ -67,13 +67,12 @@ func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, o Opti
 
 			r := EnvResult{Name: nc.Name}
 
-			// The bare error is deliberate: UnwrapSingle returns it as-is
-			// when there is exactly one result, so with a single-context
-			// config the user sees "✗ ${EU_HOST} is not set" with no
-			// context name — and none is needed, since there is no
-			// ambiguity about which context failed. With multiple
-			// contexts, EnvResult.Name (not this error text) identifies
-			// the context: UnwrapSingle keys the merged result map by it.
+			// The bare error is deliberate: with exactly one result the
+			// caller returns it as-is, so a single-context run shows
+			// "${EU_HOST} is not set" with no context name, and none is
+			// needed. With several contexts EnvResult.Name, not this
+			// error text, identifies the context: the merged output is
+			// keyed by it.
 			c, err := NewForContext(cfg, nc.Name, o)
 			if err != nil {
 				r.Error = err
@@ -138,30 +137,4 @@ func contextNames(cfg *config.Config) []string {
 		names[i] = nc.Name
 	}
 	return names
-}
-
-// UnwrapSingle returns the data directly if there's only one result,
-// otherwise a map of environment name to data, with {"error": msg} for each
-// environment that failed. When any environment failed it also returns a
-// *PartialFailureError, so the call exits non-zero; the map is still valid
-// and callers print it.
-func UnwrapSingle(results []EnvResult) (interface{}, error) {
-	if len(results) == 1 {
-		return results[0].Data, results[0].Error
-	}
-
-	merged := make(map[string]interface{})
-	var failed []EnvResult
-	for _, r := range results {
-		if r.Error != nil {
-			merged[r.Name] = map[string]string{"error": r.Error.Error()}
-			failed = append(failed, r)
-		} else {
-			merged[r.Name] = r.Data
-		}
-	}
-	if len(failed) > 0 {
-		return merged, &PartialFailureError{Failed: failed, Total: len(results)}
-	}
-	return merged, nil
 }

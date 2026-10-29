@@ -1,7 +1,6 @@
 package client
 
 import (
-	"fmt"
 	"reflect"
 	"testing"
 
@@ -69,47 +68,6 @@ func TestResolveContextsNoCurrentContext(t *testing.T) {
 	_, err := resolveContexts(cfg, "")
 	if err == nil {
 		t.Error("expected error when no current context")
-	}
-}
-
-func TestUnwrapSingleOne(t *testing.T) {
-	results := []EnvResult{{Name: "prod", Data: "hello", Error: nil}}
-	data, err := UnwrapSingle(results)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if data != "hello" {
-		t.Errorf("expected 'hello', got %v", data)
-	}
-}
-
-func TestUnwrapSingleMultiple(t *testing.T) {
-	results := []EnvResult{
-		{Name: "prod", Data: "a"},
-		{Name: "staging", Data: "b"},
-	}
-	data, err := UnwrapSingle(results)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	m, ok := data.(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected map, got %T", data)
-	}
-	if m["prod"] != "a" || m["staging"] != "b" {
-		t.Errorf("unexpected map: %v", m)
-	}
-}
-
-func TestUnwrapSingleWithError(t *testing.T) {
-	errExpected := fmt.Errorf("request failed")
-	results := []EnvResult{{Name: "prod", Data: nil, Error: errExpected}}
-	data, err := UnwrapSingle(results)
-	if err != errExpected {
-		t.Errorf("expected errExpected, got %v", err)
-	}
-	if data != nil {
-		t.Errorf("expected nil data, got %v", data)
 	}
 }
 

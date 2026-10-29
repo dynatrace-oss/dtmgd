@@ -62,6 +62,7 @@ func newQueryLogCountsCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "log-counts",
+		Args:    noArgs,
 		Aliases: []string{"log-count", "logs-count"},
 		Short:   "Aggregate log counts by service and level (INFO/WARN/ERROR)",
 		Long: `Aggregate log records from /api/v2/logs/aggregate, grouped by process group and log level.
@@ -110,13 +111,7 @@ Examples:
 			return a.runFetch(fetchSpec{
 				Verb:     "query",
 				Resource: "log-counts",
-				Fetch: func(c *client.Client, _ int) (fetched, error) {
-					counts, err := fetchLogCounts(c, pgSelector, from, to, maxGroupValues)
-					if err != nil {
-						return fetched{}, err
-					}
-					return fetched{Body: counts, Total: len(counts.LogCounts)}, nil
-				},
+				Fetch:    a.logCountsFetch(pgSelector, from, to, maxGroupValues),
 				Human: func(w io.Writer, body interface{}) error {
 					output.PrintInfo("Log counts for entity selector: %s", opts.entity)
 					output.PrintInfo("Time range: %s → %s", from, to)
@@ -270,6 +265,25 @@ func sortKey(n *int64) int64 {
 	return *n
 }
 
+// logCountsFetch is the Fetch of query log-counts. A table explains its "-"
+// cells itself (printLogCounts); json, yaml and agent output get the same
+// note for a null count as a warning.
+func (a *App) logCountsFetch(pgSelector, from, to string, maxGroupValues int) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, _ int) (fetched, error) {
+		counts, err := fetchLogCounts(c, pgSelector, from, to, maxGroupValues)
+		if err != nil {
+			return fetched{}, err
+		}
+		f := fetched{Body: counts, Total: len(counts.LogCounts)}
+		if !a.humanOutput() {
+			for _, level := range unknownLevels(counts) {
+				f.Warnings = append(f.Warnings, fmt.Sprintf("Some process groups are outside the top %d for %s; their counts are null.", maxGroupValues, level))
+			}
+		}
+		return f, nil
+	}
+}
+
 // printLogCounts writes the counts as a table, with a stderr note for each
 // level where some counts are unknown.
 func (a *App) printLogCounts(w io.Writer, counts LogCounts, maxGroupValues int) error {
@@ -283,7 +297,6 @@ func (a *App) printLogCounts(w io.Writer, counts LogCounts, maxGroupValues int) 
 		}
 		return strconv.FormatInt(*n, 10)
 	}
-	unknown := map[string]bool{}
 	rows := make([]LogCountRow, 0, len(counts.LogCounts))
 	for _, lc := range counts.LogCounts {
 		rows = append(rows, LogCountRow{
@@ -293,17 +306,30 @@ func (a *App) printLogCounts(w io.Writer, counts LogCounts, maxGroupValues int) 
 			Error:   cell(lc.Error),
 			Total:   cell(lc.Total),
 		})
-		unknown["INFO"] = unknown["INFO"] || lc.Info == nil
-		unknown["WARN"] = unknown["WARN"] || lc.Warn == nil
-		unknown["ERROR"] = unknown["ERROR"] || lc.Error == nil
 	}
 	if err := output.NewPrinterToWithColumns(string(a.format()), w, a.columns()).PrintList(rows); err != nil {
 		return err
 	}
-	for _, level := range logLevels {
-		if unknown[level] {
-			output.PrintInfo(`Some process groups are outside the top %d for %s; their counts are shown as "-".`, maxGroupValues, level)
-		}
+	for _, level := range unknownLevels(counts) {
+		output.PrintInfo(`Some process groups are outside the top %d for %s; their counts are shown as "-".`, maxGroupValues, level)
 	}
 	return nil
+}
+
+// unknownLevels lists, in logLevels order, the levels at which some process
+// group's count is unknown (nil).
+func unknownLevels(counts LogCounts) []string {
+	unknown := map[string]bool{}
+	for _, lc := range counts.LogCounts {
+		unknown["INFO"] = unknown["INFO"] || lc.Info == nil
+		unknown["WARN"] = unknown["WARN"] || lc.Warn == nil
+		unknown["ERROR"] = unknown["ERROR"] || lc.Error == nil
+	}
+	var levels []string
+	for _, level := range logLevels {
+		if unknown[level] {
+			levels = append(levels, level)
+		}
+	}
+	return levels
 }

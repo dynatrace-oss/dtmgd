@@ -85,6 +85,10 @@ Examples:
 --from/--to imply --timeframe GTF when --timeframe is not given.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			if opts.timeframe, err = enumFlag("timeframe", opts.timeframe, sloTimeFrames, true); err != nil {
+				return err
+			}
 			params := map[string]string{}
 			if opts.timeframe != "" {
 				params["timeFrame"] = opts.timeframe

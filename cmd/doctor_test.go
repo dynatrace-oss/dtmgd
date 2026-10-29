@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -266,5 +267,18 @@ func TestDoctorChecksContextsConcurrently(t *testing.T) {
 	}
 	if !strings.Contains(r.Stdout, `"context": "a"`) || strings.Index(r.Stdout, `"context": "a"`) > strings.Index(r.Stdout, `"context": "b"`) {
 		t.Errorf("rows not in config order:\n%s", r.Stdout)
+	}
+}
+
+// TestDoctorDeclaresScopes pins the token scopes doctor needs: DataExport for
+// the cluster version, and metrics.read for the fallback check. They feed the
+// 403 hint, the commands catalog and the README's scope list.
+func TestDoctorDeclaresScopes(t *testing.T) {
+	doctor, _, err := testRoot().Find([]string{"doctor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := requiredScopes(doctor); !reflect.DeepEqual(got, []string{"DataExport", "metrics.read"}) {
+		t.Errorf("doctor scopes = %q, want [DataExport metrics.read]", got)
 	}
 }

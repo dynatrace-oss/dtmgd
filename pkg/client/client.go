@@ -47,11 +47,6 @@ type Options struct {
 	Verbosity int
 }
 
-// NewFromConfig creates a Client for the config's current context.
-func NewFromConfig(cfg *config.Config) (*Client, error) {
-	return NewForContext(cfg, cfg.CurrentContext, Options{})
-}
-
 // NewForContext creates a Client for the named context: it resolves the
 // context, looks up its token, and applies its proxy and o.
 //
@@ -270,16 +265,17 @@ func (c *Client) SetProxy(httpProxy, httpsProxy string) {
 	if proxy == "" {
 		return
 	}
-	c.proxyDisplay = redactProxy(proxy)
+	c.proxyDisplay = RedactProxy(proxy)
 	for _, rc := range c.clients() {
 		rc.SetProxy(proxy)
 	}
 }
 
-// redactProxy is proxy as dtmgd shows it: with the password of any userinfo
+// RedactProxy is proxy as dtmgd shows it: with the password of any userinfo
 // replaced by xxxxx. Errors and -v output used to print the proxy verbatim,
-// so a proxy password reached stderr, logs and agent envelopes.
-func redactProxy(proxy string) string {
+// so a proxy password reached stderr, logs and agent envelopes. It fails
+// closed: userinfo that url.Parse rejects or misreads is dropped whole.
+func RedactProxy(proxy string) string {
 	u, err := url.Parse(proxy)
 	switch {
 	case err == nil && u.User != nil:

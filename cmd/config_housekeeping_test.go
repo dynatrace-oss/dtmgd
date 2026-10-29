@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -144,5 +146,89 @@ tokens:
 	after, _ := os.ReadFile(path)
 	if strings.Contains(string(after), "name: b") {
 		t.Errorf("context b is still in the config:\n%s", after)
+	}
+}
+
+// TestDTMGDContextMissingContextNamesVariable pins that a DTMGD_CONTEXT naming
+// a context the config lacks fails with an error that names the variable and
+// the file, since nothing on the command line mentions that context, and that
+// --context still overrides it.
+func TestDTMGDContextMissingContextNamesVariable(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_small.json"}})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+	env := map[string]string{"DTMGD_CONTEXT": "nope"}
+
+	r := runCLIWithEnv(t, env, cfg, "get", "problems", "-o", "json")
+	want := `DTMGD_CONTEXT names context "nope", which is not in ` + cfg
+	if r.Code == 0 || !strings.Contains(r.Stderr, want) {
+		t.Errorf("want a failure containing %q, got %s", want, r)
+	}
+	if r := runCLIWithEnv(t, env, cfg, "get", "problems", "-o", "json", "-c", "a"); r.Code != 0 {
+		t.Errorf("-c a should override DTMGD_CONTEXT: %s", r)
+	}
+}
+
+// readOnlyConfig makes path's file and directory read-only, so no save can
+// succeed, and restores them when the test ends.
+func readOnlyConfig(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions enforced")
+	}
+	dir := filepath.Dir(path)
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o700)
+		_ = os.Chmod(path, 0o600)
+	})
+}
+
+// TestDeleteCredentialsSavesBeforeKeyring pins the order of a credential
+// delete: the config is saved first, and the keyring entry goes only after
+// that succeeded. A save that fails (here, a read-only config) must leave the
+// token in the keyring rather than half-delete it, for delete-credentials and
+// for delete-context --delete-credentials alike.
+func TestDeleteCredentialsSavesBeforeKeyring(t *testing.T) {
+	for _, args := range [][]string{
+		{"config", "delete-credentials", "own"},
+		{"config", "delete-context", "c", "--delete-credentials"},
+	} {
+		path := withTempConfig(t, credsConfig)
+		storeKeyringTokens(t, "shared", "own")
+		readOnlyConfig(t, path)
+
+		if r := runCLI(t, path, args...); r.Code == 0 {
+			t.Errorf("%v: succeeded although the config cannot be saved", args)
+		}
+		if _, err := keyring.Get("dtmgd", "own"); err != nil {
+			t.Errorf("%v: keyring lost the token although the save failed (err %v)", args, err)
+		}
+	}
+}
+
+// TestStaleDTMGDContextOnlyFailsAPICommands pins that a DTMGD_CONTEXT naming a
+// missing context fails only the commands that call the API for the current
+// context. ctx (the command to find the right name with), config view and
+// doctor (which checks every context) still work.
+func TestStaleDTMGDContextOnlyFailsAPICommands(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{
+		clusterVersionPath: {Body: `{"version":"1.330.0"}`},
+		envVersionPath:     {Body: `{"version":"1.330.0"}`},
+	})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+	env := map[string]string{"DTMGD_CONTEXT": "gone"}
+
+	for _, args := range [][]string{{"ctx"}, {"config", "view"}, {"doctor"}} {
+		if r := runCLIWithEnv(t, env, cfg, args...); r.Code != 0 {
+			t.Errorf("%v with DTMGD_CONTEXT=gone: %s", args, r)
+		}
+	}
+	if r := runCLIWithEnv(t, env, cfg, "get", "problems"); r.Code == 0 || !strings.Contains(r.Stderr, "DTMGD_CONTEXT names context") {
+		t.Errorf("get problems with DTMGD_CONTEXT=gone: %s", r)
 	}
 }

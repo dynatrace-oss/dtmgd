@@ -208,11 +208,11 @@ func TestProxyCredentialsAreRedacted(t *testing.T) {
 			"alice:" + secret + "@proxy.example.com:8080",   // no scheme: parses as scheme "alice"
 			"http://alice:" + secret + "@proxy example.com", // does not parse
 		} {
-			if got := redactProxy(proxy); strings.Contains(got, secret) {
-				t.Errorf("redactProxy(%q) = %q", proxy, got)
+			if got := RedactProxy(proxy); strings.Contains(got, secret) {
+				t.Errorf("RedactProxy(%q) = %q", proxy, got)
 			}
 		}
-		if got := redactProxy("http://proxy.example.com:8080"); got != "http://proxy.example.com:8080" {
+		if got := RedactProxy("http://proxy.example.com:8080"); got != "http://proxy.example.com:8080" {
 			t.Errorf("redactProxy changed a proxy without credentials: %q", got)
 		}
 	})

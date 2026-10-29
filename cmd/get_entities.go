@@ -56,6 +56,7 @@ func newGetEntityTypesCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "entity-types",
+		Args:    noArgs,
 		Aliases: []string{"et", "entity-type"},
 		Short:   "List all available entity types",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -102,6 +103,7 @@ func newGetEntitiesCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "entities",
+		Args:    noArgs,
 		Aliases: []string{"ent", "entity"},
 		Short:   "Discover entities using an entity selector",
 		Long: `Discover monitored entities using the Dynatrace entity selector syntax.

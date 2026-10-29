@@ -120,3 +120,28 @@ func TestSecurityEntryToListItem_FieldMapping(t *testing.T) {
 		t.Errorf("Status = %q", item.Status)
 	}
 }
+
+// TestSecurityProblemsTimeAndSort pins --from, --to and --sort on get
+// security-problems, and the defaults without them: the risk-score sort, and
+// no from, so the API's own default (now-30d) applies.
+func TestSecurityProblemsTimeAndSort(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{securityProblemsPath: {Body: `{"totalCount":0,"securityProblems":[]}`}})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+
+	if r := runCLI(t, cfg, "get", "security-problems", "--from", "now-7d", "--to", "now", "--sort", "+firstSeenTimestamp", "-o", "json"); r.Code != 0 {
+		t.Fatalf("with flags: %s", r)
+	}
+	if r := runCLI(t, cfg, "get", "security-problems", "-o", "json"); r.Code != 0 {
+		t.Fatalf("without flags: %s", r)
+	}
+	qs := api.Queries(securityProblemsPath)
+	if len(qs) != 2 {
+		t.Fatalf("got %d requests, want 2", len(qs))
+	}
+	if q := qs[0]; q.Get("from") != "now-7d" || q.Get("to") != "now" || q.Get("sort") != "+firstSeenTimestamp" {
+		t.Errorf("with flags: query %v", q)
+	}
+	if q := qs[1]; q.Get("sort") != "-riskAssessment.riskScore" || q.Has("from") || q.Has("to") {
+		t.Errorf("without flags: query %v", q)
+	}
+}

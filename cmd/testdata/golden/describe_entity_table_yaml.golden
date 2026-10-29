@@ -21,3 +21,4 @@ tags:
 toRelationships: {}
 type: HOST
 == stderr
+Open in Dynatrace: http://FAKE/e/env1/ui/entity/HOST-1

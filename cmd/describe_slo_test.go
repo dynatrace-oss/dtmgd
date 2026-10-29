@@ -181,3 +181,23 @@ func TestSLODetailRawMapPatternFixed(t *testing.T) {
 		}
 	}
 }
+
+// TestDescribeSLOTimeframeIsValidated pins that describe slo checks
+// --timeframe like get slos: any case is sent upper-cased, and a value the
+// API does not accept is a usage error that sends nothing.
+func TestDescribeSLOTimeframeIsValidated(t *testing.T) {
+	const path = "GET /e/env1/api/v2/slo/slo-1"
+	api := newFakeAPI(t, map[string]route{path: {Body: `{"id":"slo-1","name":"n"}`}})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+
+	if r := runCLI(t, cfg, "describe", "slo", "slo-1", "--timeframe", "gtf", "--from", "now-7d", "-o", "json"); r.Code != 0 {
+		t.Fatalf("--timeframe gtf: %s", r)
+	}
+	if got := api.Queries(path)[0].Get("timeFrame"); got != "GTF" {
+		t.Errorf("timeFrame = %q, want GTF", got)
+	}
+	r := runCLI(t, cfg, "describe", "slo", "slo-1", "--timeframe", "LAST")
+	if r.Code != 2 || !strings.Contains(r.Stderr, `invalid --timeframe "LAST" (want one of: CURRENT, GTF)`) || api.Hits(path) != 1 {
+		t.Errorf("--timeframe LAST: %s (hits %d)", r, api.Hits(path))
+	}
+}

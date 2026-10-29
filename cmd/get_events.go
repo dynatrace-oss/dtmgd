@@ -48,6 +48,7 @@ func newGetEventsCmd(a *App) *cobra.Command {
 	var watch watchOptions
 	cmd := &cobra.Command{
 		Use:     "events",
+		Args:    noArgs,
 		Aliases: []string{"ev", "event"},
 		Short:   "List events from the Dynatrace Managed environment",
 		Long: `List events within a time range.

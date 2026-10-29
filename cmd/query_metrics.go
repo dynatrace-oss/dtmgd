@@ -40,6 +40,7 @@ func newQueryMetricsCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "metrics",
+		Args:    noArgs,
 		Aliases: []string{"metric", "met"},
 		Short:   "Query metric time-series data",
 		Long: `Query metric data for a specific metric selector and time range.
@@ -80,6 +81,7 @@ Examples:
 				Human: func(w io.Writer, body interface{}) error {
 					return a.printMetricQuerySummary(w, body.(MetricQueryResponse))
 				},
+				Link: uiPage(uiDataExplorer),
 			})
 		},
 	}

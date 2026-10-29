@@ -36,6 +36,7 @@ func newGetMetricsCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "metrics",
+		Args:    noArgs,
 		Aliases: []string{"met", "metric"},
 		Short:   "List available metric descriptors",
 		Long: `List available metrics in the Managed environment, optionally filtered by text
@@ -59,6 +60,7 @@ Examples:
 				Resource: "metrics",
 				Fetch:    pagedFetch("/metrics", params, "metrics", 500, a.Opts.MaxPages),
 				Rows:     metricRows,
+				Link:     uiPage(uiMetrics),
 				Limit:    opts.limit,
 				List:     true,
 				Empty:    "No metrics found.",

@@ -44,7 +44,7 @@ const (
 )
 
 func newDoctorCmd(a *App) *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check connectivity, token and cluster version of each context",
 		Long: `Check every configured context, or only the one named with --context: that it
@@ -57,6 +57,8 @@ that works. Exits 1 if any context fails.`,
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error { return a.runDoctor() },
 	}
+	// DataExport reads the cluster version; metrics.read is the fallback check.
+	return withScopes(cmd, scopeDataExport, scopeMetricsRead)
 }
 
 // runDoctor checks the selected contexts and prints one row for each.

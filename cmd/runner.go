@@ -23,9 +23,19 @@ type fetched struct {
 	HasMore bool        // more exist than Body holds
 
 	// Warnings are problems that did not fail the fetch, such as a failed
-	// name lookup for a table. renderHuman prints each to stderr after the
-	// result; json, yaml and agent output do not show them.
+	// name lookup for a table. Agent output lists them in context.warnings;
+	// every other format prints each to stderr after the result.
 	Warnings []string
+
+	// Count is the number of items in Body, for a result that has no table
+	// Rows to count them (query logs); 0 when unknown. Set by listFetched
+	// and logsFetched.
+	Count int
+
+	// UIBase is the environment's Dynatrace UI base URL, {host}/e/{env-id},
+	// that fetchSpec.Link builds on. runFetch fills it in from the
+	// environment's own client; "" means the result gets no link.
+	UIBase string
 }
 
 // fetchSpec describes one command for runFetch: how to fetch a result from
@@ -45,6 +55,12 @@ type fetchSpec struct {
 	// Human renders one environment's Body for a person, overriding Rows.
 	Human func(w io.Writer, body interface{}) error
 
+	// Link builds the Dynatrace UI link for one environment's Body from its
+	// UI base URL, or returns "" for none (see links.go). Agent output puts
+	// it in context.links; describe commands also name it on stderr for a
+	// person. json and yaml never show it. nil = the command has no UI page.
+	Link func(base string, body interface{}) string
+
 	Limit int    // --limit; 0 = none
 	List  bool   // a list: the agent default limit applies
 	Empty string // stderr note when Rows finds nothing
@@ -55,8 +71,14 @@ type fetchSpec struct {
 // format. It is what makes --limit, truncation notes, empty results,
 // multi-environment output and partial failures behave the same everywhere.
 func (a *App) runFetch(s fetchSpec) error {
+	if err := limitFlag(s.Limit); err != nil {
+		return err
+	}
 	cfg, err := a.loadConfig()
 	if err != nil {
+		return err
+	}
+	if err := a.checkEnvVarContext(cfg); err != nil {
 		return err
 	}
 	limit := s.Limit
@@ -67,19 +89,35 @@ func (a *App) runFetch(s fetchSpec) error {
 	if a.isMultiEnv() {
 		spec = a.Opts.Env
 	}
-	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, a.clientOptions(), func(c *client.Client) (interface{}, error) {
-		return s.Fetch(c, limit)
-	})
+	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, a.clientOptions(), s.fetchFrom(limit))
 	if err != nil {
 		return err
 	}
-	if len(results) == 1 {
+	// A multi-environment --env renders the map keyed by context name even
+	// when it selects one context, so the output's shape follows the
+	// command line, not the number of contexts in the config.
+	if len(results) == 1 && !a.isMultiEnv() {
 		if results[0].Error != nil {
 			return results[0].Error
 		}
 		return a.renderOne(s, results[0].Data.(fetched))
 	}
 	return a.renderMulti(s, results)
+}
+
+// fetchFrom is the per-environment call runFetch gives client.MultiRequest:
+// Fetch with the effective limit, and on success the UI base URL of the
+// environment that answered, so each environment's result links to its own
+// UI.
+func (s fetchSpec) fetchFrom(limit int) func(*client.Client) (interface{}, error) {
+	return func(c *client.Client) (interface{}, error) {
+		f, err := s.Fetch(c, limit)
+		if err != nil {
+			return f, err
+		}
+		f.UIBase = c.DashboardURL()
+		return f, nil
+	}
 }
 
 // renderOne renders a single environment's result.
@@ -89,9 +127,21 @@ func (a *App) renderOne(s fetchSpec, f fetched) error {
 	}
 	switch fm := a.format(); fm {
 	case output.FormatJSON, output.FormatYAML:
-		return output.NewPrinterTo(string(fm), a.Out).Print(f.Body)
+		if err := output.NewPrinterTo(string(fm), a.Out).Print(f.Body); err != nil {
+			return err
+		}
+		printWarnings("", f)
+		return nil
 	}
 	return a.renderHuman(s, f)
+}
+
+// printWarnings writes a result's warnings to stderr, each prefixed with
+// prefix (an environment's name in multi-environment output).
+func printWarnings(prefix string, f fetched) {
+	for _, w := range f.Warnings {
+		output.PrintWarning("%s%s", prefix, w)
+	}
 }
 
 // renderMulti renders several environments' results: a map keyed by context
@@ -108,6 +158,11 @@ func (a *App) renderMulti(s fetchSpec, results []client.EnvResult) error {
 	case output.FormatJSON, output.FormatYAML:
 		if err := output.NewPrinterTo(string(fm), a.Out).Print(merged); err != nil {
 			return err
+		}
+		for _, r := range results {
+			if r.Error == nil {
+				printWarnings(r.Name+": ", r.Data.(fetched))
+			}
 		}
 		return partial
 	}
@@ -136,15 +191,22 @@ func mergeResults(results []client.EnvResult) (map[string]interface{}, error) {
 
 // renderMultiAgent prints the merged results as one agent envelope. The
 // envelope has no per-environment context, so failures and truncated lists
-// are named in its warnings, in config order.
+// are named in its warnings, in config order, and its links are keyed by
+// context name (envLinks).
 func (a *App) renderMultiAgent(s fetchSpec, results []client.EnvResult, merged map[string]interface{}, partial error) error {
-	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource}
+	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, Links: envLinks(s, results)}
 	for _, r := range results {
 		if r.Error != nil {
 			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
-		} else if f := r.Data.(fetched); f.HasMore {
+			continue
+		}
+		f := r.Data.(fetched)
+		if f.HasMore {
 			ctx.HasMore = true
 			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %s", r.Name, truncationNote(s, f)))
+		}
+		for _, w := range f.Warnings {
+			ctx.Warnings = append(ctx.Warnings, r.Name+": "+w)
 		}
 	}
 	if partial == nil {
@@ -181,14 +243,13 @@ func (a *App) renderMultiHuman(s fetchSpec, results []client.EnvResult, partial 
 
 // renderHuman renders one environment's result as a table, a custom summary
 // or YAML, with a stderr note when the result is empty or truncated, followed
-// by the fetch's warnings.
+// by the fetch's warnings and, for a describe command, its UI link.
 func (a *App) renderHuman(s fetchSpec, f fetched) error {
 	if err := a.renderBody(s, f); err != nil {
 		return err
 	}
-	for _, w := range f.Warnings {
-		output.PrintWarning("%s", w)
-	}
+	printWarnings("", f)
+	printDescribeLink(s, f)
 	return nil
 }
 
@@ -221,15 +282,14 @@ func (a *App) renderBody(s fetchSpec, f fetched) error {
 
 // responseContext is the agent envelope context for one environment's result.
 func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext {
-	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, HasMore: f.HasMore}
+	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, HasMore: f.HasMore, Links: singleLinks(s, f)}
+	ctx.Warnings = append(ctx.Warnings, f.Warnings...)
 	if f.Total >= 0 {
 		total := f.Total
 		ctx.Total = &total
 	}
-	if f.HasMore && s.Rows != nil {
-		if _, n, err := s.Rows(f.Body); err == nil {
-			ctx.Suggestions = append(ctx.Suggestions, showing(n, f.Total, s.Resource)+"; use --limit to see more")
-		}
+	if n, ok := shownCount(s, f); f.HasMore && ok {
+		ctx.Suggestions = append(ctx.Suggestions, showing(n, f.Total, s.Resource)+"; use --limit to see more")
 	}
 	return ctx
 }
@@ -237,15 +297,23 @@ func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext
 // truncationNote says that f holds only part of the result: how many of how
 // many when Rows can count the items, otherwise only that more exist.
 func truncationNote(s fetchSpec, f fetched) string {
-	if s.Rows != nil {
-		if _, n, err := s.Rows(f.Body); err == nil {
-			return showing(n, f.Total, s.Resource)
-		}
+	if n, ok := shownCount(s, f); ok {
+		return showing(n, f.Total, s.Resource)
 	}
 	if f.Total >= 0 {
 		return fmt.Sprintf("Showing part of %d %s", f.Total, s.Resource)
 	}
 	return fmt.Sprintf("More %s are available", s.Resource)
+}
+
+// shownCount is how many items a result shows: the table rows Rows finds,
+// or, for a result without Rows, the fetch's Count. false when unknown.
+func shownCount(s fetchSpec, f fetched) (int, bool) {
+	if s.Rows != nil {
+		_, n, err := s.Rows(f.Body)
+		return n, err == nil
+	}
+	return f.Count, f.Count > 0
 }
 
 // humanOutput reports whether results go to a person: table or wide output,
@@ -306,5 +374,5 @@ func listFetched(body map[string]interface{}, listKey string) fetched {
 	if total > len(list) {
 		more = true
 	}
-	return fetched{Body: body, Total: total, HasMore: more}
+	return fetched{Body: body, Total: total, HasMore: more, Count: len(list)}
 }

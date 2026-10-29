@@ -2,7 +2,7 @@
 
 `dtmgd` is a `kubectl`-inspired read-only CLI for **Dynatrace Managed** (self-hosted) environments, modeled after [`dtctl`](https://github.com/dynatrace-oss/dtctl).
 
-It gives you terminal access to problems, entities, events, logs, metrics, SLOs, and security vulnerabilities via the Dynatrace Managed classic API — with the same feature set as the [Dynatrace Managed MCP Server](https://github.com/dynatrace-oss/dynatrace-managed-mcp).
+It gives you terminal access to problems, entities, events, logs, metrics, SLOs, and security vulnerabilities via the Dynatrace Managed classic API — covering every tool of the [Dynatrace Managed MCP Server](https://github.com/dynatrace-oss/dynatrace-managed-mcp); the differences are listed under [Feature Parity](#feature-parity-with-dynatrace-managed-mcp-server).
 
 > [!NOTE]
 > This open source product is supported by the community.
@@ -39,7 +39,7 @@ brew install dynatrace-oss/tap/dtmgd
 brew upgrade dtmgd
 ```
 
-**Option 2 — go install (requires Go 1.26+)**
+**Option 2 — go install (requires Go 1.26.10+)**
 
 ```bash
 go install github.com/dynatrace-oss/dtmgd@latest
@@ -157,11 +157,42 @@ dtmgd config migrate-tokens        # move plaintext tokens to OS keyring
 dtmgd config view                  # dump full config (token values masked)
 dtmgd config view --show-tokens    # ... including token values
 dtmgd config init                  # create .dtmgd.yaml in current directory
+dtmgd config import <file>         # create contexts from an MCP server config (see below)
+dtmgd config import --from-env     # ... from DT_ENVIRONMENT_CONFIGS
 dtmgd ctx                          # shortcut: list or switch contexts
 dtmgd ctx [context-name]           # switch context
 dtmgd ctx current                  # show current context
 dtmgd ctx delete <name>            # delete context
 ```
+
+#### Importing a Dynatrace Managed MCP server config
+
+If you already run the [Dynatrace Managed MCP server](https://github.com/dynatrace-oss/dynatrace-managed-mcp),
+`config import` turns its environments into dtmgd contexts. It reads the file
+`DT_CONFIG_FILE` points at (a YAML or JSON array; the extension decides which), or,
+with `--from-env`, the JSON in `DT_ENVIRONMENT_CONFIGS`:
+
+```bash
+dtmgd config import dt-config.yaml --dry-run   # show what would be created; writes nothing
+dtmgd config import dt-config.yaml
+dtmgd config import --from-env --overwrite     # replace contexts that already exist
+```
+
+| MCP field | dtmgd setting |
+|---|---|
+| `alias` | context name |
+| `apiEndpointUrl` | `host` (trailing `/` trimmed) |
+| `environmentId` | `env-id` (trailing `/` trimmed) |
+| `apiToken` | token `<alias>-token`, the context's `token-ref` |
+| `httpProxyUrl` / `httpsProxyUrl` | `http-proxy` / `https-proxy` |
+
+Other fields, such as `dynatraceUrl`, are ignored with a note. A literal `apiToken` is
+stored as `set-credentials` stores one: in the OS keyring, or in the config file when no
+keyring is available. An `apiToken` such as `${DT_PROD_TOKEN}` is written to the config as
+that reference, never expanded, so the secret stays in the environment variable. An alias
+that names an existing context is skipped unless you pass `--overwrite`. If any environment
+is invalid (a missing `alias`, `apiEndpointUrl` or `environmentId`, a duplicate alias, or
+an alias containing `;`), nothing is written and the command exits 2.
 
 ### Get (list resources)
 
@@ -172,8 +203,8 @@ dtmgd get entities           # --selector (required), --from, --to, --limit, --s
 dtmgd get entity-types       # list all entity types; --limit
 dtmgd get events             # --from (required), --to, --type, --entity, --limit, --watch
 dtmgd get metrics            # --search, --entity, --limit
-dtmgd get slos               # --enabled, --limit, --evaluate, --selector (sloSelector DSL)
-dtmgd get security-problems  # --risk, --status, --selector, --limit
+dtmgd get slos               # --enabled, --limit, --evaluate, --selector (sloSelector DSL), --timeframe, --from, --to, --sort, --show-global, --demo
+dtmgd get security-problems  # --risk, --status, --selector, --from, --to, --sort, --limit
 ```
 
 `get environments` still runs its per-context connectivity check, and prints a
@@ -331,12 +362,14 @@ dtmgd get problems --env "prod;staging" -o json
 # You can list any number of contexts:
 dtmgd get problems --env "eu-prod;us-prod;ap-prod;dev" -o json
 
-# Single env result  → unwrapped data
-# Multi env result   → { "<context-1>": {...}, "<context-2>": {...} }
+# One context (-c, or --env with one name) → unwrapped data
+# ALL_ENVIRONMENTS or a ';' list            → { "<context-1>": {...}, "<context-2>": {...} }
 ```
 
-With several environments, `-o json`, `-o yaml` and agent output are one map
-keyed by context name, and an environment that failed holds
+With `--env ALL_ENVIRONMENTS` or a `;`-separated list, `-o json`, `-o yaml` and
+agent output are one map keyed by context name, even when it selects only one
+context, so a script can parse it the same way whatever the config holds. An
+environment that failed holds
 `{"error": "..."}` in place of its result. A table prints a `== <name> ==`
 section per environment, with a failed environment's error on stderr. Either
 way every environment that answered is printed, and the call still exits
@@ -344,8 +377,10 @@ non-zero if any failed (see [Exit Codes](#exit-codes)).
 
 The `--env` flag works with every `get`, `describe` and `query` command except
 `get environments`, which always checks every configured context. `config`,
-`ctx`, `skills`, `doctor` and `commands` ignore it; `doctor` takes `-c` to
-check a single context.
+`ctx`, `skills`, `doctor` and `commands` never fan out over it. A single
+`--env` name still acts like `-c` where they show the current context
+(`config view`, `config current-context`, `ctx`), for that run only; `doctor`
+takes `-c` to check a single context.
 
 Environments are queried in parallel, up to 10 at a time. Since a Managed
 cluster commonly hosts 20-50 environment IDs, firing them all at once draws
@@ -592,7 +627,7 @@ file explicitly and bypass the search.
 ## Building
 
 ```bash
-# Requires Go 1.26+
+# Requires Go 1.26.10+
 make build        # produces ./dtmgd
 make install      # installs to $GOPATH/bin (or $HOME/go/bin)
 make vet          # run go vet
@@ -615,26 +650,54 @@ dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
 
 ## Feature Parity with Dynatrace Managed MCP Server
 
-| MCP Tool | dtmgd command |
-|---|---|
-| `get_environments_info` | `dtmgd doctor` |
-| `list_available_metrics` | `dtmgd get metrics` |
-| `get_metric_details` | `dtmgd describe metric <id>` |
-| `query_metrics_data` | `dtmgd query metrics` |
-| `query_logs` | `dtmgd query logs --query <text> --from <t> --to <t>` |
-| `list_events` | `dtmgd get events` |
-| `get_event_details` | `dtmgd describe event <id>` |
-| `list_entity_types` | `dtmgd get entity-types` |
-| `get_entity_type_details` | `dtmgd describe entity-type <type>` |
-| `discover_entities` | `dtmgd get entities --selector <sel>` |
-| `get_entity_details` | `dtmgd describe entity <id>` |
-| `get_entity_relationships` | `dtmgd describe entity-relations <id>` |
-| `list_problems` | `dtmgd get problems` |
-| `get_problem_details` | `dtmgd describe problem <id>` |
-| `list_security_problems` | `dtmgd get security-problems` |
-| `get_security_problem_details` | `dtmgd describe security-problem <id>` |
-| `list_slos` | `dtmgd get slos` |
-| `get_slo_details` | `dtmgd describe slo <id>` |
+dtmgd covers every tool of the [Dynatrace Managed MCP Server](https://github.com/dynatrace-oss/dynatrace-managed-mcp)
+(compared with its 2.0.0 release, which prefixes every tool name with
+`dynatrace_managed_`; the table leaves the prefix out). The two send mostly the
+same requests; the table lists where they differ. "Undocumented" means the parameter is not in the
+endpoint's published API specification; whether a cluster honours it has not
+been verified.
 
-`dtmgd query log-counts` (log counts per process group and level) has no MCP
-server counterpart.
+| MCP tool | dtmgd command | Differences |
+|---|---|---|
+| `get_environments_info` | `dtmgd doctor` | `doctor` checks each context live (token, cluster version ≥ 1.328.0, falling back to a metrics call) and exits 1 on failure. The MCP server reports the check it ran at startup and a fixed scope list. |
+| `list_available_metrics` | `dtmgd get metrics [--search] [--entity]` | Both send `--entity` as `entitySelector`, which `/metrics` does not document. |
+| `get_metric_details` | `dtmgd describe metric <id>` | Same request. |
+| `query_metrics_data` | `dtmgd query metrics --metric <sel> --from <t> [--to] [--resolution] [--entity]` | The MCP server defaults to `resolution=Inf` (one value per series) and requires `to`. dtmgd sends no resolution unless `--resolution` is given (the API default: a time series), and `--to` defaults to now. |
+| `query_logs` | `dtmgd query logs --query <text> --from <t> [--to] [--sort] [--limit] [--entity]` | Both sort newest first (`-timestamp`) and return one slice of at most 1000 records (100 by default; 50 for dtmgd in agent mode). dtmgd clamps a larger `--limit` to 1000 where the MCP server rejects it, and `--to` defaults to now. dtmgd's `--entity` sends `entitySelector`, which `/logs/search` does not document. |
+| `list_events` | `dtmgd get events --from <t> [--to] [--type] [--entity] [--watch]` | Both send `--type` as `eventType`, which `/events` does not document (it documents `eventSelector`). dtmgd adds `--watch`. |
+| `get_event_details` | `dtmgd describe event <id>` | Same request. |
+| `list_entity_types` | `dtmgd get entity-types` | dtmgd's json output has the full type schemas; the MCP server lists type names. |
+| `get_entity_type_details` | `dtmgd describe entity-type <type>` | Same request. |
+| `discover_entities` | `dtmgd get entities --selector <sel> [--mz] [--from] [--to] [--sort]` | The MCP server returns 10 entities unless asked for more (at most 50). Both send `--mz` as `mzSelector`, which `/entities` does not document. |
+| `get_entity_details` | `dtmgd describe entity <id>` | dtmgd asks for properties, relationships, tags and management zones explicitly (`fields`); the MCP server relies on the API's default fields. |
+| `get_entity_relationships` | `dtmgd describe entity-relations <id>` | dtmgd asks for the relationship fields explicitly. |
+| `list_problems` | `dtmgd get problems [--status] [--impact] [--selector] [--entity] [--sort] [--watch]` | The MCP server sends the impact level as a top-level `impactLevel`, which `/problems` does not document; dtmgd puts it in `problemSelector`. dtmgd adds `--selector` and `--watch`, and sends `fields=+affectedEntities,+managementZones`, which `/problems` does not document. Both default to the last 24 hours. |
+| `get_problem_details` | `dtmgd describe problem <id>` | Same request. A negative problem ID goes after `--`. |
+| `list_security_problems` | `dtmgd get security-problems [--risk] [--status] [--selector] [--from] [--to] [--sort]` | The MCP server sends `riskLevel` and `entitySelector` as top-level parameters, which `/securityProblems` does not document. dtmgd puts the risk level in `securityProblemSelector`, and scopes to entities with selector criteria (`--selector 'relatedHostIds("HOST-…")'`). dtmgd requests the risk assessment and sorts by risk score by default. |
+| `get_security_problem_details` | `dtmgd describe security-problem <id \| S-NNN>` | dtmgd also accepts the display ID (`S-1234`), and requests the details fields: risk assessment, CVE description, vulnerable components, code-level details, affected and exposed entities. The MCP server requests none. |
+| `list_slos` | `dtmgd get slos [--selector] [--timeframe] [--from] [--to] [--evaluate] [--sort] [--enabled] [--show-global] [--demo]` | The MCP server never sends `showGlobalSlos=false` or `demo=false`; dtmgd sends either flag whenever it is given. dtmgd turns `--from`/`--to` into `timeFrame=GTF`, without which the API ignores them, and asks for 25 SLOs per page with `--evaluate`, the API's limit. |
+| `get_slo_details` | `dtmgd describe slo <id> [--timeframe] [--from] [--to]` | Same request, including the GTF rule. |
+
+Differences across all tools:
+
+- **Result counts.** The MCP server returns one page per call, capped per tool
+  (for example 50 problems, 100 security problems). dtmgd fetches every page
+  unless `--limit` or `--max-pages` stops it; in agent mode lists default to 50,
+  and `context.has_more` says when there are more.
+- **Several environments.** Both accept `"a;b"` and `ALL_ENVIRONMENTS`. The MCP
+  server queries the environments one after another and fails the whole call
+  if one fails. dtmgd queries them in parallel, prints every environment that
+  answered (keyed by context name), and exits non-zero if any failed.
+- **UI links.** The MCP server adds a Dynatrace UI link when one environment
+  answered. dtmgd puts the links in agent output's `context.links`, keyed by
+  context name for several environments, and `describe` commands print
+  `Open in Dynatrace:` on stderr.
+- **Only in the MCP server:** HTTP transport with per-request tokens, rate
+  limiting, usage telemetry, and output trimmed for model context (at most 11
+  tags or dimensions, 50 data points per series).
+- **Only in dtmgd:** `query log-counts` (log counts per process group and
+  level), the `--selector` DSL on problems and security problems, `--watch`,
+  display IDs for security problems, paging past the first page (with
+  `--max-pages` to stop it), table, wide, json and yaml output, `commands`,
+  `config import` (creates contexts from an MCP server config), and shell
+  completion.

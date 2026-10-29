@@ -2,7 +2,6 @@ package client
 
 import (
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -33,23 +32,5 @@ func TestPartialFailureCode(t *testing.T) {
 		if got := tt.err.Code(); got != tt.want {
 			t.Errorf("%s: Code() = %d, want %d", tt.name, got, tt.want)
 		}
-	}
-}
-
-// TestUnwrapSingleReportsFailedEnvironments pins that a multi-environment
-// result with failures returns them as a PartialFailureError alongside the
-// merged data, instead of dropping the error (which made such calls exit 0).
-func TestUnwrapSingleReportsFailedEnvironments(t *testing.T) {
-	results := []EnvResult{{Name: "a", Data: "ok"}, {Name: "b", Error: APIError(403, "")}}
-	data, err := UnwrapSingle(results)
-	var pf *PartialFailureError
-	if !errors.As(err, &pf) || pf.Total != 2 || len(pf.Failed) != 1 {
-		t.Fatalf("want a PartialFailureError for 1 of 2, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "1 of 2 environments failed: b: API error 403") {
-		t.Errorf("message = %q", err.Error())
-	}
-	if m := data.(map[string]interface{}); m["a"] != "ok" {
-		t.Errorf("merged data lost the ok environment: %v", m)
 	}
 }

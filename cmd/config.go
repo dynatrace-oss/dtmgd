@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
@@ -30,6 +31,7 @@ func newConfigCmd(a *App) *cobra.Command {
 		newConfigDeleteContextCmd(a),
 		newConfigDeleteCredentialsCmd(a),
 		newConfigMigrateTokensCmd(a),
+		newConfigImportCmd(a),
 	)
 	return asGroup(cmd)
 }
@@ -69,7 +71,8 @@ build log.`,
 // tokenMask replaces a stored token value in displayed output.
 const tokenMask = "*** (use --show-tokens to reveal)"
 
-// withMaskedTokens returns a copy of cfg with literal token values masked.
+// withMaskedTokens returns a copy of cfg with literal token values and proxy
+// passwords masked.
 //
 // The copy is what keeps this safe to call from a command that shares the
 // loaded Config: masking in place would put the mask string one saveConfig
@@ -88,7 +91,25 @@ func withMaskedTokens(cfg *config.Config) *config.Config {
 		}
 		masked.Tokens[i].Token = tokenMask
 	}
+	masked.Contexts = make([]config.NamedContext, len(cfg.Contexts))
+	copy(masked.Contexts, cfg.Contexts)
+	for i := range masked.Contexts {
+		c := &masked.Contexts[i].Context
+		c.HTTPProxyURL = maskProxyPassword(c.HTTPProxyURL)
+		c.HTTPSProxyURL = maskProxyPassword(c.HTTPSProxyURL)
+	}
 	return &masked
+}
+
+// maskProxyPassword masks the password in a proxy URL (user:xxxxx@host) and
+// keeps the rest, so the output still shows which proxy a context uses. It is
+// client.RedactProxy, which fails closed on URLs url.Parse rejects or
+// misreads; a ${VAR} reference with no userinfo is left as written.
+func maskProxyPassword(proxy string) string {
+	if proxy == "" {
+		return proxy
+	}
+	return client.RedactProxy(proxy)
 }
 
 // newConfigInitCmd builds `config init`, which creates a .dtmgd.yaml template
@@ -301,13 +322,18 @@ func (a *App) setCredentials(name, token string) error {
 	if err := a.saveConfig(cfg); err != nil {
 		return err
 	}
+	reportStoredCredential(name)
+	return nil
+}
 
+// reportStoredCredential says where cfg.SetToken put a literal token: the OS
+// keyring, or the config file in plaintext when no keyring is available.
+func reportStoredCredential(name string) {
 	if config.IsKeyringAvailable() {
 		output.PrintSuccess("Credential %q stored securely in %s", name, config.KeyringBackend())
 	} else {
 		output.PrintWarning("Credential %q saved (plaintext — keyring not available)", name)
 	}
-	return nil
 }
 
 // newConfigDeleteContextCmd builds `config delete-context`, which removes a
@@ -347,13 +373,18 @@ func (a *App) deleteCredentials(name string) error {
 	if err != nil {
 		return err
 	}
-	if err := cfg.DeleteToken(name); err != nil {
+	deleteFromKeyring, err := cfg.DeleteToken(name)
+	if err != nil {
 		return err
 	}
 	if users := contextsUsingToken(cfg, name); len(users) > 0 {
 		output.PrintWarning("Context(s) %s still use token-ref %q; they need a new credential.", strings.Join(users, ", "), name)
 	}
+	// The keyring entry goes only once the config no longer names it.
 	if err := a.saveConfig(cfg); err != nil {
+		return err
+	}
+	if err := deleteFromKeyring(); err != nil {
 		return err
 	}
 	output.PrintSuccess("Credential %q deleted", name)

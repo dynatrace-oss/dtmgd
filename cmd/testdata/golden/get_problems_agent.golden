@@ -449,7 +449,10 @@
   "context": {
     "total": 15,
     "verb": "get",
-    "resource": "problems"
+    "resource": "problems",
+    "links": {
+      "ui": "http://FAKE/e/env1/ui/problems"
+    }
   }
 }
 == stderr
