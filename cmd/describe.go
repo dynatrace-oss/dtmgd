@@ -26,12 +26,14 @@ Supported resources:
   security-problem <id>     Security vulnerability details with CVE info
 
 Cluster resources (need a cluster context: one without env-id):
+  cluster                   The cluster's name, version and node states
   environment <id>          An environment's properties, quotas and storage
 
 Detail commands print a readable summary (or YAML) by default; use -o json for the raw API object.`,
 		RunE: requireSubcommand,
 	}
 	cmd.AddCommand(
+		newDescribeClusterCmd(a),
 		newDescribeEntityCmd(a),
 		newDescribeEntityTypeCmd(a),
 		newDescribeEntityRelationsCmd(a),

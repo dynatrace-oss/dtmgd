@@ -1,0 +1,11 @@
+[
+  {"id": 1, "clusterMemberAddress": "10.0.0.1:5701", "operationState": "RUNNING", "buildVersion": "1.330.18.20251017-120000",
+   "osInfo": "Platform: Linux, Version: 6.1.0, Architecture: amd64, Processors: 8", "jvmInfo": "VM: test JVM",
+   "dnsEntryPointUris": [], "restServiceRootUris": ["https://10.0.0.1:8021/api/v1.0"], "communicationUris": ["http://10.0.0.1:8020/communication"]},
+  {"id": 2, "clusterMemberAddress": "10.0.0.2:5701", "operationState": "RUNNING", "buildVersion": "1.330.18.20251017-120000",
+   "osInfo": "Platform: Linux, Version: 6.1.0, Architecture: amd64, Processors: 8", "jvmInfo": "VM: test JVM",
+   "dnsEntryPointUris": [], "restServiceRootUris": ["https://10.0.0.2:8021/api/v1.0"], "communicationUris": ["http://10.0.0.2:8020/communication"]},
+  {"id": 3, "clusterMemberAddress": "10.0.0.3:5701", "operationState": "OFFLINE", "buildVersion": "1.328.5.20250901-090000",
+   "osInfo": "Platform: Linux, Version: 6.1.0, Architecture: amd64, Processors: 4", "jvmInfo": "VM: test JVM",
+   "dnsEntryPointUris": [], "restServiceRootUris": ["https://10.0.0.3:8021/api/v1.0"], "communicationUris": ["http://10.0.0.3:8020/communication"]}
+]

@@ -20,6 +20,7 @@ Supported resources:
 
 Cluster resources (need a cluster context: one without env-id):
   environments (envs)   The cluster's environments
+  nodes (node)          The cluster's nodes, their state, version and roles
 
 Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		RunE: requireSubcommand,
@@ -30,6 +31,7 @@ Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		newGetEnvironmentsCmd(a),
 		newGetEventsCmd(a),
 		newGetMetricsCmd(a),
+		newGetNodesCmd(a),
 		newGetProblemsCmd(a),
 		newGetSecurityProblemsCmd(a),
 		newGetSLOsCmd(a),

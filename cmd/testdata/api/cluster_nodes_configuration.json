@@ -1,0 +1,7 @@
+{
+  "clusterNodes": [
+    {"id": 1, "ipAddress": "10.0.0.1", "webUI": true, "agent": true, "datacenter": "dc-1", "kubernetesRole": ""},
+    {"id": 2, "ipAddress": "10.0.0.2", "webUI": false, "agent": true, "datacenter": "dc-1", "kubernetesRole": ""},
+    {"id": 3, "ipAddress": "10.0.0.3", "webUI": false, "agent": false, "datacenter": "dc-1", "kubernetesRole": ""}
+  ]
+}

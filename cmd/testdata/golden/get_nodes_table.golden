@@ -1,0 +1,7 @@
+== exit code: 0
+== stdout
+ ID  ADDRESS   STATE    VERSION                   DATACENTER  ROLES          
+ 1   10.0.0.1  RUNNING  1.330.18.20251017-120000  dc-1        web UI, agents 
+ 2   10.0.0.2  RUNNING  1.330.18.20251017-120000  dc-1        agents         
+ 3   10.0.0.3  OFFLINE  1.328.5.20250901-090000   dc-1        —              
+== stderr
