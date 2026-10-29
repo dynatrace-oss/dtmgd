@@ -259,16 +259,24 @@ func writeFileAtomic(path string, data []byte) error {
 // writeFileInPlace is writeFileAtomic's fallback for a directory dtmgd may not
 // create files in (a config mounted or kept in a read-only directory) while the
 // file itself is writable. It is not atomic, but it is the only save possible
-// there, and it still leaves the file mode 0600.
+// there. Before writing it drops every group and other permission bit, and
+// writes nothing if it cannot, so a plaintext token never lands in a looser
+// file. It only ever removes bits: a file its owner made read-only stays so,
+// and the write then fails.
 func writeFileInPlace(path string, data []byte) error {
+	if fi, err := os.Stat(path); err == nil {
+		if err := chmodFile(path, fi.Mode().Perm()&0o600); err != nil {
+			return fmt.Errorf("failed to write config: cannot restrict it to mode 0600: %w", err)
+		}
+	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		return fmt.Errorf("wrote config, but could not restrict it to mode 0600: %w", err)
-	}
 	return nil
 }
+
+// chmodFile is os.Chmod; tests replace it to make it fail.
+var chmodFile = os.Chmod
 
 // CurrentContextObj returns the current context.
 func (c *Config) CurrentContextObj() (*Context, error) {

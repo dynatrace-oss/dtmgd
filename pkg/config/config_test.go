@@ -622,3 +622,36 @@ func TestSaveToFallsBackWhenDirNotWritable(t *testing.T) {
 		t.Errorf("mode after save: %v, %v; want 0600", fi.Mode().Perm(), err)
 	}
 }
+
+// TestSaveToInPlaceRefusesWhenItCannotRestrictTheFile pins the in-place
+// fallback's order: it restricts the file to 0600 before writing, and writes
+// nothing if it cannot, so plaintext tokens never land in a looser file.
+func TestSaveToInPlaceRefusesWhenItCannotRestrictTheFile(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions enforced")
+	}
+	dir := filepath.Join(t.TempDir(), "conf")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "config")
+	const original = "apiVersion: dtmgd.io/v1\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	chmodFile = func(string, os.FileMode) error { return errors.New("operation not permitted") }
+	t.Cleanup(func() { chmodFile = os.Chmod })
+
+	cfg := NewConfig()
+	cfg.Tokens = []NamedToken{{Name: "t", Token: "dt0c01.PLAINTEXT"}}
+	if err := cfg.SaveTo(path); err == nil {
+		t.Fatal("SaveTo succeeded although the file could not be restricted to 0600")
+	}
+	if got, _ := os.ReadFile(path); string(got) != original {
+		t.Errorf("file was written anyway:\n%s", got)
+	}
+}
