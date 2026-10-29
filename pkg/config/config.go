@@ -214,11 +214,17 @@ func (c *Config) SaveTo(path string) error {
 // save never leaves a truncated config, and leaves it mode 0600 even if the
 // file it replaces was looser: a config can hold a plaintext token. A symlink
 // is followed, so a config kept elsewhere (a dotfiles repo) stays linked.
+// The data is synced before the rename, so a crash cannot leave the new name
+// pointing at unwritten blocks. When the directory refuses the temporary
+// file, the file is rewritten in place instead (writeFileInPlace).
 func writeFileAtomic(path string, data []byte) error {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if errors.Is(err, fs.ErrPermission) {
+		return writeFileInPlace(path, data)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
@@ -236,6 +242,10 @@ func writeFileAtomic(path string, data []byte) error {
 		_ = f.Close()
 		return fmt.Errorf("failed to write config: %w", err)
 	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("failed to write config: %w", err)
+	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
@@ -243,6 +253,20 @@ func writeFileAtomic(path string, data []byte) error {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 	tmp = ""
+	return nil
+}
+
+// writeFileInPlace is writeFileAtomic's fallback for a directory dtmgd may not
+// create files in (a config mounted or kept in a read-only directory) while the
+// file itself is writable. It is not atomic, but it is the only save possible
+// there, and it still leaves the file mode 0600.
+func writeFileInPlace(path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return fmt.Errorf("failed to write config: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("wrote config, but could not restrict it to mode 0600: %w", err)
+	}
 	return nil
 }
 
@@ -384,30 +408,41 @@ func (c *Config) SetToken(name, token string) error {
 // as done.
 var ErrTokenNotFound = errors.New("token not found")
 
-// DeleteToken removes the named token from the OS keyring and from the
-// config's tokens list. It is an error wrapping ErrTokenNotFound if neither
-// holds it.
-func (c *Config) DeleteToken(name string) error {
-	found := false
+// DeleteToken removes the named token from the config's tokens list and
+// returns the function that removes it from the OS keyring. Save the config
+// before calling that function: if the save fails, the file still names the
+// token and the keyring still holds it, so nothing is half-deleted. It is an
+// error wrapping ErrTokenNotFound if neither holds the token.
+func (c *Config) DeleteToken(name string) (deleteFromKeyring func() error, err error) {
+	inKeyring := false
 	if IsKeyringAvailable() {
-		switch err := NewTokenStore().DeleteToken(name); {
+		switch _, err := NewTokenStore().GetToken(name); {
 		case err == nil:
-			found = true
+			inKeyring = true
 		case !errors.Is(err, keyring.ErrNotFound):
-			return fmt.Errorf("keyring: %w", err)
+			return nil, fmt.Errorf("keyring: %w", err)
 		}
 	}
+	inConfig := false
 	for i, nt := range c.Tokens {
 		if nt.Name == name {
 			c.Tokens = append(c.Tokens[:i], c.Tokens[i+1:]...)
-			found = true
+			inConfig = true
 			break
 		}
 	}
-	if !found {
-		return fmt.Errorf("token %q not found: %w", name, ErrTokenNotFound)
+	if !inKeyring && !inConfig {
+		return nil, fmt.Errorf("token %q not found: %w", name, ErrTokenNotFound)
 	}
-	return nil
+	return func() error {
+		if !inKeyring {
+			return nil
+		}
+		if err := NewTokenStore().DeleteToken(name); err != nil && !errors.Is(err, keyring.ErrNotFound) {
+			return fmt.Errorf("keyring: %w", err)
+		}
+		return nil
+	}, nil
 }
 
 // NewConfig returns a minimal default Config.

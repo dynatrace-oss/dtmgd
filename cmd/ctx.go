@@ -271,25 +271,43 @@ func (a *App) deleteContext(name string, deleteCreds bool) error {
 	if err := cfg.DeleteContext(name); err != nil {
 		return err
 	}
+	var deleteFromKeyring func() error
 	if deleteCreds && tokenRef != "" {
-		if users := contextsUsingToken(cfg, tokenRef); len(users) > 0 {
-			output.PrintInfo("Kept credential %q: still used by %s.", tokenRef, strings.Join(users, ", "))
-		} else if err := cfg.DeleteToken(tokenRef); errors.Is(err, config.ErrTokenNotFound) {
-			// Nothing to delete is no reason to keep the context.
-			output.PrintInfo("Credential %q was already gone.", tokenRef)
-		} else if err != nil {
+		if deleteFromKeyring, err = dropContextToken(cfg, tokenRef); err != nil {
 			return err
-		} else {
-			output.PrintSuccess("Credential %q deleted", tokenRef)
 		}
 	}
 	if cfg.CurrentContext == name {
 		cfg.CurrentContext = ""
 		output.PrintWarning("Deleted current context. Use 'dtmgd ctx <name>' to set a new one.")
 	}
+	// The keyring entry goes only once the config no longer names it.
 	if err := a.saveConfig(cfg); err != nil {
 		return err
 	}
+	if deleteFromKeyring != nil {
+		if err := deleteFromKeyring(); err != nil {
+			return err
+		}
+		output.PrintSuccess("Credential %q deleted", tokenRef)
+	}
 	output.PrintSuccess("Context %q deleted", name)
 	return nil
+}
+
+// dropContextToken removes the token of a deleted context from cfg, unless
+// another context still uses it, and returns the function that removes it
+// from the keyring (nil when nothing is left to delete there).
+func dropContextToken(cfg *config.Config, tokenRef string) (func() error, error) {
+	if users := contextsUsingToken(cfg, tokenRef); len(users) > 0 {
+		output.PrintInfo("Kept credential %q: still used by %s.", tokenRef, strings.Join(users, ", "))
+		return nil, nil
+	}
+	deleteFromKeyring, err := cfg.DeleteToken(tokenRef)
+	if errors.Is(err, config.ErrTokenNotFound) {
+		// Nothing to delete is no reason to keep the context.
+		output.PrintInfo("Credential %q was already gone.", tokenRef)
+		return nil, nil
+	}
+	return deleteFromKeyring, err
 }

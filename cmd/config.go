@@ -347,13 +347,18 @@ func (a *App) deleteCredentials(name string) error {
 	if err != nil {
 		return err
 	}
-	if err := cfg.DeleteToken(name); err != nil {
+	deleteFromKeyring, err := cfg.DeleteToken(name)
+	if err != nil {
 		return err
 	}
 	if users := contextsUsingToken(cfg, name); len(users) > 0 {
 		output.PrintWarning("Context(s) %s still use token-ref %q; they need a new credential.", strings.Join(users, ", "), name)
 	}
+	// The keyring entry goes only once the config no longer names it.
 	if err := a.saveConfig(cfg); err != nil {
+		return err
+	}
+	if err := deleteFromKeyring(); err != nil {
 		return err
 	}
 	output.PrintSuccess("Credential %q deleted", name)

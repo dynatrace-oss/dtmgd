@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -163,5 +165,48 @@ func TestDTMGDContextMissingContextNamesVariable(t *testing.T) {
 	}
 	if r := runCLIWithEnv(t, env, cfg, "get", "problems", "-o", "json", "-c", "a"); r.Code != 0 {
 		t.Errorf("-c a should override DTMGD_CONTEXT: %s", r)
+	}
+}
+
+// readOnlyConfig makes path's file and directory read-only, so no save can
+// succeed, and restores them when the test ends.
+func readOnlyConfig(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs POSIX permissions enforced")
+	}
+	dir := filepath.Dir(path)
+	if err := os.Chmod(path, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(dir, 0o700)
+		_ = os.Chmod(path, 0o600)
+	})
+}
+
+// TestDeleteCredentialsSavesBeforeKeyring pins the order of a credential
+// delete: the config is saved first, and the keyring entry goes only after
+// that succeeded. A save that fails (here, a read-only config) must leave the
+// token in the keyring rather than half-delete it, for delete-credentials and
+// for delete-context --delete-credentials alike.
+func TestDeleteCredentialsSavesBeforeKeyring(t *testing.T) {
+	for _, args := range [][]string{
+		{"config", "delete-credentials", "own"},
+		{"config", "delete-context", "c", "--delete-credentials"},
+	} {
+		path := withTempConfig(t, credsConfig)
+		storeKeyringTokens(t, "shared", "own")
+		readOnlyConfig(t, path)
+
+		if r := runCLI(t, path, args...); r.Code == 0 {
+			t.Errorf("%v: succeeded although the config cannot be saved", args)
+		}
+		if _, err := keyring.Get("dtmgd", "own"); err != nil {
+			t.Errorf("%v: keyring lost the token although the save failed (err %v)", args, err)
+		}
 	}
 }
