@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -328,5 +329,30 @@ func TestLogCountsMultiEnv(t *testing.T) {
 	}
 	if a.Hits(entitiesPath) != 1 || b.Hits(entitiesPath) != 1 {
 		t.Errorf("entity lookups: a=%d b=%d, want 1 each", a.Hits(entitiesPath), b.Hits(entitiesPath))
+	}
+}
+
+// TestLogCountsAgentWarnsAboutUnknownCounts pins that agent and json output of
+// query log-counts explain a null count as a table does: agent output names
+// each level with unknown counts in context.warnings, and json output, which
+// has no envelope, notes it on stderr and keeps stdout pure JSON.
+func TestLogCountsAgentWarnsAboutUnknownCounts(t *testing.T) {
+	api, _ := logCountsAPI(t, logCountEntitiesBody, map[string]string{"INFO": logAggregateBody})
+	cfg := withFakeEnvs(t, fakeEnv{"a", api})
+	args := []string{"query", "log-counts", "--entity", `type(SERVICE),tag("team:shop")`, "--max-services", "2"}
+	note := `Some process groups are outside the top 2 for INFO; their counts are null.`
+
+	r := runCLI(t, cfg, append(args, "-A")...)
+	var resp agentmode.Response
+	if err := json.Unmarshal([]byte(r.Stdout), &resp); err != nil {
+		t.Fatalf("stdout is not one envelope: %v\n%s", err, r.Stdout)
+	}
+	if r.Code != 0 || resp.Context == nil || !slices.Contains(resp.Context.Warnings, note) {
+		t.Errorf("agent: code %d, context %+v; want warning %q", r.Code, resp.Context, note)
+	}
+
+	r = runCLI(t, cfg, append(args, "-o", "json")...)
+	if r.Code != 0 || !json.Valid([]byte(r.Stdout)) || !strings.Contains(r.Stderr, note) {
+		t.Errorf("json: code %d, stdout valid %v, stderr %q; want %q", r.Code, json.Valid([]byte(r.Stdout)), r.Stderr, note)
 	}
 }

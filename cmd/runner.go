@@ -23,8 +23,8 @@ type fetched struct {
 	HasMore bool        // more exist than Body holds
 
 	// Warnings are problems that did not fail the fetch, such as a failed
-	// name lookup for a table. renderHuman prints each to stderr after the
-	// result; json, yaml and agent output do not show them.
+	// name lookup for a table. Agent output lists them in context.warnings;
+	// every other format prints each to stderr after the result.
 	Warnings []string
 
 	// UIBase is the environment's Dynatrace UI base URL, {host}/e/{env-id},
@@ -116,9 +116,21 @@ func (a *App) renderOne(s fetchSpec, f fetched) error {
 	}
 	switch fm := a.format(); fm {
 	case output.FormatJSON, output.FormatYAML:
-		return output.NewPrinterTo(string(fm), a.Out).Print(f.Body)
+		if err := output.NewPrinterTo(string(fm), a.Out).Print(f.Body); err != nil {
+			return err
+		}
+		printWarnings("", f)
+		return nil
 	}
 	return a.renderHuman(s, f)
+}
+
+// printWarnings writes a result's warnings to stderr, each prefixed with
+// prefix (an environment's name in multi-environment output).
+func printWarnings(prefix string, f fetched) {
+	for _, w := range f.Warnings {
+		output.PrintWarning("%s%s", prefix, w)
+	}
 }
 
 // renderMulti renders several environments' results: a map keyed by context
@@ -135,6 +147,11 @@ func (a *App) renderMulti(s fetchSpec, results []client.EnvResult) error {
 	case output.FormatJSON, output.FormatYAML:
 		if err := output.NewPrinterTo(string(fm), a.Out).Print(merged); err != nil {
 			return err
+		}
+		for _, r := range results {
+			if r.Error == nil {
+				printWarnings(r.Name+": ", r.Data.(fetched))
+			}
 		}
 		return partial
 	}
@@ -170,9 +187,15 @@ func (a *App) renderMultiAgent(s fetchSpec, results []client.EnvResult, merged m
 	for _, r := range results {
 		if r.Error != nil {
 			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
-		} else if f := r.Data.(fetched); f.HasMore {
+			continue
+		}
+		f := r.Data.(fetched)
+		if f.HasMore {
 			ctx.HasMore = true
 			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %s", r.Name, truncationNote(s, f)))
+		}
+		for _, w := range f.Warnings {
+			ctx.Warnings = append(ctx.Warnings, r.Name+": "+w)
 		}
 	}
 	if partial == nil {
@@ -214,9 +237,7 @@ func (a *App) renderHuman(s fetchSpec, f fetched) error {
 	if err := a.renderBody(s, f); err != nil {
 		return err
 	}
-	for _, w := range f.Warnings {
-		output.PrintWarning("%s", w)
-	}
+	printWarnings("", f)
 	printDescribeLink(s, f)
 	return nil
 }
@@ -251,6 +272,7 @@ func (a *App) renderBody(s fetchSpec, f fetched) error {
 // responseContext is the agent envelope context for one environment's result.
 func (a *App) responseContext(s fetchSpec, f fetched) *agentmode.ResponseContext {
 	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, HasMore: f.HasMore, Links: singleLinks(s, f)}
+	ctx.Warnings = append(ctx.Warnings, f.Warnings...)
 	if f.Total >= 0 {
 		total := f.Total
 		ctx.Total = &total
