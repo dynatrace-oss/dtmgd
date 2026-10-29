@@ -1,0 +1,7 @@
+== exit code: 0
+== stdout
+ ID     NAME       STATE     TRIAL  CREATED                  
+ env-1  shop-prod  ENABLED   no     2025-01-10T08:00:00.000Z 
+ env-2  shop-dev   ENABLED   no     2025-03-02T12:30:00.000Z 
+ env-3  legacy     DISABLED  yes    2023-11-20T16:45:00.000Z 
+== stderr

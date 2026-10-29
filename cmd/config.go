@@ -231,7 +231,8 @@ func newConfigSetContextCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set-context <context-name>",
 		Short: "Create or update a context entry",
-		Long: `Create or update a context that points to a Dynatrace Managed environment.
+		Long: `Create or update a context that points to a Dynatrace Managed environment,
+or, without --env-id, to a cluster's Cluster Management API.
 
 A context stores three things:
   --host       Base URL of the Dynatrace Managed cluster
@@ -242,6 +243,12 @@ A context stores three things:
 
 Required API token scopes:
   %SCOPES%
+
+Without --env-id the context is a cluster context, for the Cluster
+Management API: get environments, describe environment, get nodes, describe
+cluster, describe license, get license-usage and describe backup.
+Its --host is the cluster's own address, as used by the Cluster Management
+Console, and its token needs the ServiceProviderAPI scope.
 
 Examples:
   dtmgd config set-context prod \
@@ -256,7 +263,7 @@ Examples:
 		},
 	}
 	cmd.Flags().StringVar(&opts.host, "host", "", "Dynatrace Managed cluster URL (e.g. https://managed.company.com)")
-	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "Environment ID")
+	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID (omit for a cluster context)")
 	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name (see set-credentials)")
 	cmd.Flags().StringVar(&opts.description, "description", "", "human-readable description")
 	return cmd

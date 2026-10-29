@@ -296,3 +296,14 @@ func TestRewriteNegativeArgsTrailingTokens(t *testing.T) {
 		}
 	}
 }
+
+// TestRootHelpNamesClusterAPI pins that the root help names the Cluster API
+// surface and how to reach it: a cluster context.
+func TestRootHelpNamesClusterAPI(t *testing.T) {
+	r := runCLI(t, "", "--help")
+	for _, want := range []string{"/api/cluster/v2/", "/api/v1.0/onpremise/", "cluster contexts"} {
+		if !strings.Contains(r.Stdout, want) {
+			t.Errorf("root help lacks %q:\n%s", want, r.Stdout)
+		}
+	}
+}

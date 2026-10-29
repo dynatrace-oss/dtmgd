@@ -1,0 +1,6 @@
+{
+  "totalLicenseUsageDataPerEnvironment": [
+    {"environmentUuid": "env-1", "usageOfHostUnits": 30.5, "usageOfDemUnits": 1200, "usageOfDduUnits": 150000.25},
+    {"environmentUuid": "env-9", "usageOfHostUnits": 12, "usageOfDemUnits": 0, "usageOfDduUnits": 100000}
+  ]
+}

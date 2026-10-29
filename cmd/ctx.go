@@ -22,6 +22,7 @@ const (
 type ContextListItem struct {
 	Current     string `table:"CURRENT"`
 	Name        string `table:"NAME"`
+	Scope       string `table:"SCOPE"`
 	Host        string `table:"HOST"`
 	EnvID       string `table:"ENV-ID"`
 	TokenRef    string `table:"TOKEN-REF"`
@@ -88,7 +89,7 @@ func newCtxSetCmd(a *App) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.host, "host", "", "Managed cluster host URL")
-	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID")
+	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID (omit for a cluster context)")
 	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "description")
 	return cmd
@@ -155,6 +156,7 @@ func (a *App) listContexts() error {
 		items = append(items, ContextListItem{
 			Current:     current,
 			Name:        nc.Name,
+			Scope:       contextScope(nc.Context),
 			Host:        nc.Context.Host,
 			EnvID:       nc.Context.EnvID,
 			TokenRef:    nc.Context.TokenRef,
@@ -163,6 +165,14 @@ func (a *App) listContexts() error {
 	}
 
 	return a.printer("").PrintList(items)
+}
+
+// contextScope names c's kind, as the SCOPE columns show it.
+func contextScope(c config.Context) string {
+	if c.IsCluster() {
+		return "cluster"
+	}
+	return "environment"
 }
 
 func (a *App) useContext(name string) error {
@@ -227,7 +237,7 @@ func (a *App) setContext(name, host, envID, tokenRef, description string) error 
 		return err
 	}
 
-	// For new contexts, host + env-id are required.
+	// A new context needs a host. Without an env-id it is a cluster context.
 	isUpdate := false
 	for _, nc := range cfg.Contexts {
 		if nc.Name == name {
@@ -238,10 +248,6 @@ func (a *App) setContext(name, host, envID, tokenRef, description string) error 
 	if !isUpdate && host == "" {
 		return fmt.Errorf("--host is required for new contexts")
 	}
-	if !isUpdate && envID == "" {
-		return fmt.Errorf("--env-id is required for new contexts")
-	}
-
 	warnClobberedContextRefs(cfg, name, host, envID, tokenRef)
 
 	cfg.SetContext(name, host, envID, tokenRef, description)
@@ -254,6 +260,9 @@ func (a *App) setContext(name, host, envID, tokenRef, description string) error 
 		return err
 	}
 	output.PrintSuccess("Context %q set", name)
+	if !isUpdate && envID == "" {
+		output.PrintInfo("%q is a cluster context (no --env-id): use it with cluster commands, e.g. dtmgd get environments --context %s", name, name)
+	}
 	return nil
 }
 

@@ -151,6 +151,41 @@ func withFakeEnvIDs(t *testing.T, ids map[string]string, envs ...fakeEnv) string
 	return path
 }
 
+// withFakeContexts writes a temp config holding environment contexts (env-id
+// env1) and cluster contexts (no env-id), each with the plaintext token
+// tok-<name>, and returns its path. current names the current context.
+func withFakeContexts(t *testing.T, current string, envs, clusters []fakeEnv) string {
+	t.Helper()
+	var b strings.Builder
+	fmt.Fprintf(&b, "apiVersion: dtmgd.io/v1\nkind: Config\ncurrent-context: %s\ncontexts:\n", current)
+	for _, e := range envs {
+		fmt.Fprintf(&b, "  - name: %s\n    context:\n      host: %s\n      env-id: env1\n      token-ref: tok-%s\n", e.Name, e.API.URL, e.Name)
+	}
+	for _, c := range clusters {
+		fmt.Fprintf(&b, "  - name: %s\n    context:\n      host: %s\n      token-ref: tok-%s\n", c.Name, c.API.URL, c.Name)
+	}
+	b.WriteString("tokens:\n")
+	for _, e := range append(append([]fakeEnv(nil), envs...), clusters...) {
+		fmt.Fprintf(&b, "  - name: tok-%s\n    token: dt0c01.TEST\n", e.Name)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+// totalHits is how many requests f received, on any path.
+func (f *fakeAPI) totalHits() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, h := range f.hits {
+		n += h
+	}
+	return n
+}
+
 // cliResult is what one CLI run produced.
 type cliResult struct {
 	Stdout, Stderr string

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -73,6 +74,11 @@ func NewForContext(cfg *config.Config, name string, o Options) (*Client, error) 
 		}
 		return nil, err
 	}
+	if !nc.Context.IsCluster() && resolved.EnvID == "" {
+		// Without this, an env-id: ${VAR} set to "" built a cluster-scoped
+		// client, and every command called the context a cluster context.
+		return nil, fmt.Errorf("context %q: env-id %q resolved to an empty value; set the variable, or change env-id", name, nc.Context.EnvID)
+	}
 	token, err := cfg.GetToken(resolved.TokenRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API token: %w", err)
@@ -86,13 +92,16 @@ func NewForContext(cfg *config.Config, name string, o Options) (*Client, error) 
 	return c, nil
 }
 
-// New creates a Client for the given Managed host and environment ID.
+// ErrClusterScoped is the error of an environment API call on a client for a
+// cluster context, which has no environment to call.
+var ErrClusterScoped = errors.New("this is a cluster context (no env-id); environment API calls need an environment context")
+
+// New creates a Client for the given Managed host and environment ID. An empty
+// envID makes a cluster-scoped client, for a cluster context: it calls only
+// the Cluster API, and has no environment API or UI base URL.
 func New(host, envID, token string) (*Client, error) {
 	if host == "" {
 		return nil, fmt.Errorf("host is required")
-	}
-	if envID == "" {
-		return nil, fmt.Errorf("env-id is required")
 	}
 	if token == "" {
 		return nil, fmt.Errorf("API token is required")
@@ -101,9 +110,12 @@ func New(host, envID, token string) (*Client, error) {
 	// Normalise host
 	host = strings.TrimRight(host, "/")
 
-	apiBaseURL := fmt.Sprintf("%s/e/%s/api", host, envID)
 	clusterURL := fmt.Sprintf("%s/api", host)
-	dashboardURL := fmt.Sprintf("%s/e/%s", host, envID)
+	apiBaseURL, dashboardURL := "", ""
+	if envID != "" {
+		apiBaseURL = fmt.Sprintf("%s/e/%s/api", host, envID)
+		dashboardURL = fmt.Sprintf("%s/e/%s", host, envID)
+	}
 
 	return &Client{
 		http:         newRestyClient(apiBaseURL, token, requestTimeout),
@@ -113,6 +125,9 @@ func New(host, envID, token string) (*Client, error) {
 		dashboardURL: dashboardURL,
 	}, nil
 }
+
+// ClusterScoped reports whether c is for a cluster context (see New).
+func (c *Client) ClusterScoped() bool { return c.apiBaseURL == "" }
 
 // newRestyClient builds a resty client with the settings every dtmgd request
 // is expected to carry.
@@ -226,11 +241,22 @@ func (c *Client) SetVerbosity(level int) {
 		rc.OnAfterResponse(func(_ *resty.Client, resp *resty.Response) error {
 			fmt.Fprintf(os.Stderr, "<== %d %s (%s)\n", resp.StatusCode(), resp.Status(), resp.Time())
 			if level >= 2 {
-				fmt.Fprintf(os.Stderr, "%s\n", resp.String())
+				fmt.Fprintf(os.Stderr, "%s\n", redactBody(resp.String()))
 			}
 			return nil
 		})
 	}
+}
+
+// secretFields matches the JSON fields of a response body that -vv must not
+// print: the cluster license key, which describe license masks in every
+// output format.
+var secretFields = regexp.MustCompile(`"licenseKey"\s*:\s*"(?:[^"\\]|\\.)*"`)
+
+// redactBody is a response body as -vv prints it, with secretFields' values
+// replaced by [REDACTED].
+func redactBody(body string) string {
+	return secretFields.ReplaceAllString(body, `"licenseKey":"[REDACTED]"`)
 }
 
 // printRequestHeaders writes h to stderr for verbosity 2 and above, one header
@@ -308,12 +334,16 @@ func (c *Client) requestError(what string, err error) error {
 // ClusterURL returns the cluster-level API base URL.
 func (c *Client) ClusterURL() string { return c.clusterURL }
 
-// DashboardURL returns the human-facing environment dashboard URL.
+// DashboardURL returns the human-facing environment dashboard URL, or "" for
+// a cluster-scoped client.
 func (c *Client) DashboardURL() string { return c.dashboardURL }
 
 // GetV2 performs a GET request against the v2 environment API.
 // path should begin with "/" (e.g. "/problems").
 func (c *Client) GetV2(path string, params map[string]string, result interface{}) error {
+	if c.ClusterScoped() {
+		return ErrClusterScoped
+	}
 	req := c.http.R().SetResult(result)
 	for k, v := range params {
 		req.SetQueryParam(k, v)
@@ -331,6 +361,9 @@ func (c *Client) GetV2(path string, params map[string]string, result interface{}
 // GetV2WithValues performs a GET against the v2 environment API, supporting
 // repeated query parameter keys (e.g. groupBy=a&groupBy=b).
 func (c *Client) GetV2WithValues(path string, params url.Values, result interface{}) error {
+	if c.ClusterScoped() {
+		return ErrClusterScoped
+	}
 	req := c.http.R().SetResult(result)
 	req.SetQueryParamsFromValues(params)
 	resp, err := req.Get("/v2" + path)
@@ -345,6 +378,9 @@ func (c *Client) GetV2WithValues(path string, params url.Values, result interfac
 
 // GetV1 performs a GET request against the v1 environment API.
 func (c *Client) GetV1(path string, params map[string]string, result interface{}) error {
+	if c.ClusterScoped() {
+		return ErrClusterScoped
+	}
 	req := c.http.R().SetResult(result)
 	for k, v := range params {
 		req.SetQueryParam(k, v)
@@ -378,26 +414,55 @@ func (c *Client) GetCluster(path string, params map[string]string, result interf
 	return nil
 }
 
-// ClusterVersion fetches the cluster version.
-// Tries the cluster-level API first, and falls back to the environment v1 API
-// when the cluster answered without a version or with an HTTP error (a token
-// without cluster scopes gets 401/403 there). After a transport error it does
-// not: the fallback is on the same host and would fail the same way, after
-// another full timeout.
+// ClusterVersion fetches the cluster version: the lowest of its nodes'
+// versions (see LowestClusterVersion), from the Cluster API's node list.
+//
+// An environment-scoped client falls back to the environment v1 API when the
+// Cluster API answered with an HTTP error (a token without cluster scopes
+// gets 401/403 there, and a node host on port 9999 has no Cluster API at all)
+// or without a version. After a transport error it does not: the fallback is
+// on the same host and would fail the same way, after another full timeout. A
+// cluster-scoped client has no environment API to fall back to.
 func (c *Client) ClusterVersion() (string, error) {
-	var result struct {
-		Version string `json:"version"`
-	}
-	err := c.GetCluster("/v1.0/onpremise/cluster", nil, &result)
-	if err == nil && result.Version != "" {
-		return result.Version, nil
+	v, err := c.nodesVersion()
+	if (err == nil && v != "") || c.ClusterScoped() {
+		return v, err
 	}
 	var apiErr *ErrAPI
 	if err != nil && !errors.As(err, &apiErr) {
 		return "", err
 	}
+	var result struct {
+		Version string `json:"version"`
+	}
 	if err := c.GetV1("/config/clusterversion", nil, &result); err != nil {
 		return "", err
 	}
 	return result.Version, nil
+}
+
+// nodesVersion is the lowest buildVersion in the Cluster API's node list
+// ("" when it holds none).
+func (c *Client) nodesVersion() (string, error) {
+	versions, err := c.NodeVersions()
+	if err != nil {
+		return "", err
+	}
+	return LowestClusterVersion(versions), nil
+}
+
+// NodeVersions returns the buildVersion of each node in the Cluster API's
+// node list, which is an array of nodes, in its order.
+func (c *Client) NodeVersions() ([]string, error) {
+	var nodes []struct {
+		BuildVersion string `json:"buildVersion"`
+	}
+	if err := c.GetCluster("/v1.0/onpremise/cluster", nil, &nodes); err != nil {
+		return nil, err
+	}
+	versions := make([]string, len(nodes))
+	for i, n := range nodes {
+		versions[i] = n.BuildVersion
+	}
+	return versions, nil
 }

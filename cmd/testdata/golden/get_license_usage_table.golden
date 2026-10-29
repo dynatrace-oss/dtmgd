@@ -1,0 +1,6 @@
+== exit code: 0
+== stdout
+ ENVIRONMENT  NAME       HOST-UNITS  DEM-UNITS  DDUS      
+ env-1        shop-prod  30.5        1200       150000.25 
+ env-9        —          12          0          100000    
+== stderr

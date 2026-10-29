@@ -1,9 +1,14 @@
 package client
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -148,5 +153,178 @@ func TestClusterVersionNoFallbackAfterTransportError(t *testing.T) {
 	}
 	if n := fallback.Load(); n != 0 {
 		t.Errorf("environment version endpoint requested %d times after a transport error, want 0", n)
+	}
+}
+
+// hitCounter is an httptest server answering 200 {} to everything, counting
+// the requests it gets by path.
+func hitCounter(t *testing.T, routes map[string]string) (*httptest.Server, *sync.Map) {
+	t.Helper()
+	var hits sync.Map
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n, _ := hits.LoadOrStore(r.URL.Path, new(atomic.Int32))
+		n.(*atomic.Int32).Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		body, ok := routes[r.URL.Path]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":{"code":404,"message":"not found"}}`)
+			return
+		}
+		if strings.HasPrefix(body, "401 ") {
+			w.WriteHeader(http.StatusUnauthorized)
+			body = strings.TrimPrefix(body, "401 ")
+		}
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &hits
+}
+
+func hitCount(hits *sync.Map, path string) int32 {
+	n, ok := hits.Load(path)
+	if !ok {
+		return 0
+	}
+	return n.(*atomic.Int32).Load()
+}
+
+func totalHits(hits *sync.Map) int32 {
+	var total int32
+	hits.Range(func(_, n any) bool { total += n.(*atomic.Int32).Load(); return true })
+	return total
+}
+
+// TestNewClusterScoped pins that a context without env-id builds a client for
+// the Cluster API alone: no environment API base and no UI base URL, so no UI
+// link can come out as {host}/e/.
+func TestNewClusterScoped(t *testing.T) {
+	c, err := New("https://cluster.example.com/", "", "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.ClusterScoped() || c.DashboardURL() != "" || c.APIBaseURL() != "" {
+		t.Errorf("ClusterScoped %v, DashboardURL %q, APIBaseURL %q", c.ClusterScoped(), c.DashboardURL(), c.APIBaseURL())
+	}
+	if c.ClusterURL() != "https://cluster.example.com/api" {
+		t.Errorf("ClusterURL = %q", c.ClusterURL())
+	}
+	if env, _ := New("https://h", "env1", "tok"); env.ClusterScoped() {
+		t.Error("a client with an env-id is not cluster-scoped")
+	}
+}
+
+// TestEnvironmentCallsRefusedOnClusterClient pins the backstop: an
+// environment API call on a cluster-scoped client fails without a request,
+// rather than going to {host}/e//api.
+func TestEnvironmentCallsRefusedOnClusterClient(t *testing.T) {
+	srv, hits := hitCounter(t, map[string]string{})
+	c, err := New(srv.URL, "", "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	calls := map[string]error{
+		"GetV2":           c.GetV2("/problems", nil, &m),
+		"GetV2WithValues": c.GetV2WithValues("/problems", url.Values{}, &m),
+		"GetV1":           c.GetV1("/config/clusterversion", nil, &m),
+	}
+	_, calls["GetV2Paged"] = c.GetV2Paged("/problems", nil, Paging{ListKey: "problems"})
+	for name, err := range calls {
+		if !errors.Is(err, ErrClusterScoped) {
+			t.Errorf("%s: err = %v, want ErrClusterScoped", name, err)
+		}
+	}
+	if n := totalHits(hits); n != 0 {
+		t.Errorf("%d requests sent, want 0", n)
+	}
+}
+
+// TestGetClusterPagedFollowsNextPageKey pins Cluster API paging, which
+// follows the environment API's protocol (checked live on 2026-10-29): the
+// next page is asked for with nextPageKey alone.
+func TestGetClusterPagedFollowsNextPageKey(t *testing.T) {
+	var queries []url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/cluster/v2/environments" {
+			http.NotFound(w, r)
+			return
+		}
+		queries = append(queries, r.URL.Query())
+		if r.URL.Query().Get("nextPageKey") == "k" {
+			_, _ = io.WriteString(w, `{"environments":[{"id":"b"}],"totalCount":2}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"environments":[{"id":"a"}],"totalCount":2,"nextPageKey":"k"}`)
+	}))
+	t.Cleanup(srv.Close)
+	c, _ := New(srv.URL, "", "tok")
+	got, err := c.GetClusterPaged("/cluster/v2/environments", map[string]string{"pageSize": "1"}, Paging{ListKey: "environments"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if envs := got["environments"].([]interface{}); len(envs) != 2 {
+		t.Errorf("environments = %v", envs)
+	}
+	if _, ok := got["nextPageKey"]; ok {
+		t.Error("an exhausted result keeps no nextPageKey")
+	}
+	want := []url.Values{{"pageSize": {"1"}}, {"nextPageKey": {"k"}}}
+	if !reflect.DeepEqual(queries, want) {
+		t.Errorf("queries = %v, want %v", queries, want)
+	}
+}
+
+const (
+	nodesPath     = "/api/v1.0/onpremise/cluster"
+	envVersionURL = "/e/env1/api/v1/config/clusterversion"
+)
+
+// TestClusterVersionIsLowestNode pins that the version comes from the node
+// list /cluster actually returns (an array; dtmgd used to decode it as an
+// object), and that a cluster mid-upgrade reports its lowest node.
+func TestClusterVersionIsLowestNode(t *testing.T) {
+	srv, _ := hitCounter(t, map[string]string{
+		nodesPath: `[{"buildVersion":"1.330.18.20251017-120000"},{"buildVersion":"1.328.5.20250901-090000"}]`,
+	})
+	for _, envID := range []string{"env1", ""} {
+		c, _ := New(srv.URL, envID, "tok")
+		v, err := c.ClusterVersion()
+		if err != nil || v != "1.328.5.20250901-090000" {
+			t.Errorf("env-id %q: ClusterVersion = %q, %v", envID, v, err)
+		}
+	}
+}
+
+// TestClusterVersionClusterScopedNoFallback pins that a cluster context has
+// nothing to fall back to: the environment endpoint needs an env-id.
+func TestClusterVersionClusterScopedNoFallback(t *testing.T) {
+	srv, hits := hitCounter(t, map[string]string{nodesPath: `401 {"error":{"code":401,"message":"Token Authentication failed"}}`})
+	c, _ := New(srv.URL, "", "tok")
+	_, err := c.ClusterVersion()
+	var apiErr *ErrAPI
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 401 {
+		t.Errorf("err = %v, want API error 401", err)
+	}
+	if n := totalHits(hits); n != 1 {
+		t.Errorf("%d requests, want only the node list", n)
+	}
+}
+
+// TestClusterVersionNoNodes pins an empty node list: an environment context
+// still asks its environment endpoint; a cluster context reports no version
+// rather than an error.
+func TestClusterVersionNoNodes(t *testing.T) {
+	srv, hits := hitCounter(t, map[string]string{nodesPath: `[]`, envVersionURL: `{"version":"1.330.0"}`})
+	env, _ := New(srv.URL, "env1", "tok")
+	if v, err := env.ClusterVersion(); err != nil || v != "1.330.0" {
+		t.Errorf("environment context: %q, %v", v, err)
+	}
+	cluster, _ := New(srv.URL, "", "tok")
+	if v, err := cluster.ClusterVersion(); err != nil || v != "" {
+		t.Errorf("cluster context: %q, %v", v, err)
+	}
+	if n := hitCount(hits, envVersionURL); n != 1 {
+		t.Errorf("environment endpoint asked %d times, want 1 (by the environment context only)", n)
 	}
 }

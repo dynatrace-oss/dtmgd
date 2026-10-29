@@ -2,6 +2,8 @@ package client
 
 import (
 	"reflect"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
@@ -138,5 +140,57 @@ func TestResolveContextsResultsAndErrors(t *testing.T) {
 	// An all-separator spec yields nil, not an empty slice.
 	if got, _ := resolveContexts(testConfig(), ";"); got != nil {
 		t.Errorf("only separators: %#v, want nil", got)
+	}
+}
+
+// mixedConfig is testConfig plus a cluster context, "c", which has no env-id.
+func mixedConfig() *config.Config {
+	cfg := testConfig()
+	cfg.Contexts = append(cfg.Contexts, config.NamedContext{Name: "c", Context: config.Context{Host: "https://cluster.example.com", TokenRef: "t3"}})
+	cfg.Tokens = append(cfg.Tokens, config.NamedToken{Name: "t3", Token: "token3"})
+	return cfg
+}
+
+// TestAllEnvironmentsSkipsClusterContexts pins that ALL_ENVIRONMENTS means
+// environment contexts: a cluster context in the same config is never
+// called, rather than failing the fan-out with "env-id is required".
+func TestAllEnvironmentsSkipsClusterContexts(t *testing.T) {
+	var calls atomic.Int32
+	results, err := MultiRequest(mixedConfig(), "ALL_ENVIRONMENTS", 0, Options{}, func(c *Client) (interface{}, error) {
+		calls.Add(1)
+		if c.ClusterScoped() {
+			t.Error("called with a cluster-scoped client")
+		}
+		return nil, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, r := range results {
+		names = append(names, r.Name)
+	}
+	if !reflect.DeepEqual(names, []string{"prod", "staging"}) || calls.Load() != 2 {
+		t.Errorf("results %v, calls %d", names, calls.Load())
+	}
+}
+
+// TestAllEnvironmentsOnlyClusterContexts pins the error for a config with no
+// environment context to fan out to.
+func TestAllEnvironmentsOnlyClusterContexts(t *testing.T) {
+	cfg := mixedConfig()
+	cfg.Contexts = cfg.Contexts[2:]
+	_, err := resolveContexts(cfg, "ALL_ENVIRONMENTS")
+	if err == nil || !strings.Contains(err.Error(), "no environment contexts configured") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// TestNamedClusterContextInEnvList pins that naming a cluster context in an
+// --env list is an error that says why, not a fan-out failure.
+func TestNamedClusterContextInEnvList(t *testing.T) {
+	_, err := MultiRequest(mixedConfig(), "prod;c", 0, Options{}, func(*Client) (interface{}, error) { return nil, nil })
+	if err == nil || !strings.Contains(err.Error(), `"c" is a cluster context`) {
+		t.Errorf("err = %v", err)
 	}
 }

@@ -39,18 +39,26 @@ type NamedContext struct {
 	Context Context `yaml:"context"`
 }
 
-// Context holds the connection information for one Dynatrace Managed environment.
+// Context holds the connection information for one Dynatrace Managed
+// environment or, without an env-id, for a cluster's Cluster Management API.
 type Context struct {
 	// Host is the base URL of the Dynatrace Managed cluster, e.g. https://managed.company.com
 	Host string `yaml:"host"`
-	// EnvID is the environment identifier, e.g. "abc12345"
-	EnvID string `yaml:"env-id"`
+	// EnvID is the environment identifier, e.g. "abc12345". Without one, the
+	// context is a cluster context (see IsCluster).
+	EnvID string `yaml:"env-id,omitempty"`
 	// TokenRef is the name of the token entry in the Tokens list (or OS keyring).
 	TokenRef      string `yaml:"token-ref"`
 	Description   string `yaml:"description,omitempty"`
 	HTTPProxyURL  string `yaml:"http-proxy,omitempty"`
 	HTTPSProxyURL string `yaml:"https-proxy,omitempty"`
 }
+
+// IsCluster reports whether c is a cluster context: one with no env-id, for
+// the Cluster Management API rather than one environment's API. It looks at
+// env-id as written, before ${VAR} expansion, so an env-id that is a variable
+// reference makes an environment context even while the variable is unset.
+func (c Context) IsCluster() bool { return c.EnvID == "" }
 
 // NamedToken holds a named API token.
 type NamedToken struct {

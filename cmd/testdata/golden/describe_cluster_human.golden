@@ -1,0 +1,7 @@
+== exit code: 0
+== stdout
+Name:      test-cluster
+UUID:      00000000-0000-0000-0000-000000000001
+Version:   1.328.5.20250901-090000 (mixed: 1.330.18.20251017-120000 on 2 nodes, 1.328.5.20250901-090000 on 1 node)
+Nodes:     3 (2 RUNNING, 1 OFFLINE)
+== stderr

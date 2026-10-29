@@ -22,6 +22,10 @@ const (
 	scopeSLORead              = "slo.read"
 	scopeSecurityProblemsRead = "securityProblems.read"
 	scopeDataExport           = "DataExport"
+
+	// scopeServiceProviderAPI is the Cluster API's scope, held by a cluster
+	// context's token (one created in the Cluster Management Console).
+	scopeServiceProviderAPI = "ServiceProviderAPI"
 )
 
 // scopesPlaceholder in a command's Long help is replaced with the full scope
@@ -30,8 +34,16 @@ const scopesPlaceholder = "%SCOPES%"
 
 // fillScopeHelp replaces scopesPlaceholder in every command's help with the
 // scopes declared under root, so help text cannot drift from the commands.
+// The list is an environment token's: the Cluster API's scope belongs to a
+// cluster context's token, and set-context describes it separately.
 func fillScopeHelp(root *cobra.Command) {
-	list := strings.Join(allScopes(root), ", ")
+	var envScopes []string
+	for _, s := range allScopes(root) {
+		if s != scopeServiceProviderAPI {
+			envScopes = append(envScopes, s)
+		}
+	}
+	list := strings.Join(envScopes, ", ")
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
 		c.Long = strings.ReplaceAll(c.Long, scopesPlaceholder, list)

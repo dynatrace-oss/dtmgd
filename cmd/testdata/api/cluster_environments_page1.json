@@ -1,0 +1,9 @@
+{
+  "environments": [
+    {"id": "env-1", "name": "shop-prod", "state": "ENABLED", "trial": false, "creationDate": "2025-01-10T08:00:00.000Z", "tags": ["prod", "shop"], "quotas": null, "storage": null},
+    {"id": "env-2", "name": "shop-dev", "state": "ENABLED", "trial": false, "creationDate": "2025-03-02T12:30:00.000Z", "tags": [], "quotas": null, "storage": null}
+  ],
+  "totalCount": 3,
+  "pageSize": 2,
+  "nextPageKey": "k2"
+}

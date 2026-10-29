@@ -1,0 +1,13 @@
+== exit code: 0
+== stdout
+License:     Test license (PAID, ACTIVE)
+Key:         ****9876
+Account:     Test Account
+Cluster ID:  00000000-0000-0000-0000-000000000001
+Expires:     2027-06-30T23:59:59Z
+Version:     1.330.18.20251017-120000
+Billed at:   2026-10-29T06:00:00Z
+Host units:  42.5 of 100 (42.5%), USING_QUOTA
+DEM units:   52000 of 50000 (104%), USING_OVERAGE, overage 2000
+DDUs:        250000 of 1000000 (25%), USING_QUOTA
+== stderr

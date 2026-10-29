@@ -64,6 +64,13 @@ type fetchSpec struct {
 	Limit int    // --limit; 0 = none
 	List  bool   // a list: the agent default limit applies
 	Empty string // stderr note when Rows finds nothing
+
+	// NotFound is a cluster command's hint for a 404, which otherwise says
+	// that the context's host has no Cluster API (see runClusterFetch).
+	NotFound string
+	// WrongContext is a cluster command's extra suggestion when it is run
+	// against an environment context.
+	WrongContext string
 }
 
 // runFetch is the one path every get, describe and query command takes:
@@ -79,6 +86,9 @@ func (a *App) runFetch(s fetchSpec) error {
 		return err
 	}
 	if err := a.checkEnvVarContext(cfg); err != nil {
+		return err
+	}
+	if err := a.checkEnvironmentContexts(cfg, s); err != nil {
 		return err
 	}
 	limit := s.Limit
@@ -338,6 +348,15 @@ func showing(n, total int, resource string) string {
 // listKey. pageCap is the largest pageSize the endpoint accepts: the request
 // asks for min(limit, pageCap) items per page and pages until limit is met.
 func pagedFetch(path string, params map[string]string, listKey string, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
+	return pagedWith((*client.Client).GetV2Paged, path, params, listKey, pageCap, maxPages)
+}
+
+// pagedGetter is a paged GET of one API: (*client.Client).GetV2Paged or
+// GetClusterPaged.
+type pagedGetter func(c *client.Client, path string, params map[string]string, p client.Paging) (map[string]interface{}, error)
+
+// pagedWith is pagedFetch over get.
+func pagedWith(get pagedGetter, path string, params map[string]string, listKey string, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
 	return func(c *client.Client, limit int) (fetched, error) {
 		p := make(map[string]string, len(params)+1)
 		for k, v := range params {
@@ -348,7 +367,7 @@ func pagedFetch(path string, params map[string]string, listKey string, pageCap, 
 			pageSize = limit
 		}
 		p["pageSize"] = strconv.Itoa(pageSize)
-		body, err := c.GetV2Paged(path, p, client.Paging{MaxPages: maxPages, Limit: limit, ListKey: listKey})
+		body, err := get(c, path, p, client.Paging{MaxPages: maxPages, Limit: limit, ListKey: listKey})
 		if err != nil {
 			return fetched{}, err
 		}

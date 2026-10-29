@@ -33,8 +33,8 @@ const DefaultConcurrency = 10
 // MultiRequest fans out an API call to one or more environments in parallel.
 // envSpec can be:
 //   - "" (empty) → current context only
-//   - "ALL_ENVIRONMENTS" → all configured contexts
-//   - "prod;staging" → semicolon-separated context names
+//   - "ALL_ENVIRONMENTS" → every environment context (not cluster contexts)
+//   - "prod;staging" → semicolon-separated environment context names
 //
 // maxConcurrency caps simultaneous requests; values below 1 mean
 // DefaultConcurrency.
@@ -107,10 +107,7 @@ func resolveContexts(cfg *config.Config, envSpec string) ([]config.NamedContext,
 	}
 
 	if envSpec == "ALL_ENVIRONMENTS" {
-		if len(cfg.Contexts) == 0 {
-			return nil, fmt.Errorf("no contexts configured")
-		}
-		return cfg.Contexts, nil
+		return environmentContexts(cfg)
 	}
 
 	// Semicolon-separated names
@@ -125,9 +122,31 @@ func resolveContexts(cfg *config.Config, envSpec string) ([]config.NamedContext,
 		if err != nil {
 			return nil, fmt.Errorf("context %q not found. Available: %s", name, strings.Join(contextNames(cfg), ", "))
 		}
+		if nc.Context.IsCluster() {
+			return nil, fmt.Errorf("context %q is a cluster context (no env-id); --env selects environment contexts", name)
+		}
 		result = append(result, *nc)
 	}
 	return result, nil
+}
+
+// environmentContexts is what ALL_ENVIRONMENTS selects: every environment
+// context, in config order. Cluster contexts are not environments; fanned out
+// to, they used to fail the call with "env-id is required".
+func environmentContexts(cfg *config.Config) ([]config.NamedContext, error) {
+	if len(cfg.Contexts) == 0 {
+		return nil, fmt.Errorf("no contexts configured")
+	}
+	var envs []config.NamedContext
+	for _, nc := range cfg.Contexts {
+		if !nc.Context.IsCluster() {
+			envs = append(envs, nc)
+		}
+	}
+	if len(envs) == 0 {
+		return nil, fmt.Errorf("no environment contexts configured (cluster contexts are not part of ALL_ENVIRONMENTS)")
+	}
+	return envs, nil
 }
 
 // contextNames lists the names of cfg's contexts, in config order.

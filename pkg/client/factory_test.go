@@ -217,3 +217,38 @@ func TestProxyCredentialsAreRedacted(t *testing.T) {
 		}
 	})
 }
+
+// TestVerboseBodyDumpRedactsLicenseKey pins that -vv's response dump, which
+// prints bodies verbatim, does not print a license key: describe license
+// masks it in every output format, and -vv used to undo that on stderr.
+func TestVerboseBodyDumpRedactsLicenseKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"licenseKey" : "SECRET-KEY-1234","licenseType":"FULL"}`)
+	}))
+	defer srv.Close()
+	c, _ := New(srv.URL, "", "dt0c01.TEST")
+	c.SetVerbosity(2)
+	stderr := captureClientStderr(t, func() {
+		var out map[string]interface{}
+		if err := c.GetCluster("/cluster/v2/clusterLicense", nil, &out); err != nil {
+			t.Error(err)
+		}
+	})
+	if strings.Contains(stderr, "SECRET-KEY-1234") || !strings.Contains(stderr, `"licenseKey":"[REDACTED]"`) || !strings.Contains(stderr, `"licenseType":"FULL"`) {
+		t.Errorf("stderr:\n%s", stderr)
+	}
+}
+
+// TestNewForContextEmptyResolvedEnvID pins the error for an environment
+// context whose env-id is a ${VAR} reference set to "": it names the
+// variable's result, rather than calling the context a cluster context.
+func TestNewForContextEmptyResolvedEnvID(t *testing.T) {
+	t.Setenv("DTMGD_TEST_EMPTY_ENV_ID", "")
+	cfg := proxyConfig("", "https://h.example.com")
+	cfg.Contexts[0].Context.EnvID = "${DTMGD_TEST_EMPTY_ENV_ID}"
+	_, err := NewForContext(cfg, "a", Options{})
+	if err == nil || !strings.Contains(err.Error(), `env-id "${DTMGD_TEST_EMPTY_ENV_ID}" resolved to an empty value`) || strings.Contains(err.Error(), "cluster context") {
+		t.Errorf("err = %v", err)
+	}
+}

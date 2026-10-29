@@ -225,7 +225,7 @@ func (a *App) reportError(cmd *cobra.Command, err error) {
 	if errors.Is(err, errReported) {
 		return
 	}
-	hint := client.Diagnose(err)
+	hint := hintFor(err)
 	if scopes := requiredScopes(cmd); len(scopes) > 0 && isPermissionDenied(err) {
 		hint += "\n  This command needs the token scope(s): " + strings.Join(scopes, ", ") + "."
 	}
@@ -253,6 +253,35 @@ func (a *App) reportError(cmd *cobra.Command, err error) {
 			}
 		}
 	}
+}
+
+// hintError is an error with its own hint, which replaces the one
+// client.Diagnose would give (see hintFor). The cause stays reachable with
+// errors.As, so the exit code and the agent error code still follow it.
+type hintError struct {
+	err  error
+	hint string
+}
+
+func (e *hintError) Error() string { return e.err.Error() }
+func (e *hintError) Unwrap() error { return e.err }
+
+// withHint gives err the hint hint (nil stays nil).
+func withHint(err error, hint string) error {
+	if err == nil {
+		return nil
+	}
+	return &hintError{err: err, hint: hint}
+}
+
+// hintFor is what to do about err: the hint of the outermost hintError in
+// its chain, otherwise client.Diagnose's.
+func hintFor(err error) string {
+	var h *hintError
+	if errors.As(err, &h) {
+		return h.hint
+	}
+	return client.Diagnose(err)
 }
 
 // errorDetail classifies err for the agent envelope, using dtctl's codes so

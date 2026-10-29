@@ -25,14 +25,24 @@ Supported resources:
   slo <id>                  SLO details with evaluation data
   security-problem <id>     Security vulnerability details with CVE info
 
+Cluster resources (need a cluster context: one without env-id):
+  backup                    The cluster's backup configuration
+  cluster                   The cluster's name, version and node states
+  environment <id>          An environment's properties, quotas and storage
+  license                   The cluster license and its billed usage
+
 Detail commands print a readable summary (or YAML) by default; use -o json for the raw API object.`,
 		RunE: requireSubcommand,
 	}
 	cmd.AddCommand(
+		newDescribeBackupCmd(a),
+		newDescribeClusterCmd(a),
 		newDescribeEntityCmd(a),
 		newDescribeEntityTypeCmd(a),
 		newDescribeEntityRelationsCmd(a),
+		newDescribeEnvironmentCmd(a),
 		newDescribeEventCmd(a),
+		newDescribeLicenseCmd(a),
 		newDescribeMetricCmd(a),
 		newDescribeProblemCmd(a),
 		newDescribeSecurityProblemCmd(a),

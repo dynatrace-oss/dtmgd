@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "pauseBackups": false,
+  "storagePath": "/backup/test",
+  "datacenter": "dc-1",
+  "cassandraScheduledTime": 2,
+  "bandwidthLimitMbits": 200,
+  "includeTsMetricData": true,
+  "includeRumData": false,
+  "includeLm20Data": true,
+  "maxEsSnapshotsToClean": 5
+}
