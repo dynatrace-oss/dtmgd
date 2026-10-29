@@ -197,10 +197,10 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 
 ### Change the keyring only after the config save succeeds
 - **Context**: `config delete-credentials`, `delete-context --delete-credentials` and `config import` (when a `${VAR}` reference replaces a keyring token) deleted the keyring entry first and saved the config afterwards. When the save failed (for example, a read-only config), the token was gone while the config still pointed at it.
-- **Insight**: `Config.DeleteToken` only edits the in-memory config and returns `deleteFromKeyring func() error`; callers save first and run it only after the save succeeds. Tests reproduce a failing save with `readOnlyConfig` (`cmd/config_housekeeping_test.go`), which makes the file and its directory read-only. That defeats `writeFileAtomic` and its in-place fallback alike; skip on Windows and as root.
+- **Insight**: `Config.DeleteToken` only edits the in-memory config and returns `deleteFromKeyring func() error`; callers save first and run it only after the save succeeds. Writes go the other way round: `Config.SetTokenUndoable` stores the token in the keyring at once and returns `undo`, which puts the previous keyring value back (or removes the entry); `set-credentials` and `config import` run it when the save fails (v0.2.1). Without it, a failed `import --overwrite` left an old context pointing at its old host with the new host's token. Tests reproduce a failing save with `readOnlyConfig` (`cmd/config_housekeeping_test.go`), which makes the file and its directory read-only. That defeats `writeFileAtomic` and its in-place fallback alike; skip on Windows and as root.
 - **When it applies**: Any command that changes both the keyring and the config file
 - **Date**: 2026-10-29
-- **Ref**: Phase 3 (2/2) MCP parity
+- **Ref**: Phase 3 (2/2) MCP parity (#53); v0.2.1
 
 ### Parameters the MCP server and dtmgd send that the API does not document
 - **Context**: Comparing the Dynatrace Managed MCP server (2.0.0) with dtmgd request by request for the Phase 3 parity table, against `env2temp.json`.
