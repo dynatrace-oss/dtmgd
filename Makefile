@@ -30,7 +30,7 @@ lint: vet fmt
 
 # govulncheck is pinned and checksum-locked in tools/go.mod and go.sum.
 vulncheck:
-	go -C tools build -o $(CURDIR)/bin/govulncheck golang.org/x/vuln/cmd/govulncheck
+	go -C tools build -o "$(CURDIR)/bin/govulncheck" golang.org/x/vuln/cmd/govulncheck
 	./bin/govulncheck ./...
 
 release-dry:
