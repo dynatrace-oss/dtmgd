@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"strings"
@@ -169,11 +170,13 @@ func rewriteNegativeArgs(args []string) []string {
 	return out
 }
 
-// Execute runs the CLI.
-func Execute() {
-	if len(os.Args) > 1 {
-		os.Args = append(os.Args[:1], rewriteNegativeArgs(os.Args[1:])...)
-	}
+// Run executes dtmgd with args (without the program name), writing to stdout
+// and stderr, and returns the process exit code. main passes os.Args[1:];
+// tests pass their own arguments and writers.
+func Run(args []string, stdout, stderr io.Writer) int {
+	rootCmd.SetArgs(rewriteNegativeArgs(args))
+	rootCmd.SetOut(stdout)
+	rootCmd.SetErr(stderr)
 	if err := rootCmd.Execute(); err != nil {
 		err = client.WrapWithDiagnosis(err)
 		if agentMode() {
@@ -181,8 +184,9 @@ func Execute() {
 		} else {
 			output.PrintHumanError("%s", err)
 		}
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func init() {

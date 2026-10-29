@@ -1,0 +1,16 @@
+{
+  "totalCount": 2,
+  "sliceSize": 2,
+  "results": [
+    {
+      "timestamp": 1730000000000,
+      "status": "ERROR",
+      "content": "error: payment failed"
+    },
+    {
+      "timestamp": 1730000060000,
+      "status": "WARN",
+      "content": "retrying payment"
+    }
+  ]
+}

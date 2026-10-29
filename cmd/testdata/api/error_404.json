@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": 404,
+    "message": "The requested entity does not exist"
+  }
+}
