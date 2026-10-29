@@ -15,29 +15,55 @@ import (
 // displayIDRegexp matches security problem display IDs of the form S-NNN (case-insensitive).
 var displayIDRegexp = regexp.MustCompile(`(?i)^s-\d+$`)
 
-// resolveSecurityProblemID converts a display ID (e.g. "S-281") to the internal UUID
-// by listing security problems. If id is already a UUID or cannot be resolved, id is
-// returned unchanged so the API call can fail with a meaningful 404.
-func resolveSecurityProblemID(c *client.Client, id string) string {
+// resolveLookupPageSize is the page size of a display-ID lookup: the most
+// /securityProblems returns per page, so a lookup takes as few requests as
+// possible.
+const resolveLookupPageSize = "500"
+
+// resolveSecurityProblemID converts a display ID (e.g. "S-281") to the internal
+// ID by listing the environment's security problems, stopping at the first
+// page that has it; display IDs are per environment, so c must be the
+// environment's own client. Any other id is returned unchanged, without a
+// request. A failed listing returns its error, and a display ID no security
+// problem has returns a not-found error (exit code 4).
+func resolveSecurityProblemID(c *client.Client, id string, verbose int, errw io.Writer) (string, error) {
 	if !displayIDRegexp.MatchString(id) {
-		return id
+		return id, nil
 	}
-	raw, err := c.GetV2Paged("/securityProblems", map[string]string{"pageSize": "200"}, client.Paging{MaxPages: 0})
-	if err != nil {
-		return id
+	if verbose > 0 {
+		_, _ = fmt.Fprintf(errw, "Resolving %s by listing security problems…\n", id)
 	}
-	var resp SecurityProblemsResponse
-	if err := client.DecodePaged(raw, &resp); err != nil {
-		return id
-	}
-	upperID := strings.ToUpper(id)
-	for _, sp := range resp.SecurityProblems {
-		if strings.ToUpper(sp.DisplayID) == upperID {
-			return sp.SecurityProblemID
+	// The first request sets the page size; later ones send only
+	// nextPageKey, as the API requires.
+	params := map[string]string{"pageSize": resolveLookupPageSize}
+	for {
+		var page struct {
+			SecurityProblems []SecurityProblemEntry `json:"securityProblems"`
+			NextPageKey      string                 `json:"nextPageKey"`
 		}
+		if err := c.GetV2("/securityProblems", params, &page); err != nil {
+			return "", err
+		}
+		for _, sp := range page.SecurityProblems {
+			if strings.EqualFold(sp.DisplayID, id) {
+				return sp.SecurityProblemID, nil
+			}
+		}
+		if page.NextPageKey == "" {
+			return "", &lookupNotFoundError{msg: fmt.Sprintf("security problem %s not found", id)}
+		}
+		params = map[string]string{"nextPageKey": page.NextPageKey}
 	}
-	return id
 }
+
+// lookupNotFoundError is a display-ID lookup that found nothing. It unwraps
+// to an API 404, so exit codes (4), agent error codes (not_found) and hints
+// treat it as the API's own 404 for an unknown ID, while the message says
+// what was looked for rather than claiming the API returned 404.
+type lookupNotFoundError struct{ msg string }
+
+func (e *lookupNotFoundError) Error() string { return e.msg }
+func (e *lookupNotFoundError) Unwrap() error { return &client.ErrAPI{StatusCode: 404} }
 
 // SecurityProblemDetail maps the /securityProblems/{id} API response.
 type SecurityProblemDetail struct {
@@ -157,7 +183,11 @@ or the internal UUID. Display IDs are resolved automatically.`,
 				// A display ID (S-NNN) is resolved with each environment's own
 				// client: display IDs are local to an environment.
 				Fetch: func(c *client.Client, limit int) (fetched, error) {
-					path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolveSecurityProblemID(c, args[0])))
+					id, err := resolveSecurityProblemID(c, args[0], a.Opts.Verbose, a.Err)
+					if err != nil {
+						return fetched{}, err
+					}
+					path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(id))
 					return describeFetch(path, params)(c, limit)
 				},
 				Human: detailHuman(printSecurityProblemDetail),
