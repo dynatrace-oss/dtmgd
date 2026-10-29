@@ -757,3 +757,14 @@ func TestSaveToInPlaceShorterContentLeavesNoTail(t *testing.T) {
 		t.Errorf("file after save:\n%q\nwant:\n%q", got, want)
 	}
 }
+
+// TestIsCluster pins how a context's kind is decided: by the env-id field as
+// written in the file, before ${VAR} expansion, so a context whose env-id is a
+// variable reference is an environment context even while it is unset.
+func TestIsCluster(t *testing.T) {
+	for envID, want := range map[string]bool{"": true, "abc12345": false, "${DT_ENV_ID}": false} {
+		if got := (Context{EnvID: envID}).IsCluster(); got != want {
+			t.Errorf("IsCluster(%q) = %v, want %v", envID, got, want)
+		}
+	}
+}

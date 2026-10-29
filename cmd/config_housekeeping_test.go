@@ -218,7 +218,7 @@ func TestDeleteCredentialsSavesBeforeKeyring(t *testing.T) {
 // doctor (which checks every context) still work.
 func TestStaleDTMGDContextOnlyFailsAPICommands(t *testing.T) {
 	api := newFakeAPI(t, map[string]route{
-		clusterVersionPath: {Body: `{"version":"1.330.0"}`},
+		clusterVersionPath: {Body: nodeList("1.330.0")},
 		envVersionPath:     {Body: `{"version":"1.330.0"}`},
 	})
 	cfg := withFakeEnvs(t, fakeEnv{"a", api})

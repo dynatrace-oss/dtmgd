@@ -3,6 +3,8 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/go-resty/resty/v2"
 )
 
 // Paging controls how far GetV2Paged follows nextPageKey.
@@ -26,6 +28,23 @@ type Paging struct {
 // that is how callers, and JSON consumers, can tell the result is truncated.
 // totalCount stays as the first page reported it.
 func (c *Client) GetV2Paged(path string, params map[string]string, p Paging) (map[string]interface{}, error) {
+	if c.ClusterScoped() {
+		return nil, ErrClusterScoped
+	}
+	return c.getPaged(c.http, "/v2"+path, params, p)
+}
+
+// GetClusterPaged is GetV2Paged for the Cluster API: path is relative to
+// {host}/api, e.g. "/cluster/v2/environments". The Cluster API pages the same
+// way, asking for a later page with nextPageKey alone (checked live on
+// 2026-10-29).
+func (c *Client) GetClusterPaged(path string, params map[string]string, p Paging) (map[string]interface{}, error) {
+	return c.getPaged(c.cluster, path, params, p)
+}
+
+// getPaged is the page loop of GetV2Paged and GetClusterPaged: rc and
+// fullPath (relative to rc's base URL) select the API.
+func (c *Client) getPaged(rc *resty.Client, fullPath string, params map[string]string, p Paging) (map[string]interface{}, error) {
 	if params == nil {
 		params = map[string]string{}
 	}
@@ -33,7 +52,7 @@ func (c *Client) GetV2Paged(path string, params map[string]string, p Paging) (ma
 	var merged map[string]interface{}
 	npk := ""
 	for page := 1; ; page++ {
-		parsed, err := c.getV2Object(path, params)
+		parsed, err := c.getObject(rc, fullPath, params)
 		if err != nil {
 			return nil, err
 		}
@@ -89,10 +108,10 @@ func (p Paging) truncate(m map[string]interface{}) {
 	}
 }
 
-// getV2Object performs a single GET and parses the response body as a JSON
+// getObject performs a single GET and parses the response body as a JSON
 // object (nil for a JSON null).
-func (c *Client) getV2Object(path string, params map[string]string) (map[string]interface{}, error) {
-	raw, err := c.getV2Raw(path, params)
+func (c *Client) getObject(rc *resty.Client, fullPath string, params map[string]string) (map[string]interface{}, error) {
+	raw, err := c.getRaw(rc, fullPath, params)
 	if err != nil {
 		return nil, err
 	}
@@ -103,13 +122,13 @@ func (c *Client) getV2Object(path string, params map[string]string) (map[string]
 	return parsed, nil
 }
 
-// getV2Raw performs a single GET and returns the raw response body.
-func (c *Client) getV2Raw(path string, params map[string]string) ([]byte, error) {
-	req := c.http.R()
+// getRaw performs a single GET and returns the raw response body.
+func (c *Client) getRaw(rc *resty.Client, fullPath string, params map[string]string) ([]byte, error) {
+	req := rc.R()
 	for k, v := range params {
 		req.SetQueryParam(k, v)
 	}
-	resp, err := req.Get("/v2" + path)
+	resp, err := req.Get(fullPath)
 	if err != nil {
 		return nil, c.requestError("request", err)
 	}

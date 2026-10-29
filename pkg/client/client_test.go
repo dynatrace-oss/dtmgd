@@ -17,10 +17,6 @@ func TestNewErrors(t *testing.T) {
 	if err == nil {
 		t.Error("empty host should error")
 	}
-	_, err = New("http://host", "", "tok")
-	if err == nil {
-		t.Error("empty envID should error")
-	}
 	_, err = New("http://host", "env1", "")
 	if err == nil {
 		t.Error("empty token should error")
@@ -265,7 +261,7 @@ func TestGetClusterError(t *testing.T) {
 func TestClusterVersionFromClusterAPI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"version": "1.300.0"})
+		_, _ = io.WriteString(w, `[{"id":1,"buildVersion":"1.300.0"}]`)
 	}))
 	defer srv.Close()
 

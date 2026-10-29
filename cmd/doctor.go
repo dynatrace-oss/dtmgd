@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -199,7 +198,7 @@ func isAuthFailure(err error) bool {
 
 // judgeVersion is the status and detail for a cluster reporting version v.
 func judgeVersion(v string) (status, detail string) {
-	parts, ok := parseClusterVersion(v)
+	parts, ok := client.ParseClusterVersion(v)
 	if !ok {
 		return doctorWarn, fmt.Sprintf("cluster version %q not recognised", v)
 	}
@@ -207,24 +206,6 @@ func judgeVersion(v string) (status, detail string) {
 		return doctorWarn, detailVersionTooOld
 	}
 	return doctorOK, ""
-}
-
-// parseClusterVersion returns the first three numeric parts of a cluster
-// version such as "1.330.18.20251017-123456".
-func parseClusterVersion(v string) ([3]int, bool) {
-	var out [3]int
-	parts := strings.SplitN(v, ".", 4)
-	if len(parts) < 3 {
-		return out, false
-	}
-	for i := range out {
-		n, err := strconv.Atoi(parts[i])
-		if err != nil || n < 0 {
-			return out, false
-		}
-		out[i] = n
-	}
-	return out, true
 }
 
 // failDetail is err followed by the first line of its hint, if it has one. A
