@@ -265,22 +265,12 @@ func (a *App) saveConfig(cfg *config.Config) error {
 
 // newClient creates an API client from the current config.
 func (a *App) newClient(cfg *config.Config) (*client.Client, error) {
-	c, err := client.NewFromConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-	c.SetVerbosity(a.Opts.Verbose)
-	return c, nil
+	return client.NewForContext(cfg, cfg.CurrentContext, a.clientOptions())
 }
 
-// newClientWithHostEnv creates an API client for a specific host/env/token.
-func (a *App) newClientWithHostEnv(host, envID, token string) (*client.Client, error) {
-	c, err := client.New(host, envID, token)
-	if err != nil {
-		return nil, err
-	}
-	c.SetVerbosity(a.Opts.Verbose)
-	return c, nil
+// clientOptions are the client settings this invocation's flags ask for.
+func (a *App) clientOptions() client.Options {
+	return client.Options{Verbosity: a.Opts.Verbose}
 }
 
 // printer returns a Printer writing to a.Out, chosen by the --output flag and
@@ -344,7 +334,7 @@ func (a *App) multiExec(cfg *config.Config, apiCall func(c *client.Client) (inte
 		}
 		return apiCall(c)
 	}
-	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, apiCall)
+	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, a.clientOptions(), apiCall)
 	if err != nil {
 		return nil, err
 	}

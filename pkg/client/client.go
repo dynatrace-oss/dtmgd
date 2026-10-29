@@ -3,14 +3,17 @@ package client
 import (
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/sirupsen/logrus"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 	"github.com/dynatrace-oss/dtmgd/pkg/version"
@@ -29,26 +32,48 @@ type Client struct {
 	apiBaseURL   string // {host}/e/{env-id}/api
 	clusterURL   string // {host}/api
 	dashboardURL string // {host}/e/{env-id}
-	token        string
 	// proxyURL is the proxy actually in effect, retained so that it can be
 	// named in verbose output and in connection errors. Without it, "proxy
 	// configured and working", "proxy configured and ignored", and "no proxy"
 	// are indistinguishable from anything dtmgd prints.
 	proxyURL string
-	logger   *logrus.Logger
 }
 
-// NewFromConfig creates a Client from the current config context.
+// Options are the per-invocation settings every client is built with.
+type Options struct {
+	// Verbosity is the -v count: 1 logs each request, 2+ adds headers and
+	// bodies.
+	Verbosity int
+}
+
+// NewFromConfig creates a Client for the config's current context.
 func NewFromConfig(cfg *config.Config) (*Client, error) {
-	ctx, err := cfg.CurrentContextObj()
+	return NewForContext(cfg, cfg.CurrentContext, Options{})
+}
+
+// NewForContext creates a Client for the named context: it resolves the
+// context, looks up its token, and applies its proxy and o.
+//
+// It is the one place clients are built. Single-environment commands,
+// multi-environment fan-out and `get environments` used to each assemble
+// their own, and drifted: fan-out dropped -v, and `get environments` dropped
+// the proxy.
+func NewForContext(cfg *config.Config, name string, o Options) (*Client, error) {
+	if name == "" {
+		return nil, fmt.Errorf("no current context set. Run 'dtmgd config set-context' to configure one")
+	}
+	nc, err := cfg.GetContext(name)
 	if err != nil {
+		if name == cfg.CurrentContext {
+			return nil, fmt.Errorf("current context %q not found in config", name)
+		}
 		return nil, err
 	}
-	resolved, err := ctx.Resolve()
+	resolved, err := nc.Context.Resolve()
 	if err != nil {
 		var uerr *config.UnresolvedVarsError
 		if errors.As(err, &uerr) {
-			return nil, uerr.InContext(cfg.CurrentContext)
+			return nil, uerr.InContext(name)
 		}
 		return nil, err
 	}
@@ -61,6 +86,7 @@ func NewFromConfig(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 	c.SetProxy(resolved.HTTPProxyURL, resolved.HTTPSProxyURL)
+	c.SetVerbosity(o.Verbosity)
 	return c, nil
 }
 
@@ -83,17 +109,12 @@ func New(host, envID, token string) (*Client, error) {
 	clusterURL := fmt.Sprintf("%s/api", host)
 	dashboardURL := fmt.Sprintf("%s/e/%s", host, envID)
 
-	logger := logrus.New()
-	logger.SetLevel(logrus.WarnLevel)
-
 	return &Client{
-		http:         newRestyClient(apiBaseURL, token, 60*time.Second),
-		cluster:      newRestyClient(clusterURL, token, 30*time.Second),
+		http:         newRestyClient(apiBaseURL, token, requestTimeout),
+		cluster:      newRestyClient(clusterURL, token, requestTimeout),
 		apiBaseURL:   apiBaseURL,
 		clusterURL:   clusterURL,
 		dashboardURL: dashboardURL,
-		token:        token,
-		logger:       logger,
 	}, nil
 }
 
@@ -104,18 +125,42 @@ func New(host, envID, token string) (*Client, error) {
 // cluster client was previously constructed inline in GetCluster with none of
 // the retry, User-Agent or proxy configuration, which made `get environments`
 // behave unlike every other command.
+//
+// The retry budget bounds the time to fail: at most 3 attempts of
+// requestTimeout each, with waits of at most 5s between them, and failures
+// that cannot heal on retry (see isRetryable) fail on the first attempt.
 func newRestyClient(baseURL, token string, timeout time.Duration) *resty.Client {
 	return resty.New().
 		SetBaseURL(baseURL).
 		SetHeader("Authorization", fmt.Sprintf("Api-Token %s", token)).
 		SetHeader("Content-Type", "application/json").
 		SetHeader("User-Agent", fmt.Sprintf("dtmgd/%s", version.Version)).
-		SetRetryCount(3).
+		SetRetryCount(2).
 		SetRetryWaitTime(1 * time.Second).
-		SetRetryMaxWaitTime(10 * time.Second).
+		SetRetryMaxWaitTime(5 * time.Second).
 		AddRetryCondition(isRetryable).
+		SetLogger(quietLogger{}).
 		SetTimeout(timeout)
 }
+
+// requestTimeout bounds a single attempt.
+const requestTimeout = 30 * time.Second
+
+// quietLogger discards resty's own log lines ("WARN RESTY …"), which used to
+// reach stderr on every retried request regardless of -v. SetVerbosity
+// replaces it.
+type quietLogger struct{}
+
+func (quietLogger) Errorf(string, ...interface{}) {}
+func (quietLogger) Warnf(string, ...interface{})  {}
+func (quietLogger) Debugf(string, ...interface{}) {}
+
+// stderrLogger is resty's logger under -v.
+type stderrLogger struct{ l *log.Logger }
+
+func (s stderrLogger) Errorf(f string, v ...interface{}) { s.l.Printf("ERROR "+f, v...) }
+func (s stderrLogger) Warnf(f string, v ...interface{})  { s.l.Printf("WARN "+f, v...) }
+func (s stderrLogger) Debugf(f string, v ...interface{}) { s.l.Printf("DEBUG "+f, v...) }
 
 // clients returns every resty client this Client owns, so configuration
 // applied after construction reaches all of them.
@@ -123,10 +168,19 @@ func (c *Client) clients() []*resty.Client {
 	return []*resty.Client{c.http, c.cluster}
 }
 
-// isRetryable decides whether a failed request should be retried.
+// isRetryable decides whether a failed request should be retried: rate limits
+// and server errors, and transport failures that can heal on their own
+// (timeouts, a reset or truncated connection). A refused connection, a name
+// that does not resolve, a TLS failure or a proxy error will fail the same way
+// again, so they are not retried; retrying them made a dead host take minutes
+// to report.
 func isRetryable(r *resty.Response, err error) bool {
 	if err != nil {
-		return true
+		var nerr net.Error
+		if errors.As(err, &nerr) && nerr.Timeout() {
+			return true
+		}
+		return errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.ErrUnexpectedEOF)
 	}
 	sc := r.StatusCode()
 	return sc == 429 || sc >= 500
@@ -138,13 +192,8 @@ func (c *Client) SetVerbosity(level int) {
 	if level <= 0 {
 		return
 	}
-	c.logger.SetLevel(logrus.DebugLevel)
-	c.logger.SetFormatter(&logrus.TextFormatter{
-		DisableTimestamp:       true,
-		DisableLevelTruncation: true,
-	})
-
 	for _, rc := range c.clients() {
+		rc.SetLogger(stderrLogger{log.New(os.Stderr, "resty: ", 0)})
 		rc.SetPreRequestHook(func(_ *resty.Client, req *http.Request) error {
 			// Naming the proxy on the request line is what makes an active
 			// proxy distinguishable from none at all. Previously no verbosity

@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
@@ -51,15 +52,14 @@ Fetches the cluster version to confirm that the API token and network path are w
 				item.Host = resolved.Host
 				item.EnvID = resolved.EnvID
 
-				token, tokenErr := cfg.GetToken(resolved.TokenRef)
-				if tokenErr != nil {
+				if _, tokenErr := cfg.GetToken(resolved.TokenRef); tokenErr != nil {
 					item.Version = "—"
 					item.Status = fmt.Sprintf("no token: %v", tokenErr)
 					items = append(items, item)
 					continue
 				}
 
-				c, clientErr := a.newClientWithHostEnv(resolved.Host, resolved.EnvID, token)
+				c, clientErr := client.NewForContext(cfg, nc.Name, a.clientOptions())
 				if clientErr != nil {
 					item.Version = "—"
 					item.Status = fmt.Sprintf("config error: %v", clientErr)

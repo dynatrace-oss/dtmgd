@@ -40,7 +40,7 @@ const DefaultConcurrency = 10
 // DefaultConcurrency.
 //
 // The apiCall function receives a Client and should perform the request.
-func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, apiCall func(c *Client) (interface{}, error)) ([]EnvResult, error) {
+func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, o Options, apiCall func(c *Client) (interface{}, error)) ([]EnvResult, error) {
 	contexts, err := resolveContexts(cfg, envSpec)
 	if err != nil {
 		return nil, err
@@ -74,27 +74,12 @@ func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, apiCal
 			// ambiguity about which context failed. With multiple
 			// contexts, EnvResult.Name (not this error text) identifies
 			// the context: UnwrapSingle keys the merged result map by it.
-			resolved, resolveErr := nc.Context.Resolve()
-			if resolveErr != nil {
-				r.Error = resolveErr
+			c, err := NewForContext(cfg, nc.Name, o)
+			if err != nil {
+				r.Error = err
 				results[idx] = r
 				return
 			}
-
-			token, tokenErr := cfg.GetToken(resolved.TokenRef)
-			if tokenErr != nil {
-				r.Error = fmt.Errorf("token error: %w", tokenErr)
-				results[idx] = r
-				return
-			}
-
-			c, clientErr := New(resolved.Host, resolved.EnvID, token)
-			if clientErr != nil {
-				r.Error = fmt.Errorf("client error: %w", clientErr)
-				results[idx] = r
-				return
-			}
-			c.SetProxy(resolved.HTTPProxyURL, resolved.HTTPSProxyURL)
 
 			data, callErr := apiCall(c)
 			r.Data = data

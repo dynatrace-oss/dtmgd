@@ -63,7 +63,7 @@ func (c *Client) getV2Raw(path string, params map[string]string) ([]byte, error)
 	}
 	resp, err := req.Get("/v2" + path)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, c.requestError("request", err)
 	}
 	if resp.IsError() {
 		return nil, APIError(resp.StatusCode(), resp.String())
