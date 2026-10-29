@@ -180,6 +180,16 @@ type shapeRow struct {
 	Note   string `table:"NOTE,extra"`
 }
 
+// assertPrintList checks that p, writing to a buffer, prints v as want.
+func assertPrintList(t *testing.T, label string, p TablePrinter, v interface{}, want string) {
+	t.Helper()
+	var buf bytes.Buffer
+	p.w = &buf
+	if err := p.PrintList(v); err != nil || buf.String() != want {
+		t.Errorf("%s: err %v\n--- want\n%s--- got\n%s", label, err, want, buf.String())
+	}
+}
+
 // TestTablePrinterExactOutput pins PrintList's exact output for every shape
 // it accepts: a slice of structs or of pointers to them, a pointer to such a
 // slice, a struct or a pointer to one. Columns follow the struct's field
@@ -208,39 +218,23 @@ func TestTablePrinterExactOutput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		for shape, v := range shapes {
-			var buf bytes.Buffer
-			p := tc.p
-			p.w = &buf
-			if err := p.PrintList(v); err != nil || buf.String() != tc.want {
-				t.Errorf("%s, %s: err %v\n--- want\n%s--- got\n%s", tc.name, shape, err, tc.want, buf.String())
-			}
+			assertPrintList(t, tc.name+", "+shape, tc.p, v, tc.want)
 		}
 		lines := strings.SplitAfter(tc.want, "\n")
-		wantOne := lines[0] + lines[1]
 		for shape, v := range single {
-			var buf bytes.Buffer
-			p := tc.p
-			p.w = &buf
-			if err := p.PrintList(v); err != nil || buf.String() != wantOne {
-				t.Errorf("%s, %s: err %v\n--- want\n%s--- got\n%s", tc.name, shape, err, wantOne, buf.String())
-			}
+			assertPrintList(t, tc.name+", "+shape, tc.p, v, lines[0]+lines[1])
 		}
 	}
 
 	for shape, v := range map[string]interface{}{"empty slice of pointers": []*shapeRow{}, "pointer to empty slice": &[]shapeRow{}} {
-		var buf bytes.Buffer
-		if err := (&TablePrinter{w: &buf}).PrintList(v); err != nil || buf.String() != "No items found.\n" {
-			t.Errorf("%s: err %v, output %q", shape, err, buf.String())
-		}
+		assertPrintList(t, shape, TablePrinter{}, v, "No items found.\n")
 	}
 
 	for shape, v := range map[string]interface{}{"no column matches": shapes["slice of pointers"], "pointer to scalars": &[]string{"x"}} {
-		var want, got bytes.Buffer
+		var want bytes.Buffer
 		if err := (&YAMLPrinter{w: &want}).Print(v); err != nil {
 			t.Fatal(err)
 		}
-		if err := (&TablePrinter{w: &got, columns: []string{"NONE"}}).PrintList(v); err != nil || got.String() != want.String() {
-			t.Errorf("%s: err %v\n--- want\n%s--- got\n%s", shape, err, want.String(), got.String())
-		}
+		assertPrintList(t, shape, TablePrinter{columns: []string{"NONE"}}, v, want.String())
 	}
 }

@@ -163,6 +163,38 @@ func mkSkillDir(t *testing.T, dir string) {
 	}
 }
 
+// uninstallFixture creates, under a fresh base and home, the skill locations
+// of paths that a TestUninstallLocations case says exist. It returns the base,
+// the global location, and what Uninstall(installed, base) should report
+// removing: the project location, then the global one if installed has one.
+func uninstallFixture(t *testing.T, paths, installed Agent, project, global bool) (base, globalDir string, want []string) {
+	t.Helper()
+	base, home := t.TempDir(), fakeHome(t)
+	projectDir := filepath.Join(base, paths.ProjectPath)
+	globalDir = filepath.Join(home, paths.GlobalPath)
+	if project {
+		mkSkillDir(t, projectDir)
+		want = append(want, projectDir)
+	}
+	if global {
+		mkSkillDir(t, globalDir)
+		if installed.GlobalPath != "" {
+			want = append(want, globalDir)
+		}
+	}
+	return base, globalDir, want
+}
+
+// assertGone checks that every dir in dirs no longer exists.
+func assertGone(t *testing.T, label string, dirs []string) {
+	t.Helper()
+	for _, dir := range dirs {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("%s: %s still exists (%v)", label, dir, err)
+		}
+	}
+}
+
 // TestUninstallLocations pins what Uninstall removes and reports: the
 // project location, then the global one, each only if it exists; an agent
 // without a global path has only the project location.
@@ -182,29 +214,12 @@ func TestUninstallLocations(t *testing.T) {
 		{"no global path", projectOnly, true, true},
 	}
 	for _, tc := range cases {
-		base, home := t.TempDir(), fakeHome(t)
-		projectDir := filepath.Join(base, agent.ProjectPath)
-		globalDir := filepath.Join(home, agent.GlobalPath)
-		var want []string
-		if tc.project {
-			mkSkillDir(t, projectDir)
-			want = append(want, projectDir)
-		}
-		if tc.global {
-			mkSkillDir(t, globalDir)
-			if tc.agent.GlobalPath != "" {
-				want = append(want, globalDir)
-			}
-		}
+		base, globalDir, want := uninstallFixture(t, agent, tc.agent, tc.project, tc.global)
 		removed, err := Uninstall(tc.agent, base)
 		if err != nil || !reflect.DeepEqual(removed, want) {
 			t.Errorf("%s: Uninstall = %q, %v; want %q, nil", tc.name, removed, err, want)
 		}
-		for _, dir := range want {
-			if _, err := os.Stat(dir); !os.IsNotExist(err) {
-				t.Errorf("%s: %s still exists (%v)", tc.name, dir, err)
-			}
-		}
+		assertGone(t, tc.name, want)
 		if tc.agent.GlobalPath == "" && tc.global {
 			if _, err := os.Stat(globalDir); err != nil {
 				t.Errorf("%s: %s was removed without a global path: %v", tc.name, globalDir, err)
