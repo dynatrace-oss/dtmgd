@@ -1,14 +1,11 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 
 	"github.com/spf13/cobra"
-
-	"github.com/dynatrace-oss/dtmgd/pkg/client"
 )
 
 // SLODetail maps the /slo/{id} API response for human-readable describe output.
@@ -83,14 +80,11 @@ func newDescribeSLOCmd(a *App) *cobra.Command {
 Examples:
   dtmgd describe slo <id>
   dtmgd describe slo <id> --timeframe CURRENT
-  dtmgd describe slo <id> --from now-2w --to now --timeframe GTF`,
+  dtmgd describe slo <id> --from now-2w --to now
+
+--from/--to imply --timeframe GTF when --timeframe is not given.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
 			params := map[string]string{}
 			if opts.timeframe != "" {
 				params["timeFrame"] = opts.timeframe
@@ -101,52 +95,22 @@ Examples:
 			if opts.to != "" {
 				params["to"] = opts.to
 			}
-
-			path := fmt.Sprintf("/slo/%s", url.PathEscape(args[0]))
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					var result map[string]interface{}
-					if err := c.GetV2(path, params, &result); err != nil {
-						return nil, err
-					}
-					return result, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("slo").Print(data)
+			// The API evaluates over the SLO's own timeframe and ignores from
+			// and to unless timeFrame is GTF, so explicit dates imply GTF.
+			if opts.timeframe == "" && (opts.from != "" || opts.to != "") {
+				params["timeFrame"] = "GTF"
 			}
 
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			var result map[string]interface{}
-			if err := c.GetV2(path, params, &result); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("slo").Print(result)
-			}
-
-			// Table mode: unmarshal into typed struct for human-readable output.
-			b, err := json.Marshal(result)
-			if err != nil {
-				return err
-			}
-			var detail SLODetail
-			if err := json.Unmarshal(b, &detail); err != nil {
-				return err
-			}
-			printSLODetail(a.Out, detail)
-			return nil
+			return a.runFetch(fetchSpec{
+				Verb:     "describe",
+				Resource: "slo",
+				Fetch:    describeFetch(fmt.Sprintf("/slo/%s", url.PathEscape(args[0])), params),
+				Human:    detailHuman(printSLODetail),
+			})
 		},
 	}
 	cmd.Flags().StringVar(&opts.timeframe, "timeframe", "", "time frame: CURRENT or GTF")
-	cmd.Flags().StringVar(&opts.from, "from", "", "start time (used with --timeframe GTF)")
-	cmd.Flags().StringVar(&opts.to, "to", "", "end time (used with --timeframe GTF)")
+	cmd.Flags().StringVar(&opts.from, "from", "", "start time (implies --timeframe GTF)")
+	cmd.Flags().StringVar(&opts.to, "to", "", "end time (implies --timeframe GTF)")
 	return withScopes(cmd, "slo.read")
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -151,57 +150,18 @@ Accepts either the display ID (e.g. S-281) from 'dtmgd get security-problems'
 or the internal UUID. Display IDs are resolved automatically.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-
-			spFields := "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description"
-
-			if a.isMultiEnv() {
-				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-					resolvedID := resolveSecurityProblemID(c, args[0])
-					path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
-					var result map[string]interface{}
-					if err := c.GetV2(path, map[string]string{"fields": spFields}, &result); err != nil {
-						return nil, err
-					}
-					return result, nil
-				})
-				if err != nil {
-					return err
-				}
-				return a.printer("securityProblem").Print(data)
-			}
-
-			c, err := a.newClient(cfg)
-			if err != nil {
-				return err
-			}
-
-			resolvedID := resolveSecurityProblemID(c, args[0])
-			path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolvedID))
-
-			var raw map[string]interface{}
-			if err := c.GetV2(path, map[string]string{"fields": spFields}, &raw); err != nil {
-				return err
-			}
-
-			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
-				return a.printer("securityProblem").Print(raw)
-			}
-
-			// Re-decode to typed struct for human-readable output.
-			b, err := json.Marshal(raw)
-			if err != nil {
-				return err
-			}
-			var detail SecurityProblemDetail
-			if err := json.Unmarshal(b, &detail); err != nil {
-				return err
-			}
-			printSecurityProblemDetail(a.Out, detail)
-			return nil
+			params := map[string]string{"fields": "+riskAssessment,+managementZones,+codeLevelVulnerabilityDetails,+vulnerableComponents,+affectedEntities,+exposedEntities,+description"}
+			return a.runFetch(fetchSpec{
+				Verb:     "describe",
+				Resource: "security-problem",
+				// A display ID (S-NNN) is resolved with each environment's own
+				// client: display IDs are local to an environment.
+				Fetch: func(c *client.Client, limit int) (fetched, error) {
+					path := fmt.Sprintf("/securityProblems/%s", url.PathEscape(resolveSecurityProblemID(c, args[0])))
+					return describeFetch(path, params)(c, limit)
+				},
+				Human: detailHuman(printSecurityProblemDetail),
+			})
 		},
 	}
 	return withScopes(cmd, "securityProblems.read")
