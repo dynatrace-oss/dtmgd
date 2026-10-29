@@ -212,3 +212,35 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **When it applies**: Adding or debugging a filter flag; deciding whether dtmgd's own undocumented parameters should move to documented selectors
 - **Date**: 2026-10-29
 - **Ref**: Phase 3 (2/2) MCP parity
+
+### A cluster context's host is the cluster's own address, not an environment context's node host
+- **Context**: Phase 4 planned the Cluster API commands on top of the owner's existing environment contexts. Their hosts are node addresses on port 9999 (`https://<node>:9999`), where `/api/cluster/v2/...` and `/api/v1.0/onpremise/...` answer 404. The Cluster API answers on the cluster's public name, the address the Cluster Management Console uses.
+- **Insight**: A cluster context (no `env-id`) carries its own host, and dtmgd never pairs contexts by host. Every cluster command returning 404 means a wrong host; `runClusterFetch` says so (`hintNoClusterAPI`). Its token must be a Cluster API token with `ServiceProviderAPI`, created in the CMC. An environment token gets **401** ("Token Authentication failed"), checked live on 2026-10-29. That is why the 401 hint says an environment token cannot work.
+- **When it applies**: Setting up or debugging a cluster context; adding a cluster command
+- **Date**: 2026-10-29
+- **Ref**: Phase 4 Cluster API
+
+### `/api/v1.0/onpremise/cluster` returns an array of nodes
+- **Context**: `ClusterVersion()` decoded `/api/v1.0/onpremise/cluster` as `{"version": …}`. On a real Cluster API host that fails with "cannot unmarshal array", and the doctor tests faked the object shape, so nothing caught it. Environment contexts never reached it: their :9999 hosts answer 404 there, and the fallback to `/e/<id>/api/v1/config/clusterversion` hid the bug.
+- **Insight**: The endpoint returns `[{"id", "buildVersion", "operationState", "clusterMemberAddress", "osInfo", …}]`, one entry per node. The cluster's version is the **lowest** node's `buildVersion` (`client.LowestClusterVersion`), because nodes differ mid-upgrade. Fakes use `nodeList(...)` in `cmd/doctor_test.go` or `cmd/testdata/api/cluster_nodes.json`. A cluster-scoped client never falls back to the environment endpoint.
+- **When it applies**: Anything that reads the cluster version; writing fakes for the Cluster API
+- **Date**: 2026-10-29
+- **Ref**: Phase 4 Cluster API
+
+### Cluster API: shapes, paging and licensing as observed live
+- **Context**: The Phase 4 spike on 2026-10-29 read every endpoint dtmgd uses on the owner's prod cluster (1.348, classic licensing), printing shapes only. The stage cluster's public name was unreachable that day.
+- **Insight**:
+  - `/api/cluster/v2/environments` pages like the environment API: a later page is asked for with `nextPageKey` alone, and the last page has `nextPageKey: null`. `quotas` and `storage` are `null` unless `includeConsumptionInfo` / `includeStorageInfo` are set, and an unlimited limit is JSON `null`.
+  - A missing environment gives 404 "HTTP 404 Not Found".
+  - `clusterLicense` and `/environment/total` work only with classic licensing. The prod cluster reported `licenseType FULL`, `licenseStatus VALID`, and no `overageUsage`. What a DPS cluster returns was **not observed**: the license commands give the classic-licensing hint for any client error but 401/403/429. `--consumption`'s 422 on DPS comes from the OpenAPI spec.
+  - `/cluster/configuration` is `{"clusterNodes": [{id, ipAddress, webUI, agent, datacenter, kubernetesRole}]}`, and `/cluster/metadata` is `{clusterName, clusterUuid}`. `/backup/config` matches `backupConfigDto`. There is no backup health anywhere.
+- **When it applies**: Changing a cluster command, or meeting a DPS-licensed cluster for the first time (check what it really returns, then tighten the hint)
+- **Date**: 2026-10-29
+- **Ref**: Phase 4 Cluster API
+
+### `ALL_ENVIRONMENTS` excludes cluster contexts; context kind is the raw `env-id`
+- **Context**: Once a config holds cluster contexts (no `env-id`), `--env ALL_ENVIRONMENTS` fanned out to them too, and they failed with "env-id is required". The owner's config already had two.
+- **Insight**: `config.Context.IsCluster()` is `EnvID == ""` as written in the file, before `${VAR}` expansion, so `env-id: ${DT_ENV_ID}` is an environment context even while the variable is unset. `client.resolveContexts` gives `ALL_ENVIRONMENTS` environment contexts only. A cluster context named in a `;` list is an error. `runFetch` (`checkEnvironmentContexts`) and `runClusterFetch` (`checkClusterContext`) refuse the wrong kind with exit 2 before any request. `client.New` with an empty env-id builds a cluster-scoped client: its environment calls return `ErrClusterScoped`, and `DashboardURL()` is `""`, so no UI link becomes `{host}/e/`.
+- **When it applies**: Adding a command (pick `runFetch` or `runClusterFetch`), or touching context selection
+- **Date**: 2026-10-29
+- **Ref**: Phase 4 Cluster API

@@ -56,7 +56,7 @@ func Diagnose(err error) string {
 	case strings.Contains(msg, "token") && strings.Contains(msg, "not found"):
 		return "Token reference not found. Store it with:\n  dtmgd config set-credentials <token-ref> --token <api-token>"
 	case strings.Contains(msg, "no current context"):
-		return "No context configured. Set one up with:\n  dtmgd config set-context <name> --host <url> --env-id <id> --token-ref <ref>"
+		return "No context configured. Set one up with:\n  dtmgd config set-context <name> --host <url> --env-id <id> --token-ref <ref>\n  or, for the Cluster API: dtmgd config set-context <name> --host <cluster-url> --token-ref <ref>"
 	}
 	return ""
 }

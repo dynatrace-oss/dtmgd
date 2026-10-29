@@ -1,6 +1,6 @@
 ---
 name: dtmgd
-description: Query and investigate Dynatrace Managed (self-hosted) environments from the CLI. Use this skill when the user asks about problems, incidents, entities, events, logs, metrics, SLOs, or security vulnerabilities in a Dynatrace Managed cluster — even if they don't mention dtmgd by name. Covers connectivity checks, entity topology, time-series metric queries, log search, and every tool of the Dynatrace Managed MCP Server.
+description: Query and investigate Dynatrace Managed (self-hosted) environments from the CLI. Use this skill when the user asks about problems, incidents, entities, events, logs, metrics, SLOs, or security vulnerabilities in a Dynatrace Managed cluster — even if they don't mention dtmgd by name. Covers connectivity checks, entity topology, time-series metric queries, log search, every tool of the Dynatrace Managed MCP Server, and the cluster's environments, nodes, license and backup configuration through the Cluster Management API.
 ---
 
 # Dynatrace Managed CLI — dtmgd
@@ -42,12 +42,12 @@ command's flags and the token scopes it needs, read the full catalog,
 `dtmgd commands` (JSON, never wrapped in an agent envelope). Look up an entry by
 its `path`, for example `"get problems"`.
 
-Use `dtmgd doctor` for connectivity checks, not `dtmgd get environments`: that
-role has moved to `doctor`, and `get environments` will list environments from
-the Cluster API in a coming release. `doctor` gives one row per context with
-`status` `ok`, `warn` (the cluster version is below 1.328.0, or the token cannot
-read it) or `fail` (with the reason in `detail`), and exits 1 if any context
-fails.
+Use `dtmgd doctor` for connectivity checks. (`dtmgd get environments` lists a
+cluster's environments and needs a cluster context; up to v0.2 it was the
+connectivity check.) `doctor` gives one row per context with `scope`
+(`environment` or `cluster`), `status` `ok`, `warn` (the cluster version is
+below 1.328.0, or the token cannot read it) or `fail` (with the reason in
+`detail`), and exits 1 if any context fails.
 
 Agent mode is auto-detected — output will be wrapped in `{ok, result, context}` envelopes automatically.
 
@@ -70,11 +70,15 @@ Any other `-o` value is a usage error (exit 2) before any request is made.
 - **json, yaml and the envelope's `result` are the API's own response**, with
   its camelCase keys (`problemId`, `totalCount`, `nextPageKey`), not the table
   columns. This holds for every `get`, `describe` and `query` command except
-  `get environments` and `query log-counts` (see [Logs](#logs)).
+  `query log-counts` (see [Logs](#logs)). Cluster commands add three things:
+  `get nodes` puts each node's configuration under `configuration`,
+  `describe cluster` puts the node list under `nodes`, and `describe license`
+  masks `licenseKey`.
 - **An empty result prints the object with an empty list** (`"problems": []`),
   not nothing.
-- **Tables**: `describe problem`, `describe slo` and `describe security-problem`
-  print a summary; the other describe commands print the API object as YAML.
+- **Tables**: `describe problem`, `describe slo`, `describe security-problem`,
+  `describe cluster`, `describe license` and `describe backup` print a summary;
+  the other describe commands print the API object as YAML.
 - `--plain` swaps stderr symbols for words (`Warning:`, `Error:`, `Hint:`). It
   is automatic when stdout is not a terminal or `NO_COLOR` is set (unless
   `FORCE_COLOR` is set).
@@ -171,8 +175,10 @@ keyed by context name, even when only one context is selected; a failed environm
 table prints a `== <name> ==` section per environment. Every environment that
 answered is printed, and the exit code is non-zero if any failed.
 
-Works with every `get`, `describe` and `query` command except
-`get environments` (always lists every context). `config`, `ctx`, `skills`,
+Works with every `get`, `describe` and `query` command except the cluster
+commands (see [Cluster Management API](#cluster-management-api)), which run
+against one cluster context. `ALL_ENVIRONMENTS` selects environment contexts
+only. `config`, `ctx`, `skills`,
 `doctor` and `commands` never fan out over `--env`; a single `--env` name acts
 like `-c` where they show the current context. Use `dtmgd ctx` first to
 discover which context names are available.
@@ -242,6 +248,38 @@ dtmgd ctx delete <name>
 ```
 
 Proxy support: add `http-proxy` and/or `https-proxy` to the context in the config file for environments behind corporate proxies.
+
+## Cluster Management API
+
+A context **without `env-id`** is a cluster context: it reads the cluster's
+own Cluster Management API, read-only. `dtmgd ctx` shows each context's
+`SCOPE` (`environment` or `cluster`); `dtmgd commands` marks the commands that
+need a cluster context with `"cluster_scoped": true`.
+
+```bash
+dtmgd get environments --context <cluster-context>       # --name, --state, --filter, --sort, --consumption, --limit
+dtmgd describe environment <environment-id> --context <cluster-context>   # properties, quotas, storage; --consumption
+dtmgd get nodes --context <cluster-context>              # state, version, address, datacenter, roles
+dtmgd describe cluster --context <cluster-context>       # name, UUID, version (lowest node's), node states
+dtmgd describe license --context <cluster-context>       # license and billed usage (key masked)
+dtmgd get license-usage --context <cluster-context>      # billed usage per environment
+dtmgd describe backup --context <cluster-context>        # backup configuration only
+```
+
+- Run a cluster command against an environment context (or the reverse) and
+  dtmgd exits 2 without sending anything, naming the contexts of the right
+  kind in its suggestions. Retry with `--context <one of them>`.
+- No `--env` fan-out for cluster commands.
+- A cluster context's host is the cluster's own address (the Cluster
+  Management Console's), not a `:9999` node address. A 404 from every cluster
+  command means the host is wrong.
+- Its token needs the `ServiceProviderAPI` scope, from the Cluster Management
+  Console. An environment API token gets 401.
+- `describe license`, `get license-usage` and `get environments --consumption`
+  work only with Dynatrace classic licensing; on a DPS-licensed cluster they
+  fail with a hint saying so.
+- `describe backup` has no last-backup time or backup health: the API reports
+  the configuration only.
 
 ## Problems
 
@@ -501,6 +539,7 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 - `--limit` applies to every output format and stops paging once met. Without it, all pages are fetched automatically — except in agent mode, where lists default to 50 items (`context.has_more` tells you there are more).
 - Multi-env results are keyed by context name: `{"prod": {...}, "staging": {"error": "..."}}` — a failed environment holds `error`, and the call exits non-zero.
 - Agent mode is auto-detected; use `--no-agent` to get human-readable output in AI environments.
+- `get environments` lists a cluster's environments and needs a cluster context. For "which environments can I query", use `dtmgd ctx` (configured contexts) or `dtmgd doctor` (and whether each answers).
 
 ## Feature Parity with Dynatrace Managed MCP Server
 
@@ -549,7 +588,8 @@ Differences across all tools:
 - **Only in the MCP server:** HTTP transport with per-request tokens, rate
   limiting, usage telemetry, and output trimmed for model context (at most 11
   tags or dimensions, 50 data points per series).
-- **Only in dtmgd:** `query log-counts` (log counts per process group and
+- **Only in dtmgd:** the Cluster Management API commands (the MCP server has
+  no cluster tools), `query log-counts` (log counts per process group and
   level), the `--selector` DSL on problems and security problems, `--watch`,
   display IDs for security problems, paging past the first page (with
   `--max-pages` to stop it), table, wide, json and yaml output, `commands`,

@@ -86,11 +86,14 @@ func newRootCmd(a *App) *cobra.Command {
 		Long: `dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
 
 It provides read access to problems, entities, events, logs, metrics, SLOs,
-and security vulnerabilities via the Dynatrace Managed classic API.
+and security vulnerabilities via the Dynatrace Managed classic API, and to a
+cluster's environments, nodes, license and backup configuration via the
+Cluster Management API.
 
 API endpoints used:
-  Environment API:  {host}/e/{env-id}/api/v2/
-  Cluster API:      {host}/api/v1.0/onpremise/
+  Environment API:  {host}/e/{env-id}/api/v2/  (environment contexts)
+  Cluster API:      {host}/api/cluster/v2/ and {host}/api/v1.0/onpremise/
+                    (cluster contexts: no env-id)
 
 Quick start:
   dtmgd config set-context prod --host https://managed.company.com --env-id abc123 --token-ref prod-token
@@ -99,7 +102,11 @@ Quick start:
 
 Multi-environment:
   dtmgd get problems --env ALL_ENVIRONMENTS
-  dtmgd get problems --env "prod;staging"`,
+  dtmgd get problems --env "prod;staging"
+
+Cluster (a context without --env-id, with a ServiceProviderAPI token):
+  dtmgd ctx set prod-cluster --host https://cluster.company.com --token-ref prod-cluster-token
+  dtmgd get environments --context prod-cluster`,
 	}
 	cmd.SetOut(a.Out)
 	cmd.SetErr(a.Err)
