@@ -9,31 +9,16 @@ import (
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 )
 
-// withNoExplicitConfig clears --config for one test so the discovery path runs.
-func withNoExplicitConfig(t *testing.T) {
-	t.Helper()
-	prev := cfgFile
-	cfgFile = ""
-	t.Cleanup(func() { cfgFile = prev })
-}
-
-// withVerbosity sets the -v level for one test.
-func withVerbosity(t *testing.T, level int) {
-	t.Helper()
-	prev := verbosity
-	verbosity = level
-	t.Cleanup(func() { verbosity = prev })
-}
-
 // TestReportConfigSourceWarnsOnAncestor is the disclosure half of PRISM-13820.
 // Before this, a .dtmgd.yaml planted in a shared parent directory redirected
 // every dtmgd call — host, env-id and token — with nothing printed at all.
 func TestReportConfigSourceWarnsOnAncestor(t *testing.T) {
-	withVerbosity(t, 0)
+	a := newTestApp("")
+	a.Opts.Verbose = 0
 	planted := filepath.Join(t.TempDir(), ".dtmgd.yaml")
 
 	stderr := captureStderr(t, func() {
-		reportConfigSource(config.Source{Path: planted, Kind: config.SourceLocalAncestor})
+		a.reportConfigSource(config.Source{Path: planted, Kind: config.SourceLocalAncestor})
 	})
 
 	if !strings.Contains(stderr, planted) {
@@ -53,7 +38,8 @@ func TestReportConfigSourceWarnsOnAncestor(t *testing.T) {
 // typed, would be noise on every command and would train people to ignore the
 // one warning that matters.
 func TestReportConfigSourceQuietForVisibleSources(t *testing.T) {
-	withVerbosity(t, 0)
+	a := newTestApp("")
+	a.Opts.Verbose = 0
 
 	for _, kind := range []config.SourceKind{
 		config.SourceGlobal,
@@ -61,7 +47,7 @@ func TestReportConfigSourceQuietForVisibleSources(t *testing.T) {
 		config.SourceLocalCWD,
 	} {
 		stderr := captureStderr(t, func() {
-			reportConfigSource(config.Source{Path: "/some/config", Kind: kind})
+			a.reportConfigSource(config.Source{Path: "/some/config", Kind: kind})
 		})
 		if stderr != "" {
 			t.Errorf("kind %v printed %q, want silence at default verbosity", kind, stderr)
@@ -72,10 +58,11 @@ func TestReportConfigSourceQuietForVisibleSources(t *testing.T) {
 // TestReportConfigSourceVerboseNamesFile covers the audit path from the
 // finding's recommendation 4: -v should say which file was loaded.
 func TestReportConfigSourceVerboseNamesFile(t *testing.T) {
-	withVerbosity(t, 1)
+	a := newTestApp("")
+	a.Opts.Verbose = 1
 
 	stderr := captureStderr(t, func() {
-		reportConfigSource(config.Source{Path: "/some/config", Kind: config.SourceGlobal})
+		a.reportConfigSource(config.Source{Path: "/some/config", Kind: config.SourceGlobal})
 	})
 
 	if !strings.Contains(stderr, "/some/config") {
@@ -87,8 +74,9 @@ func TestReportConfigSourceVerboseNamesFile(t *testing.T) {
 // together: standing in a subdirectory of a planted config must both load that
 // file and say so.
 func TestLoadFromSourceWarnsEndToEnd(t *testing.T) {
-	withNoExplicitConfig(t)
-	withVerbosity(t, 0)
+	// No --config, so the discovery path runs.
+	a := newTestApp("")
+	a.Opts.Verbose = 0
 
 	parent := t.TempDir()
 	planted := filepath.Join(parent, ".dtmgd.yaml")
@@ -116,7 +104,7 @@ tokens:
 
 	var cfg *config.Config
 	var err error
-	stderr := captureStderr(t, func() { cfg, err = loadFromSource() })
+	stderr := captureStderr(t, func() { cfg, err = a.loadFromSource() })
 	if err != nil {
 		t.Fatalf("loadFromSource() error = %v", err)
 	}

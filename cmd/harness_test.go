@@ -15,9 +15,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
@@ -155,7 +152,6 @@ func runCLI(t *testing.T, cfgPath string, args ...string) cliResult {
 	for _, v := range output.AgentEnvVars {
 		t.Setenv(v, "")
 	}
-	resetFlags(rootCmd)
 
 	outR, outW, err := os.Pipe()
 	if err != nil {
@@ -189,25 +185,15 @@ func runCLI(t *testing.T, cfgPath string, args ...string) cliResult {
 	}
 }
 
-// resetFlags restores every flag in the tree to its default. rootCmd and its
-// flag variables are package-level, so without this one run's flags would
-// leak into the next.
-func resetFlags(c *cobra.Command) {
-	reset := func(fs *pflag.FlagSet) {
-		fs.VisitAll(func(f *pflag.Flag) {
-			if sv, ok := f.Value.(pflag.SliceValue); ok {
-				_ = sv.Replace(nil)
-			} else {
-				_ = f.Value.Set(f.DefValue)
-			}
-			f.Changed = false
-		})
-	}
-	reset(c.Flags())
-	reset(c.PersistentFlags())
-	for _, sub := range c.Commands() {
-		resetFlags(sub)
-	}
+// newTestApp returns an App for tests that call command helpers directly.
+// Building the command tree over it fills Opts with the flag defaults, as a
+// run without flags would, and cfgPath stands in for --config. Output is
+// discarded unless the test points Out at a buffer.
+func newTestApp(cfgPath string) *App {
+	a := &App{Out: io.Discard, Err: io.Discard}
+	newRootCmd(a)
+	a.Opts.ConfigPath = cfgPath
+	return a
 }
 
 // assertGolden compares got with testdata/golden/<name>.golden, or rewrites

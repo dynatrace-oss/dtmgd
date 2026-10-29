@@ -233,8 +233,9 @@ func TestInjectEntityNames_NoOp(t *testing.T) {
 
 // TestPrintTimeSeriesDataPoint exercises all label-derivation branches of the function
 // (name+id, id-only, dimensions list, dimensionMap fallback, empty).  The function
-// writes to stdout; we just verify it doesn't panic with any combination of inputs.
+// writes to App.Out (discarded here); we just verify it doesn't panic with any combination of inputs.
 func TestPrintTimeSeriesDataPoint(t *testing.T) {
+	a := newTestApp("")
 	v42 := fptr(42.0)
 	cases := []MetricQueryDataPoints{
 		{
@@ -272,13 +273,14 @@ func TestPrintTimeSeriesDataPoint(t *testing.T) {
 
 	for _, dp := range cases {
 		// Should not panic.
-		printTimeSeriesDataPoint(dp)
+		a.printTimeSeriesDataPoint(dp)
 	}
 }
 
 // TestPrintEntitySummaryTable exercises the sort and formatting logic.  Output goes
-// to stdout; we verify the function completes without panic for various inputs.
+// to App.Out (discarded here); we verify the function completes without panic for various inputs.
 func TestPrintEntitySummaryTable(t *testing.T) {
+	a := newTestApp("")
 	v1, v2 := fptr(100.0), fptr(50.0)
 	data := []MetricQueryDataPoints{
 		{
@@ -306,14 +308,15 @@ func TestPrintEntitySummaryTable(t *testing.T) {
 	}
 
 	// Should not panic.
-	printEntitySummaryTable(data)
+	a.printEntitySummaryTable(data)
 	// Empty slice.
-	printEntitySummaryTable(nil)
+	a.printEntitySummaryTable(nil)
 }
 
 // TestPrintMetricQuerySummary exercises both the single-value and time-series
 // branches of the summary printer.
 func TestPrintMetricQuerySummary(t *testing.T) {
+	a := newTestApp("")
 	v := fptr(1.5)
 	resp := MetricQueryResponse{
 		Resolution: "1h",
@@ -344,5 +347,5 @@ func TestPrintMetricQuerySummary(t *testing.T) {
 	}
 
 	// Should not panic.
-	printMetricQuerySummary(resp)
+	a.printMetricQuerySummary(resp)
 }

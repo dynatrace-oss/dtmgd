@@ -46,15 +46,13 @@ func TestParseColumns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			columns = tt.input
-			got := parseColumns()
+			a := &App{Opts: GlobalOptions{Columns: tt.input}}
+			got := a.columns()
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("parseColumns() = %v, want %v", got, tt.want)
+				t.Errorf("columns() = %v, want %v", got, tt.want)
 			}
 		})
 	}
-	// Reset global state.
-	columns = ""
 }
 
 // TestEffectiveMaxPages verifies the page-limit logic.
@@ -93,15 +91,13 @@ func TestEffectiveMaxPages(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			maxPages = tt.globalPages
-			got := effectiveMaxPages(tt.hasLimit)
+			a := &App{Opts: GlobalOptions{MaxPages: tt.globalPages}}
+			got := a.maxPagesFor(tt.hasLimit)
 			if got != tt.want {
-				t.Errorf("effectiveMaxPages(%v) = %d, want %d", tt.hasLimit, got, tt.want)
+				t.Errorf("maxPagesFor(%v) = %d, want %d", tt.hasLimit, got, tt.want)
 			}
 		})
 	}
-	// Reset global state.
-	maxPages = 0
 }
 
 // TestIsMultiEnv verifies multi-environment detection.
@@ -120,15 +116,13 @@ func TestIsMultiEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.env, func(t *testing.T) {
-			envSpec = tt.env
-			got := isMultiEnv()
+			a := &App{Opts: GlobalOptions{Env: tt.env}}
+			got := a.isMultiEnv()
 			if got != tt.want {
-				t.Errorf("isMultiEnv() with envSpec=%q = %v, want %v", tt.env, got, tt.want)
+				t.Errorf("isMultiEnv() with --env %q = %v, want %v", tt.env, got, tt.want)
 			}
 		})
 	}
-	// Reset global state.
-	envSpec = ""
 }
 
 // TestRequireSubcommand verifies that requireSubcommand always returns a non-nil error
@@ -250,19 +244,18 @@ func TestAgentNoticeOnlyWhenAutoDetected(t *testing.T) {
 		t.Setenv(v, "")
 	}
 	t.Setenv("CLAUDECODE", "1")
-	pa, pn := agentFlag, noAgentFlag
-	t.Cleanup(func() { agentFlag, noAgentFlag = pa, pn })
+	a := &App{}
 
-	agentFlag, noAgentFlag = false, false
-	if got := agentNotice(); !strings.Contains(got, "CLAUDECODE is set") {
+	a.Opts.Agent, a.Opts.NoAgent = false, false
+	if got := a.agentNotice(); !strings.Contains(got, "CLAUDECODE is set") {
 		t.Errorf("auto-detected: got %q", got)
 	}
-	agentFlag = true
-	if got := agentNotice(); got != "" {
+	a.Opts.Agent = true
+	if got := a.agentNotice(); got != "" {
 		t.Errorf("--agent given: want no notice, got %q", got)
 	}
-	agentFlag, noAgentFlag = false, true
-	if got := agentNotice(); got != "" {
+	a.Opts.Agent, a.Opts.NoAgent = false, true
+	if got := a.agentNotice(); got != "" {
 		t.Errorf("--no-agent given: want no notice, got %q", got)
 	}
 }

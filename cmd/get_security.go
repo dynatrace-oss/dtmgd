@@ -40,108 +40,114 @@ type SecurityProblemEntry struct {
 	CveIds []string `json:"cveIds"`
 }
 
-var (
-	spRisk     string
-	spStatus   string
-	spLimit    int
-	spSelector string
-)
-
-var getSecurityProblemsCmd = &cobra.Command{
-	Use:     "security-problems",
-	Aliases: []string{"sp", "security", "vuln"},
-	Short:   "List security vulnerabilities",
-	Long: `List security problems (CVE vulnerabilities) in the Dynatrace Managed environment.
+func newGetSecurityProblemsCmd(a *App) *cobra.Command {
+	var opts struct {
+		risk     string
+		status   string
+		limit    int
+		selector string
+	}
+	cmd := &cobra.Command{
+		Use:     "security-problems",
+		Aliases: []string{"sp", "security", "vuln"},
+		Short:   "List security vulnerabilities",
+		Long: `List security problems (CVE vulnerabilities) in the Dynatrace Managed environment.
 
 Examples:
   dtmgd get security-problems
   dtmgd get security-problems --risk CRITICAL
   dtmgd get security-problems --selector 'managementZones("BookStore")'
   dtmgd get security-problems --env ALL_ENVIRONMENTS`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		params := map[string]string{}
-		params["fields"] = "+riskAssessment,+managementZones"
-		params["sort"] = "-riskAssessment.riskScore"
-		pageSize := 200
-		if spLimit > 0 {
-			pageSize = spLimit
-		}
-		params["pageSize"] = fmt.Sprintf("%d", pageSize)
-
-		// Build securityProblemSelector from all filters (status, risk, and explicit selector)
-		// Note: the API list endpoint has no standalone status/riskLevel params — all
-		// filtering goes through securityProblemSelector as a comma-separated DSL.
-		var selectorParts []string
-		if spStatus != "" {
-			selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", spStatus))
-		}
-		if spRisk != "" {
-			selectorParts = append(selectorParts, fmt.Sprintf("riskLevel(%q)", spRisk))
-		}
-		if spSelector != "" {
-			selectorParts = append(selectorParts, spSelector)
-		}
-		if len(selectorParts) > 0 {
-			params["securityProblemSelector"] = joinSelector(selectorParts...)
-		}
-
-		if isMultiEnv() {
-			data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-				raw, err := c.GetV2Paged("/securityProblems", params, effectiveMaxPages(spLimit > 0))
-				if err != nil {
-					return nil, err
-				}
-				return raw, nil
-			})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := a.loadConfig()
 			if err != nil {
 				return err
 			}
-			return NewPrinterForResource("securityProblems").Print(data)
-		}
 
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
+			params := map[string]string{}
+			params["fields"] = "+riskAssessment,+managementZones"
+			params["sort"] = "-riskAssessment.riskScore"
+			pageSize := 200
+			if opts.limit > 0 {
+				pageSize = opts.limit
+			}
+			params["pageSize"] = fmt.Sprintf("%d", pageSize)
 
-		raw, err := c.GetV2Paged("/securityProblems", params, effectiveMaxPages(spLimit > 0))
-		if err != nil {
-			return err
-		}
+			// Build securityProblemSelector from all filters (status, risk, and explicit selector)
+			// Note: the API list endpoint has no standalone status/riskLevel params — all
+			// filtering goes through securityProblemSelector as a comma-separated DSL.
+			var selectorParts []string
+			if opts.status != "" {
+				selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", opts.status))
+			}
+			if opts.risk != "" {
+				selectorParts = append(selectorParts, fmt.Sprintf("riskLevel(%q)", opts.risk))
+			}
+			if opts.selector != "" {
+				selectorParts = append(selectorParts, opts.selector)
+			}
+			if len(selectorParts) > 0 {
+				params["securityProblemSelector"] = joinSelector(selectorParts...)
+			}
 
-		var resp SecurityProblemsResponse
-		if err := client.DecodePaged(raw, &resp); err != nil {
-			return err
-		}
+			if a.isMultiEnv() {
+				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
+					raw, err := c.GetV2Paged("/securityProblems", params, a.maxPagesFor(opts.limit > 0))
+					if err != nil {
+						return nil, err
+					}
+					return raw, nil
+				})
+				if err != nil {
+					return err
+				}
+				return a.printer("securityProblems").Print(data)
+			}
 
-		if outputFormat == "json" || outputFormat == "yaml" || agentMode() {
-			return NewPrinterForResource("securityProblems").Print(resp)
-		}
+			c, err := a.newClient(cfg)
+			if err != nil {
+				return err
+			}
 
-		problems := resp.SecurityProblems
-		if spLimit > 0 && len(problems) > spLimit {
-			problems = problems[:spLimit]
-		}
+			raw, err := c.GetV2Paged("/securityProblems", params, a.maxPagesFor(opts.limit > 0))
+			if err != nil {
+				return err
+			}
 
-		if len(problems) == 0 {
-			output.PrintInfo("No security problems found.")
-			return nil
-		}
+			var resp SecurityProblemsResponse
+			if err := client.DecodePaged(raw, &resp); err != nil {
+				return err
+			}
 
-		var items []SecurityProblemListItem
-		for _, sp := range problems {
-			items = append(items, securityEntryToListItem(sp))
-		}
-		if resp.TotalCount > len(problems) {
-			output.PrintInfo("Showing %d of %d security problems.", len(problems), resp.TotalCount)
-		}
-		return NewPrinter().PrintList(items)
-	},
+			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
+				return a.printer("securityProblems").Print(resp)
+			}
+
+			problems := resp.SecurityProblems
+			if opts.limit > 0 && len(problems) > opts.limit {
+				problems = problems[:opts.limit]
+			}
+
+			if len(problems) == 0 {
+				output.PrintInfo("No security problems found.")
+				return nil
+			}
+
+			var items []SecurityProblemListItem
+			for _, sp := range problems {
+				items = append(items, securityEntryToListItem(sp))
+			}
+			if resp.TotalCount > len(problems) {
+				output.PrintInfo("Showing %d of %d security problems.", len(problems), resp.TotalCount)
+			}
+			return a.printer("").PrintList(items)
+		},
+	}
+	cmd.Flags().StringVar(&opts.risk, "risk", "", "filter by risk level: LOW, MEDIUM, HIGH, CRITICAL")
+	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN, RESOLVED, MUTED")
+	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results")
+	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("BookStore")`)
+	return cmd
 }
 
 // securityEntryToListItem converts a SecurityProblemEntry to a table row.
@@ -170,13 +176,4 @@ func securityEntryToListItem(sp SecurityProblemEntry) SecurityProblemListItem {
 		Status:      sp.Status,
 		CVEs:        cves,
 	}
-}
-
-func init() {
-	getCmd.AddCommand(getSecurityProblemsCmd)
-
-	getSecurityProblemsCmd.Flags().StringVar(&spRisk, "risk", "", "filter by risk level: LOW, MEDIUM, HIGH, CRITICAL")
-	getSecurityProblemsCmd.Flags().StringVar(&spStatus, "status", "", "filter by status: OPEN, RESOLVED, MUTED")
-	getSecurityProblemsCmd.Flags().IntVar(&spLimit, "limit", 0, "maximum number of results")
-	getSecurityProblemsCmd.Flags().StringVar(&spSelector, "selector", "", `security problem selector, e.g. managementZones("BookStore")`)
 }

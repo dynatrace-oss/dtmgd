@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 	"time"
@@ -71,21 +72,21 @@ func fmtMillis(ms float64) string {
 }
 
 // printProblemDetail renders a ProblemDetail as a human-readable summary.
-func printProblemDetail(d ProblemDetail) {
-	fmt.Printf("%-22s %s\n", "ID:", d.ProblemID)
-	fmt.Printf("%-22s %s\n", "Display ID:", d.DisplayID)
-	fmt.Printf("%-22s %s\n", "Title:", d.Title)
-	fmt.Printf("%-22s %s\n", "Status:", d.Status)
-	fmt.Printf("%-22s %s\n", "Severity:", d.Severity)
-	fmt.Printf("%-22s %s\n", "Impact:", d.ImpactLevel)
-	fmt.Printf("%-22s %s\n", "Start:", fmtMillis(d.StartTime))
+func printProblemDetail(w io.Writer, d ProblemDetail) {
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "ID:", d.ProblemID)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Display ID:", d.DisplayID)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Title:", d.Title)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Status:", d.Status)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Severity:", d.Severity)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Impact:", d.ImpactLevel)
+	_, _ = fmt.Fprintf(w, "%-22s %s\n", "Start:", fmtMillis(d.StartTime))
 	if d.EndTime > 0 {
-		fmt.Printf("%-22s %s\n", "End:", fmtMillis(d.EndTime))
+		_, _ = fmt.Fprintf(w, "%-22s %s\n", "End:", fmtMillis(d.EndTime))
 	}
-	fmt.Println()
+	_, _ = fmt.Fprintln(w)
 
 	if d.RootCause != nil && d.RootCause.Name != "" {
-		fmt.Printf("%-22s %s (%s)\n", "Root Cause:", d.RootCause.Name, d.RootCause.EntityID.Type)
+		_, _ = fmt.Fprintf(w, "%-22s %s (%s)\n", "Root Cause:", d.RootCause.Name, d.RootCause.EntityID.Type)
 	}
 
 	if len(d.ImpactedEntities) > 0 {
@@ -93,7 +94,7 @@ func printProblemDetail(d ProblemDetail) {
 		for _, e := range d.ImpactedEntities {
 			names = append(names, e.Name)
 		}
-		fmt.Printf("%-22s %s\n", "Impacted Entities:", strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(w, "%-22s %s\n", "Impacted Entities:", strings.Join(names, ", "))
 	}
 
 	if len(d.ManagementZones) > 0 {
@@ -101,19 +102,19 @@ func printProblemDetail(d ProblemDetail) {
 		for _, mz := range d.ManagementZones {
 			mzNames = append(mzNames, mz.Name)
 		}
-		fmt.Printf("%-22s %s\n", "Management Zones:", strings.Join(mzNames, ", "))
+		_, _ = fmt.Fprintf(w, "%-22s %s\n", "Management Zones:", strings.Join(mzNames, ", "))
 	}
 
 	if len(d.K8sClusterName) > 0 {
-		fmt.Printf("%-22s %s\n", "Cluster:", strings.Join(d.K8sClusterName, ", "))
+		_, _ = fmt.Fprintf(w, "%-22s %s\n", "Cluster:", strings.Join(d.K8sClusterName, ", "))
 	}
 	if len(d.K8sNamespaceName) > 0 {
-		fmt.Printf("%-22s %s\n", "Namespace:", strings.Join(d.K8sNamespaceName, ", "))
+		_, _ = fmt.Fprintf(w, "%-22s %s\n", "Namespace:", strings.Join(d.K8sNamespaceName, ", "))
 	}
 
 	if d.EvidenceDetails.TotalCount > 0 {
-		fmt.Println()
-		fmt.Printf("Evidence (%d):\n", d.EvidenceDetails.TotalCount)
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "Evidence (%d):\n", d.EvidenceDetails.TotalCount)
 		for _, ev := range d.EvidenceDetails.Details {
 			rcMark := ""
 			if ev.RootCauseRelevant {
@@ -123,7 +124,7 @@ func printProblemDetail(d ProblemDetail) {
 			if entityName == "" {
 				entityName = ev.Entity.EntityID.ID
 			}
-			fmt.Printf("  %-32s %-18s %s%s\n",
+			_, _ = fmt.Fprintf(w, "  %-32s %-18s %s%s\n",
 				ev.DisplayName,
 				"["+ev.EvidenceType+"]",
 				entityName,
@@ -133,65 +134,64 @@ func printProblemDetail(d ProblemDetail) {
 	}
 }
 
-var describeProblemCmd = &cobra.Command{
-	Use:     "problem <problem-id>",
-	Aliases: []string{"prob"},
-	Short:   "Show detailed information about a specific problem",
-	Long: `Show full problem details including evidence, affected entities, and root cause.
+func newDescribeProblemCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "problem <problem-id>",
+		Aliases: []string{"prob"},
+		Short:   "Show detailed information about a specific problem",
+		Long: `Show full problem details including evidence, affected entities, and root cause.
 Use the problemId (UUID format) from 'dtmgd get problems', not the display ID (P-XXXXX).
 Negative-integer problem IDs (e.g. -6546711275898328738_1776193140000V2) are handled
 automatically — no special syntax or "--" separator is required.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		path := fmt.Sprintf("/problems/%s", url.PathEscape(args[0]))
-
-		if isMultiEnv() {
-			data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-				var result map[string]interface{}
-				if err := c.GetV2(path, nil, &result); err != nil {
-					return nil, err
-				}
-				return result, nil
-			})
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := a.loadConfig()
 			if err != nil {
 				return err
 			}
-			return NewPrinterForResource("problem").Print(data)
-		}
 
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
+			path := fmt.Sprintf("/problems/%s", url.PathEscape(args[0]))
 
-		var raw map[string]interface{}
-		if err := c.GetV2(path, nil, &raw); err != nil {
-			return err
-		}
+			if a.isMultiEnv() {
+				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
+					var result map[string]interface{}
+					if err := c.GetV2(path, nil, &result); err != nil {
+						return nil, err
+					}
+					return result, nil
+				})
+				if err != nil {
+					return err
+				}
+				return a.printer("problem").Print(data)
+			}
 
-		if outputFormat == "json" || outputFormat == "yaml" || agentMode() {
-			return NewPrinterForResource("problem").Print(raw)
-		}
+			c, err := a.newClient(cfg)
+			if err != nil {
+				return err
+			}
 
-		// Re-decode to typed struct for human-readable output.
-		b, err := json.Marshal(raw)
-		if err != nil {
-			return err
-		}
-		var detail ProblemDetail
-		if err := json.Unmarshal(b, &detail); err != nil {
-			return err
-		}
-		printProblemDetail(detail)
-		return nil
-	},
-}
+			var raw map[string]interface{}
+			if err := c.GetV2(path, nil, &raw); err != nil {
+				return err
+			}
 
-func init() {
-	describeCmd.AddCommand(describeProblemCmd)
+			if a.Opts.Output == "json" || a.Opts.Output == "yaml" || a.agentMode() {
+				return a.printer("problem").Print(raw)
+			}
+
+			// Re-decode to typed struct for human-readable output.
+			b, err := json.Marshal(raw)
+			if err != nil {
+				return err
+			}
+			var detail ProblemDetail
+			if err := json.Unmarshal(b, &detail); err != nil {
+				return err
+			}
+			printProblemDetail(a.Out, detail)
+			return nil
+		},
+	}
+	return cmd
 }

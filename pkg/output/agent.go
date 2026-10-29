@@ -57,7 +57,12 @@ type AgentPrinter struct {
 
 // NewAgentPrinter creates a printer that outputs agent envelopes.
 func NewAgentPrinter(resource string) *AgentPrinter {
-	return &AgentPrinter{w: os.Stdout, resource: resource}
+	return NewAgentPrinterTo(os.Stdout, resource)
+}
+
+// NewAgentPrinterTo creates a printer that writes agent envelopes to w.
+func NewAgentPrinterTo(w io.Writer, resource string) *AgentPrinter {
+	return &AgentPrinter{w: w, resource: resource}
 }
 
 func (p *AgentPrinter) Print(v interface{}) error {

@@ -12,11 +12,12 @@ import (
 	"github.com/dynatrace-oss/dtmgd/pkg/skills"
 )
 
-// skillsCmd is the parent command for AI assistant skill management.
-var skillsCmd = &cobra.Command{
-	Use:   "skills",
-	Short: "Manage AI coding assistant skill files",
-	Long: `Manage dtmgd skill files for AI coding assistants.
+// newSkillsCmd builds the parent command for AI assistant skill management.
+func newSkillsCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "skills",
+		Short: "Manage AI coding assistant skill files",
+		Long: `Manage dtmgd skill files for AI coding assistants.
 
 Skill files teach your AI assistant how to use dtmgd effectively. They follow
 the agentskills.io open standard for skill installation.
@@ -25,7 +26,7 @@ Supported agents: claude, copilot, cursor, junie, kiro, opencode.
 
 Use --cross-client to install to the shared .agents/skills/ directory, which
 is automatically discovered by any agentskills.io-compatible agent.`,
-	Example: `  # Auto-detect agent and install
+		Example: `  # Auto-detect agent and install
   dtmgd skills install
 
   # Install for a specific agent
@@ -42,15 +43,34 @@ is automatically discovered by any agentskills.io-compatible agent.`,
 
   # List all supported agents
   dtmgd skills install --list`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return cmd.Help()
-	},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
+	}
+	cmd.AddCommand(
+		newSkillsInstallCmd(a),
+		newSkillsUninstallCmd(a),
+		newSkillsStatusCmd(a),
+	)
+	return cmd
 }
 
-var skillsInstallCmd = &cobra.Command{
-	Use:   "install",
-	Short: "Install skill file for an AI coding assistant",
-	Long: `Install the dtmgd skill directory for the specified AI coding assistant.
+// skillsOptions holds the flags of the skills subcommands. Each subcommand
+// registers only the ones it accepts.
+type skillsOptions struct {
+	forAgent    string
+	crossClient bool
+	global      bool
+	force       bool
+	list        bool
+}
+
+func newSkillsInstallCmd(a *App) *cobra.Command {
+	var opts skillsOptions
+	cmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install skill file for an AI coding assistant",
+		Long: `Install the dtmgd skill directory for the specified AI coding assistant.
 
 Skills are installed as directories following the agentskills.io standard:
   <agent-config>/skills/dtmgd/SKILL.md
@@ -63,45 +83,45 @@ location instead of the project directory.
 Use --cross-client to install to the shared .agents/skills/ directory defined
 by the agentskills.io convention. Skills installed there are automatically
 discovered by any compatible agent without per-agent installation.`,
-	RunE: runSkillsInstall,
+		RunE: func(*cobra.Command, []string) error { return a.runSkillsInstall(opts) },
+	}
+	cmd.Flags().StringVar(&opts.forAgent, "for", "", "install for a specific agent (claude, copilot, cursor, junie, kiro, opencode)")
+	cmd.Flags().BoolVar(&opts.crossClient, "cross-client", false, "install to the shared .agents/skills/ directory (agentskills.io convention)")
+	cmd.Flags().BoolVar(&opts.global, "global", false, "install to user-wide location instead of project directory")
+	cmd.Flags().BoolVar(&opts.force, "force", false, "overwrite the skill's own files; anything else in the directory is left alone")
+	cmd.Flags().BoolVar(&opts.list, "list", false, "list all supported agents and exit")
+	return cmd
 }
 
-var skillsUninstallCmd = &cobra.Command{
-	Use:   "uninstall",
-	Short: "Remove installed skill files",
-	Long: `Remove dtmgd skill files installed for an AI coding assistant.
+func newSkillsUninstallCmd(a *App) *cobra.Command {
+	var opts skillsOptions
+	cmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Remove installed skill files",
+		Long: `Remove dtmgd skill files installed for an AI coding assistant.
 
 If no agent is specified with --for, the command auto-detects the current
 agent; when stdin is not a terminal, --for is required. Removes skill directories from both project-local and global locations.`,
-	RunE: runSkillsUninstall,
+		RunE: func(*cobra.Command, []string) error { return a.runSkillsUninstall(opts) },
+	}
+	cmd.Flags().StringVar(&opts.forAgent, "for", "", "uninstall for a specific agent")
+	cmd.Flags().BoolVar(&opts.crossClient, "cross-client", false, "uninstall from the shared .agents/skills/ directory")
+	return cmd
 }
 
-var skillsStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show installation status of skill files",
-	Long: `Show the current installation status of dtmgd skill files.
+func newSkillsStatusCmd(a *App) *cobra.Command {
+	var opts skillsOptions
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show installation status of skill files",
+		Long: `Show the current installation status of dtmgd skill files.
 
 Checks both project-local and global locations for all supported agents,
 including the cross-client shared directory (.agents/skills/).`,
-	RunE: runSkillsStatus,
-}
-
-func init() {
-	rootCmd.AddCommand(skillsCmd)
-	skillsCmd.AddCommand(skillsInstallCmd)
-	skillsCmd.AddCommand(skillsUninstallCmd)
-	skillsCmd.AddCommand(skillsStatusCmd)
-
-	skillsInstallCmd.Flags().String("for", "", "install for a specific agent (claude, copilot, cursor, junie, kiro, opencode)")
-	skillsInstallCmd.Flags().Bool("cross-client", false, "install to the shared .agents/skills/ directory (agentskills.io convention)")
-	skillsInstallCmd.Flags().Bool("global", false, "install to user-wide location instead of project directory")
-	skillsInstallCmd.Flags().Bool("force", false, "overwrite the skill's own files; anything else in the directory is left alone")
-	skillsInstallCmd.Flags().Bool("list", false, "list all supported agents and exit")
-
-	skillsUninstallCmd.Flags().String("for", "", "uninstall for a specific agent")
-	skillsUninstallCmd.Flags().Bool("cross-client", false, "uninstall from the shared .agents/skills/ directory")
-
-	skillsStatusCmd.Flags().String("for", "", "check status for a specific agent (or \"cross-client\")")
+		RunE: func(*cobra.Command, []string) error { return a.runSkillsStatus(opts) },
+	}
+	cmd.Flags().StringVar(&opts.forAgent, "for", "", "check status for a specific agent (or \"cross-client\")")
+	return cmd
 }
 
 // skillsAgentEntry is a single agent entry for agent-mode list/status output.
@@ -120,21 +140,16 @@ type skillsStatusEntry struct {
 	Path      string `json:"path,omitempty" yaml:"path,omitempty" table:"PATH,wide"`
 }
 
-func runSkillsInstall(cmd *cobra.Command, _ []string) error {
-	if listFlag, _ := cmd.Flags().GetBool("list"); listFlag {
-		return runSkillsList()
+func (a *App) runSkillsInstall(opts skillsOptions) error {
+	if opts.list {
+		return a.runSkillsList()
 	}
 
-	forFlag, _ := cmd.Flags().GetString("for")
-	crossClient, _ := cmd.Flags().GetBool("cross-client")
-	global, _ := cmd.Flags().GetBool("global")
-	force, _ := cmd.Flags().GetBool("force")
-
-	if crossClient && forFlag != "" {
+	if opts.crossClient && opts.forAgent != "" {
 		return fmt.Errorf("--cross-client and --for cannot be used together")
 	}
 
-	agent, err := chooseAgent(forFlag, crossClient, stdinIsTerminal())
+	agent, err := chooseAgent(opts.forAgent, opts.crossClient, stdinIsTerminal())
 	if err != nil {
 		return err
 	}
@@ -144,7 +159,7 @@ func runSkillsInstall(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to determine working directory: %w", err)
 	}
 
-	result, err := skills.Install(agent, baseDir, global, force)
+	result, err := skills.Install(agent, baseDir, opts.global, opts.force)
 	if err != nil {
 		return err
 	}
@@ -154,8 +169,8 @@ func runSkillsInstall(cmd *cobra.Command, _ []string) error {
 		scope = "global"
 	}
 
-	if agentMode() {
-		return output.NewAgentPrinter("skills").Print(map[string]interface{}{
+	if a.agentMode() {
+		return output.NewAgentPrinterTo(a.Out, "skills").Print(map[string]interface{}{
 			"action":    map[bool]string{true: "updated", false: "installed"}[result.Replaced],
 			"agent":     result.Agent.Name,
 			"path":      result.Path,
@@ -168,7 +183,7 @@ func runSkillsInstall(cmd *cobra.Command, _ []string) error {
 	if result.Replaced {
 		verb = "Updated"
 	}
-	fmt.Printf("✓ %s %s skill: %s (%s)\n", verb, result.Agent.DisplayName, result.Path, scope)
+	_, _ = fmt.Fprintf(a.Out, "✓ %s %s skill: %s (%s)\n", verb, result.Agent.DisplayName, result.Path, scope)
 	// Say what was left alone. --force used to delete the whole directory, so
 	// anyone who kept notes or extra reference files beside SKILL.md lost them
 	// and only found out later.
@@ -179,15 +194,12 @@ func runSkillsInstall(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runSkillsUninstall(cmd *cobra.Command, _ []string) error {
-	forFlag, _ := cmd.Flags().GetString("for")
-	crossClient, _ := cmd.Flags().GetBool("cross-client")
-
-	if crossClient && forFlag != "" {
+func (a *App) runSkillsUninstall(opts skillsOptions) error {
+	if opts.crossClient && opts.forAgent != "" {
 		return fmt.Errorf("--cross-client and --for cannot be used together")
 	}
 
-	agent, err := chooseAgent(forFlag, crossClient, stdinIsTerminal())
+	agent, err := chooseAgent(opts.forAgent, opts.crossClient, stdinIsTerminal())
 	if err != nil {
 		return err
 	}
@@ -202,39 +214,37 @@ func runSkillsUninstall(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	if agentMode() {
-		return output.NewAgentPrinter("skills").Print(map[string]interface{}{
+	if a.agentMode() {
+		return output.NewAgentPrinterTo(a.Out, "skills").Print(map[string]interface{}{
 			"agent":   agent.Name,
 			"removed": removed,
 		})
 	}
 
 	if len(removed) == 0 {
-		fmt.Printf("No %s skill files found to remove.\n", agent.DisplayName)
+		_, _ = fmt.Fprintf(a.Out, "No %s skill files found to remove.\n", agent.DisplayName)
 		return nil
 	}
 	for _, p := range removed {
-		fmt.Printf("✓ Removed: %s\n", p)
+		_, _ = fmt.Fprintf(a.Out, "✓ Removed: %s\n", p)
 	}
 	return nil
 }
 
-func runSkillsStatus(cmd *cobra.Command, _ []string) error {
+func (a *App) runSkillsStatus(opts skillsOptions) error {
 	baseDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to determine working directory: %w", err)
 	}
 
-	forFlag, _ := cmd.Flags().GetString("for")
-
-	if forFlag != "" {
-		agent, ok := skills.FindAgent(forFlag)
+	if opts.forAgent != "" {
+		agent, ok := skills.FindAgent(opts.forAgent)
 		if !ok {
-			return unknownAgentError(forFlag)
+			return unknownAgentError(opts.forAgent)
 		}
 		result := skills.Status(agent, baseDir)
 		entries := []skillsStatusEntry{statusToEntry(result)}
-		return printStatusEntries(entries)
+		return a.printStatusEntries(entries)
 	}
 
 	results := skills.StatusAll(baseDir)
@@ -242,11 +252,11 @@ func runSkillsStatus(cmd *cobra.Command, _ []string) error {
 	for _, r := range results {
 		entries = append(entries, statusToEntry(r))
 	}
-	return printStatusEntries(entries)
+	return a.printStatusEntries(entries)
 }
 
-func printStatusEntries(entries []skillsStatusEntry) error {
-	printer := NewPrinterForResource("skills")
+func (a *App) printStatusEntries(entries []skillsStatusEntry) error {
+	printer := a.printer("skills")
 	return printer.PrintList(entries)
 }
 
@@ -262,7 +272,7 @@ func statusToEntry(r *skills.StatusResult) skillsStatusEntry {
 	return entry
 }
 
-func runSkillsList() error {
+func (a *App) runSkillsList() error {
 	all := skills.AllAgents()
 	entries := make([]skillsAgentEntry, 0, len(all)+1)
 	entries = append(entries, skillsAgentEntry{
@@ -271,15 +281,15 @@ func runSkillsList() error {
 		ProjectPath:    skills.CrossClientAgent.ProjectPath,
 		SupportsGlobal: skills.CrossClientAgent.GlobalPath != "",
 	})
-	for _, a := range all {
+	for _, ag := range all {
 		entries = append(entries, skillsAgentEntry{
-			Name:           a.Name,
-			DisplayName:    a.DisplayName,
-			ProjectPath:    a.ProjectPath,
-			SupportsGlobal: a.GlobalPath != "",
+			Name:           ag.Name,
+			DisplayName:    ag.DisplayName,
+			ProjectPath:    ag.ProjectPath,
+			SupportsGlobal: ag.GlobalPath != "",
 		})
 	}
-	printer := NewPrinterForResource("skills")
+	printer := a.printer("skills")
 	return printer.PrintList(entries)
 }
 

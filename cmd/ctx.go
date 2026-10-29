@@ -26,11 +26,12 @@ type ContextListItem struct {
 	Description string `table:"DESCRIPTION,wide"`
 }
 
-// ctxCmd is a top-level shortcut for context management.
-var ctxCmd = &cobra.Command{
-	Use:   "ctx [context-name]",
-	Short: "Manage contexts (shortcut for config context commands)",
-	Long: `Quick context management without the "config" prefix.
+// newCtxCmd builds the top-level shortcut for context management.
+func newCtxCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "ctx [context-name]",
+		Short: "Manage contexts (shortcut for config context commands)",
+		Long: `Quick context management without the "config" prefix.
 
 When called without arguments, lists all contexts.
 When called with a context name, switches to that context.
@@ -39,59 +40,78 @@ Examples:
   dtmgd ctx                   # list all contexts
   dtmgd ctx production        # switch to context
   dtmgd ctx current           # show current context name`,
-	Args:              cobra.MaximumNArgs(1),
-	ValidArgsFunction: contextCompletionFn,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) == 0 {
-			return listContexts()
-		}
-		return useContext(args[0])
-	},
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.contextCompletionFn,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return a.listContexts()
+			}
+			return a.useContext(args[0])
+		},
+	}
+	cmd.AddCommand(
+		newCtxCurrentCmd(a),
+		newCtxSetCmd(a),
+		newCtxDeleteCmd(a),
+	)
+	return cmd
 }
 
-var ctxCurrentCmd = &cobra.Command{
-	Use:   "current",
-	Short: "Display the current context name",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-		fmt.Println(cfg.CurrentContext)
-		return nil
-	},
+func newCtxCurrentCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "current",
+		Short: "Display the current context name",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(a.Out, cfg.CurrentContext)
+			return nil
+		},
+	}
+	return cmd
 }
 
-var ctxSetCmd = &cobra.Command{
-	Use:   "set <context-name>",
-	Short: "Create or update a context",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		host, _ := cmd.Flags().GetString("host")
-		envID, _ := cmd.Flags().GetString(flagEnvID)
-		tokenRef, _ := cmd.Flags().GetString(flagTokenRef)
-		description, _ := cmd.Flags().GetString("description")
-		return setContext(args[0], host, envID, tokenRef, description)
-	},
+func newCtxSetCmd(a *App) *cobra.Command {
+	var opts struct {
+		host, envID, tokenRef, description string
+	}
+	cmd := &cobra.Command{
+		Use:   "set <context-name>",
+		Short: "Create or update a context",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.setContext(args[0], opts.host, opts.envID, opts.tokenRef, opts.description)
+		},
+	}
+	cmd.Flags().StringVar(&opts.host, "host", "", "Managed cluster host URL")
+	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID")
+	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name")
+	cmd.Flags().StringVar(&opts.description, "description", "", "description")
+	return cmd
 }
 
-var ctxDeleteCmd = &cobra.Command{
-	Use:               "delete <context-name>",
-	Aliases:           []string{"rm"},
-	Short:             "Delete a context",
-	Args:              cobra.ExactArgs(1),
-	ValidArgsFunction: contextCompletionFn,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return deleteContext(args[0])
-	},
+func newCtxDeleteCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:               "delete <context-name>",
+		Aliases:           []string{"rm"},
+		Short:             "Delete a context",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.contextCompletionFn,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.deleteContext(args[0])
+		},
+	}
+	return cmd
 }
 
 // contextCompletionFn provides shell completion for context names.
-func contextCompletionFn(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+func (a *App) contextCompletionFn(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if len(args) != 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	cfg, err := LoadConfig()
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -104,8 +124,8 @@ func contextCompletionFn(cmd *cobra.Command, args []string, _ string) ([]string,
 
 // ── Shared logic ──────────────────────────────────────────────────────────────
 
-func listContexts() error {
-	cfg, err := LoadConfig()
+func (a *App) listContexts() error {
+	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
 	}
@@ -126,11 +146,11 @@ func listContexts() error {
 		})
 	}
 
-	return NewPrinter().PrintList(items)
+	return a.printer("").PrintList(items)
 }
 
-func useContext(name string) error {
-	cfg, err := loadConfigRaw()
+func (a *App) useContext(name string) error {
+	cfg, err := a.loadConfigRaw()
 	if err != nil {
 		return err
 	}
@@ -147,7 +167,7 @@ func useContext(name string) error {
 	}
 
 	cfg.CurrentContext = name
-	if err := saveConfig(cfg); err != nil {
+	if err := a.saveConfig(cfg); err != nil {
 		return err
 	}
 	output.PrintSuccess("Switched to context %q", name)
@@ -182,8 +202,8 @@ func warnClobberedContextRefs(cfg *config.Config, name, host, envID, tokenRef st
 	}
 }
 
-func setContext(name, host, envID, tokenRef, description string) error {
-	cfg, err := loadConfigForUpdate()
+func (a *App) setContext(name, host, envID, tokenRef, description string) error {
+	cfg, err := a.loadConfigForUpdate()
 	if err != nil {
 		return err
 	}
@@ -211,15 +231,15 @@ func setContext(name, host, envID, tokenRef, description string) error {
 		cfg.CurrentContext = name
 	}
 
-	if err := saveConfig(cfg); err != nil {
+	if err := a.saveConfig(cfg); err != nil {
 		return err
 	}
 	output.PrintSuccess("Context %q set", name)
 	return nil
 }
 
-func deleteContext(name string) error {
-	cfg, err := loadConfigRaw()
+func (a *App) deleteContext(name string) error {
+	cfg, err := a.loadConfigRaw()
 	if err != nil {
 		return err
 	}
@@ -230,22 +250,9 @@ func deleteContext(name string) error {
 		cfg.CurrentContext = ""
 		output.PrintWarning("Deleted current context. Use 'dtmgd ctx <name>' to set a new one.")
 	}
-	if err := saveConfig(cfg); err != nil {
+	if err := a.saveConfig(cfg); err != nil {
 		return err
 	}
 	output.PrintSuccess("Context %q deleted", name)
 	return nil
-}
-
-func init() {
-	rootCmd.AddCommand(ctxCmd)
-
-	ctxCmd.AddCommand(ctxCurrentCmd)
-	ctxCmd.AddCommand(ctxSetCmd)
-	ctxCmd.AddCommand(ctxDeleteCmd)
-
-	ctxSetCmd.Flags().String("host", "", "Managed cluster host URL")
-	ctxSetCmd.Flags().String(flagEnvID, "", "environment ID")
-	ctxSetCmd.Flags().String(flagTokenRef, "", "credential name")
-	ctxSetCmd.Flags().String("description", "", "description")
 }

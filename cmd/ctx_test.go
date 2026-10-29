@@ -41,9 +41,10 @@ func captureStderr(t *testing.T, fn func()) string {
 // context and the function returns early when there is nothing to clobber.
 func TestSetContextWarnsOnClobberedPlaceholder(t *testing.T) {
 	path := withTempConfig(t, placeholderConfig)
+	a := newTestApp(path)
 
 	stderr := captureStderr(t, func() {
-		if err := setContext("prod", "https://new.example.com", "xyz99999", "", ""); err != nil {
+		if err := a.setContext("prod", "https://new.example.com", "xyz99999", "", ""); err != nil {
 			t.Fatalf("setContext() error = %v", err)
 		}
 	})
@@ -84,10 +85,10 @@ tokens:
   - name: dt0c01.LITERALSECRET
     token: ""
 `
-	withTempConfig(t, mixed)
+	a := newTestApp(withTempConfig(t, mixed))
 
 	stderr := captureStderr(t, func() {
-		if err := setContext("prod", "", "", "newref", ""); err != nil {
+		if err := a.setContext("prod", "", "", "newref", ""); err != nil {
 			t.Fatalf("setContext() error = %v", err)
 		}
 	})
@@ -103,10 +104,10 @@ tokens:
 // TestSetContextNewContextIsSilent confirms the early return: a context that
 // does not exist yet has nothing to clobber, so nothing is warned about.
 func TestSetContextNewContextIsSilent(t *testing.T) {
-	withTempConfig(t, placeholderConfig)
+	a := newTestApp(withTempConfig(t, placeholderConfig))
 
 	stderr := captureStderr(t, func() {
-		if err := setContext("brandnew", "https://b.example.com", "b1", "", ""); err != nil {
+		if err := a.setContext("brandnew", "https://b.example.com", "b1", "", ""); err != nil {
 			t.Fatalf("setContext() error = %v", err)
 		}
 	})
@@ -122,8 +123,9 @@ func TestSetContextNewContextIsSilent(t *testing.T) {
 func TestSetContextRefusesToOverwriteUnparseableConfig(t *testing.T) {
 	bad := "contexts:\n  - name: prod\n    context:\n      host: https://h\n    - name: broken\n"
 	path := withTempConfig(t, bad)
+	a := newTestApp(path)
 
-	err := setContext("new", "https://new.example.com", "env1", "tok", "")
+	err := a.setContext("new", "https://new.example.com", "env1", "tok", "")
 	if err == nil || !strings.Contains(err.Error(), "failed to parse config file") {
 		t.Fatalf("want parse error, got %v", err)
 	}
@@ -146,8 +148,9 @@ func TestSetContextRefusesUnreadableConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+	a := newTestApp(path)
 
-	if err := setContext("new", "https://new.example.com", "env1", "tok", ""); err == nil {
+	if err := a.setContext("new", "https://new.example.com", "env1", "tok", ""); err == nil {
 		t.Fatal("want an error for an unreadable config")
 	}
 	_ = os.Chmod(path, 0o600)
@@ -161,11 +164,9 @@ func TestSetContextRefusesUnreadableConfig(t *testing.T) {
 // empty config is right: there is no file yet.
 func TestSetContextCreatesMissingConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "new.yaml")
-	prev := cfgFile
-	cfgFile = path
-	t.Cleanup(func() { cfgFile = prev })
+	a := newTestApp(path)
 
-	if err := setContext("prod", "https://h.example.com", "env1", "tok", ""); err != nil {
+	if err := a.setContext("prod", "https://h.example.com", "env1", "tok", ""); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)

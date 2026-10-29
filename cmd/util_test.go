@@ -91,28 +91,25 @@ func TestJoinSelector(t *testing.T) {
 
 // TestAgentMode checks agentMode with --agent and --no-agent flags.
 func TestAgentMode(t *testing.T) {
-	defer func() { agentFlag = false; noAgentFlag = false }()
+	a := &App{}
 
-	agentFlag = false
-	noAgentFlag = true
-	if agentMode() {
-		t.Error("noAgentFlag=true should force agentMode=false")
+	a.Opts.Agent = false
+	a.Opts.NoAgent = true
+	if a.agentMode() {
+		t.Error("--no-agent should force agentMode=false")
 	}
 
-	noAgentFlag = false
-	agentFlag = true
-	if !agentMode() {
-		t.Error("agentFlag=true should return true")
+	a.Opts.NoAgent = false
+	a.Opts.Agent = true
+	if !a.agentMode() {
+		t.Error("--agent should return true")
 	}
 }
 
-// TestEffectiveEnvSpec checks effectiveEnvSpec reads global envSpec.
+// TestEffectiveEnvSpec checks effectiveEnvSpec reads --env.
 func TestEffectiveEnvSpec(t *testing.T) {
-	origEnvSpec := envSpec
-	defer func() { envSpec = origEnvSpec }()
-
-	envSpec = "prod;staging"
-	if got := effectiveEnvSpec(); got != "prod;staging" {
+	a := &App{Opts: GlobalOptions{Env: "prod;staging"}}
+	if got := a.effectiveEnvSpec(); got != "prod;staging" {
 		t.Errorf("expected 'prod;staging', got %q", got)
 	}
 }

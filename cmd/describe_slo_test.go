@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -109,16 +107,8 @@ func TestPrintSLODetail(t *testing.T) {
 		}{BurnRateValue: 0, BurnRateType: "NONE"},
 	}
 
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	printSLODetail(d)
-
-	w.Close()
-	os.Stdout = old
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	printSLODetail(&buf, d)
 	out := buf.String()
 
 	checks := []string{
@@ -152,14 +142,8 @@ func TestPrintSLODetail_NoWarning(t *testing.T) {
 		Timeframe:    "-1w",
 	}
 
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-	printSLODetail(d)
-	w.Close()
-	os.Stdout = old
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	printSLODetail(&buf, d)
 	out := buf.String()
 
 	if !strings.Contains(out, "Warning:") {

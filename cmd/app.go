@@ -1,0 +1,318 @@
+package cmd
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
+	"github.com/dynatrace-oss/dtmgd/pkg/config"
+	"github.com/dynatrace-oss/dtmgd/pkg/output"
+)
+
+// GlobalOptions holds the root command's persistent flags for one invocation.
+type GlobalOptions struct {
+	ConfigPath, Context, Output, Env, Columns string
+	Verbose, MaxPages, Concurrency            int
+	Agent, NoAgent                            bool
+	Watch                                     bool          // moves to get problems/events in Task 7
+	WatchInterval                             time.Duration // same
+}
+
+// App is one dtmgd invocation: where its output goes and the global flags it
+// was given. Run builds a fresh App and command tree for every call, so no
+// flag value outlives the run that parsed it.
+type App struct {
+	Out, Err io.Writer
+	Opts     GlobalOptions
+}
+
+// Run executes dtmgd with args (without the program name), writing to stdout
+// and stderr, and returns the process exit code. main passes os.Args[1:];
+// tests pass their own arguments and writers.
+func Run(args []string, stdout, stderr io.Writer) int {
+	a := &App{Out: stdout, Err: stderr}
+	root := newRootCmd(a)
+	root.SetArgs(rewriteNegativeArgs(args))
+	if err := root.Execute(); err != nil {
+		err = client.WrapWithDiagnosis(err)
+		if a.agentMode() {
+			output.PrintAgentError(err)
+		} else {
+			output.PrintHumanError("%s", err)
+		}
+		return 1
+	}
+	return 0
+}
+
+// newRootCmd builds the dtmgd command tree over a, binding the global flags
+// to a.Opts.
+func newRootCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:           "dtmgd",
+		Short:         "Dynatrace Managed CLI",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		PersistentPreRun: func(_ *cobra.Command, _ []string) {
+			if n := a.agentNotice(); n != "" {
+				output.PrintInfo("%s", n)
+			}
+		},
+		Long: `dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
+
+It provides read access to problems, entities, events, logs, metrics, SLOs,
+and security vulnerabilities via the Dynatrace Managed classic API.
+
+API endpoints used:
+  Environment API:  {host}/e/{env-id}/api/v2/
+  Cluster API:      {host}/api/v1.0/onpremise/
+
+Quick start:
+  dtmgd config set-context prod --host https://managed.company.com --env-id abc123 --token-ref prod-token
+  dtmgd config set-credentials prod-token --token <your-api-token>
+  dtmgd get problems
+
+Multi-environment:
+  dtmgd get problems --env ALL_ENVIRONMENTS
+  dtmgd get problems --env "prod;staging"`,
+	}
+	cmd.SetOut(a.Out)
+	cmd.SetErr(a.Err)
+
+	f := cmd.PersistentFlags()
+	f.StringVar(&a.Opts.ConfigPath, "config", "", "config file (default: ~/.config/dtmgd/config)")
+	f.StringVarP(&a.Opts.Context, "context", "c", "", "context to use (overrides current-context)")
+	f.StringVarP(&a.Opts.Output, "output", "o", "", "output format: table|json|yaml|wide (default: table)")
+	f.CountVarP(&a.Opts.Verbose, "verbose", "v", "verbosity level (-v for summary, -vv for full request/response)")
+	f.StringVarP(&a.Opts.Env, "env", "e", "", `environment(s): context name, "prod;staging", or ALL_ENVIRONMENTS`)
+	f.BoolVarP(&a.Opts.Agent, "agent", "A", false, "force agent envelope output mode")
+	f.BoolVar(&a.Opts.NoAgent, "no-agent", false, "disable auto-detected agent mode")
+	f.IntVar(&a.Opts.MaxPages, "max-pages", 0, "maximum number of pages to fetch (0 = all pages)")
+	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table output")
+	f.IntVar(&a.Opts.Concurrency, "concurrency", client.DefaultConcurrency,
+		"maximum environments queried at once with --env")
+	a.addWatchFlags(cmd)
+
+	cmd.AddCommand(
+		newGetCmd(a),
+		newDescribeCmd(a),
+		newQueryCmd(a),
+		newConfigCmd(a),
+		newCtxCmd(a),
+		newSkillsCmd(a),
+		newVersionCmd(a),
+		newCompletionCmd(a),
+	)
+	return cmd
+}
+
+// agentMode returns true if agent envelope output should be used.
+func (a *App) agentMode() bool {
+	if a.Opts.NoAgent {
+		return false
+	}
+	return a.Opts.Agent || output.DetectAgent()
+}
+
+// agentNotice returns the stderr line announcing that agent mode was switched
+// on by an environment variable, or "" when no notice is due.
+//
+// Pentest note 5: with CLAUDECODE (or similar) exported in a CI job, every
+// dtmgd call there silently switched to JSON envelopes, and table-parsing
+// scripts broke without an error. An explicit --agent or --no-agent is the
+// user's own choice, so only auto-detection is announced.
+func (a *App) agentNotice() string {
+	if a.Opts.Agent || a.Opts.NoAgent {
+		return ""
+	}
+	v := output.DetectedAgentVar()
+	if v == "" {
+		return ""
+	}
+	return fmt.Sprintf("Agent mode is on because %s is set. Use --no-agent for human-readable output.", v)
+}
+
+// loadConfig loads the configuration, respecting --config and --context flags.
+func (a *App) loadConfig() (*config.Config, error) {
+	cfg, err := a.loadFromSource()
+	if err != nil {
+		return nil, err
+	}
+
+	// Override current context from --context flag (single-env mode)
+	if a.Opts.Context != "" {
+		cfg.CurrentContext = a.Opts.Context
+	}
+
+	// If --env is a single named context (not ALL_ENVIRONMENTS or semicolon-separated),
+	// treat it like --context so table output works correctly.
+	if env := a.Opts.Env; env != "" && env != "ALL_ENVIRONMENTS" && !strings.Contains(env, ";") {
+		cfg.CurrentContext = env
+	}
+
+	return cfg, nil
+}
+
+// loadConfigRaw loads config without applying the --context override.
+// Used by config management commands.
+func (a *App) loadConfigRaw() (*config.Config, error) {
+	return a.loadFromSource()
+}
+
+// loadConfigForUpdate loads the config that a command is about to modify and
+// save. Only a missing file yields a fresh config; any other failure — a parse
+// error, a permission problem — is returned, because saving over a file that
+// could not be read would replace every context and token in it.
+func (a *App) loadConfigForUpdate() (*config.Config, error) {
+	cfg, err := a.loadConfigRaw()
+	if errors.Is(err, fs.ErrNotExist) {
+		return config.NewConfig(), nil
+	}
+	return cfg, err
+}
+
+// loadFromSource reads whichever config file ResolveSource selects, reporting
+// the choice when the user did not make it themselves.
+func (a *App) loadFromSource() (*config.Config, error) {
+	src := config.ResolveSource(a.Opts.ConfigPath)
+	a.reportConfigSource(src)
+
+	cfg, err := config.LoadFrom(src.Path)
+	if err != nil {
+		return nil, err
+	}
+	warnBareRefs(cfg)
+	return cfg, nil
+}
+
+// reportConfigSource names the config file in effect when that choice is not
+// visible to the user.
+//
+// FindLocalConfig walks upward from the working directory, so a .dtmgd.yaml
+// planted in any shared ancestor — /tmp, a group-writable project root, a CI
+// workspace — redirects every dtmgd run, host and token included, with
+// nothing on screen to show for it. Naming the file is what makes that
+// visible; it is the disclosure half of the fix, the other half being that
+// LoadFrom no longer expands ${VAR} into attacker-chosen fields.
+//
+// The remaining sources are announced only under -v. A .dtmgd.yaml in the
+// working directory is the documented project-local workflow that
+// `dtmgd config init` creates, and an explicit --config path was typed by the
+// user; warning on either would train people to ignore the warning that
+// matters.
+func (a *App) reportConfigSource(src config.Source) {
+	if src.Invisible() {
+		output.PrintWarning(
+			"Using config %s — found in a parent directory, not %s. Check it before trusting this run.",
+			src.Path, config.DefaultConfigPath())
+		return
+	}
+	if a.Opts.Verbose > 0 {
+		output.PrintInfo("Using config %s", src.Path)
+	}
+}
+
+// saveConfig saves config, respecting the --config flag and local config presence.
+func (a *App) saveConfig(cfg *config.Config) error {
+	if a.Opts.ConfigPath != "" {
+		return cfg.SaveTo(a.Opts.ConfigPath)
+	}
+	if local := config.FindLocalConfig(); local != "" {
+		return cfg.SaveTo(local)
+	}
+	return cfg.Save()
+}
+
+// newClient creates an API client from the current config.
+func (a *App) newClient(cfg *config.Config) (*client.Client, error) {
+	c, err := client.NewFromConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	c.SetVerbosity(a.Opts.Verbose)
+	return c, nil
+}
+
+// newClientWithHostEnv creates an API client for a specific host/env/token.
+func (a *App) newClientWithHostEnv(host, envID, token string) (*client.Client, error) {
+	c, err := client.New(host, envID, token)
+	if err != nil {
+		return nil, err
+	}
+	c.SetVerbosity(a.Opts.Verbose)
+	return c, nil
+}
+
+// printer returns a Printer writing to a.Out, chosen by the --output flag and
+// agent mode. In agent mode, resource identifies the resource type in the
+// envelope.
+func (a *App) printer(resource string) output.Printer {
+	if a.agentMode() {
+		return output.NewAgentPrinterTo(a.Out, resource)
+	}
+	format := a.Opts.Output
+	if format == "" {
+		format = "table"
+	}
+	return output.NewPrinterToWithColumns(format, a.Out, a.columns())
+}
+
+// columns returns the --columns list, trimmed and without empty entries.
+func (a *App) columns() []string {
+	if a.Opts.Columns == "" {
+		return nil
+	}
+	parts := strings.Split(a.Opts.Columns, ",")
+	var result []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// isMultiEnv returns true if the --env flag specifies multiple environments.
+func (a *App) isMultiEnv() bool {
+	return a.Opts.Env == "ALL_ENVIRONMENTS" || strings.Contains(a.Opts.Env, ";")
+}
+
+// maxPagesFor returns the page limit. When --limit is set, fetch only 1 page
+// (the API's pageSize already limits results). Otherwise use --max-pages.
+func (a *App) maxPagesFor(hasLimit bool) int {
+	if hasLimit {
+		return 1
+	}
+	return a.Opts.MaxPages
+}
+
+// effectiveEnvSpec returns the env spec from the --env flag.
+func (a *App) effectiveEnvSpec() string {
+	return a.Opts.Env
+}
+
+// multiExec runs an API call against one or more environments based on --env flag.
+// Returns the unwrapped result (single value or map of name→value).
+func (a *App) multiExec(cfg *config.Config, apiCall func(c *client.Client) (interface{}, error)) (interface{}, error) {
+	spec := a.effectiveEnvSpec()
+	if spec == "" {
+		// Single environment — use current context directly
+		c, err := a.newClient(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return apiCall(c)
+	}
+	results, err := client.MultiRequest(cfg, spec, a.Opts.Concurrency, apiCall)
+	if err != nil {
+		return nil, err
+	}
+	return client.UnwrapSingle(results)
+}

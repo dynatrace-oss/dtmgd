@@ -3,10 +3,8 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -208,17 +206,8 @@ func TestPrintSecurityProblemDetail(t *testing.T) {
 	d.RiskAssessment.DataAssets = "REACHABLE"
 	d.RiskAssessment.Exposure = "NOT_DETECTED"
 
-	// Capture stdout
-	old := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	printSecurityProblemDetail(d)
-
-	w.Close()
-	os.Stdout = old
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	printSecurityProblemDetail(&buf, d)
 	out := buf.String()
 
 	checks := []string{

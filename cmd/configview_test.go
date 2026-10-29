@@ -1,40 +1,12 @@
 package cmd
 
 import (
-	"io"
-	"os"
+	"bytes"
 	"strings"
 	"testing"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 )
-
-// captureStdout runs fn with os.Stdout redirected to a pipe and returns what
-// was written. The printers resolve os.Stdout when they are constructed, which
-// happens inside RunE, so swapping it here is enough to capture command output.
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = w
-	fn()
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	os.Stdout = orig
-
-	out, err := io.ReadAll(r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := r.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return string(out)
-}
 
 const plaintextTokenConfig = `apiVersion: dtmgd.io/v1
 kind: Config
@@ -96,14 +68,15 @@ func TestWithMaskedTokensDoesNotMutateSource(t *testing.T) {
 // the plaintext token must not reach stdout unasked, because that is what CI
 // step logs capture.
 func TestConfigViewMasksByDefault(t *testing.T) {
-	withTempConfig(t, plaintextTokenConfig)
-	resetShowTokens(t)
+	a := newTestApp(withTempConfig(t, plaintextTokenConfig))
+	var out bytes.Buffer
+	a.Out = &out
+	cmd := newConfigViewCmd(a)
 
-	var err error
-	got := captureStdout(t, func() { err = configViewCmd.RunE(configViewCmd, nil) })
-	if err != nil {
+	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("config view error = %v", err)
 	}
+	got := out.String()
 
 	if strings.Contains(got, "dt0c01.LIVESECRET") {
 		t.Errorf("config view printed the plaintext token:\n%s", got)
@@ -117,34 +90,21 @@ func TestConfigViewMasksByDefault(t *testing.T) {
 // otherwise masking would be a functional regression for anyone who needs the
 // value for support or debugging.
 func TestConfigViewShowTokensReveals(t *testing.T) {
-	withTempConfig(t, plaintextTokenConfig)
-	resetShowTokens(t)
+	a := newTestApp(withTempConfig(t, plaintextTokenConfig))
+	var out bytes.Buffer
+	a.Out = &out
+	cmd := newConfigViewCmd(a)
 
-	if err := configViewCmd.Flags().Set("show-tokens", "true"); err != nil {
+	if err := cmd.Flags().Set("show-tokens", "true"); err != nil {
 		t.Fatal(err)
 	}
 
-	var err error
-	got := captureStdout(t, func() { err = configViewCmd.RunE(configViewCmd, nil) })
-	if err != nil {
+	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("config view error = %v", err)
 	}
+	got := out.String()
 
 	if !strings.Contains(got, "dt0c01.LIVESECRET") {
 		t.Errorf("--show-tokens did not reveal the value:\n%s", got)
 	}
-}
-
-// resetShowTokens restores the flag before and after a test. Cobra flag values
-// live on the package-level command, so without this the two tests above would
-// depend on execution order.
-func resetShowTokens(t *testing.T) {
-	t.Helper()
-	set := func() {
-		if err := configViewCmd.Flags().Set("show-tokens", "false"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	set()
-	t.Cleanup(set)
 }

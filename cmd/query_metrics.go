@@ -30,97 +30,105 @@ type MetricQueryDataPoints struct {
 	Values       []*float64        `json:"values"`
 }
 
-var (
-	qmMetric     string
-	qmFrom       string
-	qmTo         string
-	qmResolution string
-	qmEntity     string
-)
-
-var queryMetricsCmd = &cobra.Command{
-	Use:     "metrics",
-	Aliases: []string{"metric", "met"},
-	Short:   "Query metric time-series data",
-	Long: `Query metric data for a specific metric selector and time range.
+func newQueryMetricsCmd(a *App) *cobra.Command {
+	var opts struct {
+		metric     string
+		from       string
+		to         string
+		resolution string
+		entity     string
+	}
+	cmd := &cobra.Command{
+		Use:     "metrics",
+		Aliases: []string{"metric", "met"},
+		Short:   "Query metric time-series data",
+		Long: `Query metric data for a specific metric selector and time range.
 
 Use 'dtmgd get metrics --search <keyword>' to find available metric IDs first.
 
 Examples:
   dtmgd query metrics --metric builtin:service.response.time --from now-1h --to now
   dtmgd query metrics --env ALL_ENVIRONMENTS --metric builtin:host.cpu.usage --from now-1h`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if qmMetric == "" {
-			return fmt.Errorf("--metric is required (e.g. builtin:service.response.time)")
-		}
-		if qmFrom == "" {
-			return fmt.Errorf("--from is required")
-		}
-		if qmTo == "" {
-			qmTo = "now"
-		}
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.metric == "" {
+				return fmt.Errorf("--metric is required (e.g. builtin:service.response.time)")
+			}
+			if opts.from == "" {
+				return fmt.Errorf("--from is required")
+			}
+			to := opts.to
+			if to == "" {
+				to = "now"
+			}
 
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-
-		params := map[string]string{
-			"metricSelector": qmMetric,
-			"from":           qmFrom,
-			"to":             qmTo,
-		}
-		if qmResolution != "" {
-			params["resolution"] = qmResolution
-		}
-		if qmEntity != "" {
-			params["entitySelector"] = qmEntity
-		}
-
-		if isMultiEnv() {
-			data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-				var resp MetricQueryResponse
-				if err := c.GetV2("/metrics/query", params, &resp); err != nil {
-					return nil, err
-				}
-				return resp, nil
-			})
+			cfg, err := a.loadConfig()
 			if err != nil {
 				return err
 			}
-			return NewPrinterForResource("metrics").Print(data)
-		}
 
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
+			params := map[string]string{
+				"metricSelector": opts.metric,
+				"from":           opts.from,
+				"to":             to,
+			}
+			if opts.resolution != "" {
+				params["resolution"] = opts.resolution
+			}
+			if opts.entity != "" {
+				params["entitySelector"] = opts.entity
+			}
 
-		var resp MetricQueryResponse
-		if err := c.GetV2("/metrics/query", params, &resp); err != nil {
-			return err
-		}
+			if a.isMultiEnv() {
+				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
+					var resp MetricQueryResponse
+					if err := c.GetV2("/metrics/query", params, &resp); err != nil {
+						return nil, err
+					}
+					return resp, nil
+				})
+				if err != nil {
+					return err
+				}
+				return a.printer("metrics").Print(data)
+			}
 
-		if agentMode() {
-			return NewPrinterForResource("metrics").Print(resp)
-		}
-		if outputFormat == "yaml" {
-			return NewPrinter().Print(resp)
-		}
-		if outputFormat == "table" || outputFormat == "wide" || outputFormat == "" {
-			resolveMetricEntityNames(c, &resp)
-			printMetricQuerySummary(resp)
+			c, err := a.newClient(cfg)
+			if err != nil {
+				return err
+			}
+
+			var resp MetricQueryResponse
+			if err := c.GetV2("/metrics/query", params, &resp); err != nil {
+				return err
+			}
+
+			if a.agentMode() {
+				return a.printer("metrics").Print(resp)
+			}
+			if a.Opts.Output == "yaml" {
+				return a.printer("").Print(resp)
+			}
+			if a.Opts.Output == "table" || a.Opts.Output == "wide" || a.Opts.Output == "" {
+				resolveMetricEntityNames(c, &resp)
+				a.printMetricQuerySummary(resp)
+				return nil
+			}
+
+			// json
+			out, err := json.MarshalIndent(resp, "", "  ")
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(a.Out, string(out))
 			return nil
-		}
-
-		// json
-		out, err := json.MarshalIndent(resp, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(out))
-		return nil
-	},
+		},
+	}
+	cmd.Flags().StringVar(&opts.metric, "metric", "", "metric selector (required), e.g. builtin:service.response.time")
+	cmd.Flags().StringVar(&opts.from, "from", "", "start time (required), e.g. now-1h")
+	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
+	cmd.Flags().StringVar(&opts.resolution, "resolution", "", "data resolution (e.g. 5m, 1h, 1d)")
+	cmd.Flags().StringVar(&opts.entity, "entity", "", "entity selector to filter metric data")
+	return cmd
 }
 
 // MetricEntitySummaryRow is a table row for per-entity single-value metric results.
@@ -228,21 +236,21 @@ func injectEntityNames(resp *MetricQueryResponse, nameMap map[string]string) {
 	}
 }
 
-func printMetricQuerySummary(resp MetricQueryResponse) {
+func (a *App) printMetricQuerySummary(resp MetricQueryResponse) {
 	output.PrintInfo("Resolution: %s", resp.Resolution)
 	for _, res := range resp.Result {
 		output.PrintInfo("\nMetric: %s", res.MetricID)
 		if isSingleValueResult(res.Data) {
-			printEntitySummaryTable(res.Data)
+			a.printEntitySummaryTable(res.Data)
 		} else {
 			for _, dp := range res.Data {
-				printTimeSeriesDataPoint(dp)
+				a.printTimeSeriesDataPoint(dp)
 			}
 		}
 	}
 }
 
-func printEntitySummaryTable(data []MetricQueryDataPoints) {
+func (a *App) printEntitySummaryTable(data []MetricQueryDataPoints) {
 	type row struct {
 		name  string
 		id    string
@@ -286,10 +294,10 @@ func printEntitySummaryTable(data []MetricQueryDataPoints) {
 			Value:  val,
 		})
 	}
-	_ = NewPrinter().PrintList(tableRows)
+	_ = a.printer("").PrintList(tableRows)
 }
 
-func printTimeSeriesDataPoint(dp MetricQueryDataPoints) {
+func (a *App) printTimeSeriesDataPoint(dp MetricQueryDataPoints) {
 	name, id := extractEntityLabel(dp.DimensionMap)
 	label := ""
 	if name != "" {
@@ -310,23 +318,13 @@ func printTimeSeriesDataPoint(dp MetricQueryDataPoints) {
 	if label != "" {
 		output.PrintInfo("  Entity: %s", label)
 	}
-	fmt.Printf("  %-26s  %s\n", "TIMESTAMP (UTC)", "VALUE")
-	fmt.Printf("  %-26s  %s\n", "-------------------", "-----")
+	_, _ = fmt.Fprintf(a.Out, "  %-26s  %s\n", "TIMESTAMP (UTC)", "VALUE")
+	_, _ = fmt.Fprintf(a.Out, "  %-26s  %s\n", "-------------------", "-----")
 	for i, ts := range dp.Timestamps {
 		val := "null"
 		if i < len(dp.Values) && dp.Values[i] != nil {
 			val = fmt.Sprintf("%.4f", *dp.Values[i])
 		}
-		fmt.Printf("  %-26s  %s\n", msToTime(ts), val)
+		_, _ = fmt.Fprintf(a.Out, "  %-26s  %s\n", msToTime(ts), val)
 	}
-}
-
-func init() {
-	queryCmd.AddCommand(queryMetricsCmd)
-
-	queryMetricsCmd.Flags().StringVar(&qmMetric, "metric", "", "metric selector (required), e.g. builtin:service.response.time")
-	queryMetricsCmd.Flags().StringVar(&qmFrom, "from", "", "start time (required), e.g. now-1h")
-	queryMetricsCmd.Flags().StringVar(&qmTo, "to", "", "end time (default: now)")
-	queryMetricsCmd.Flags().StringVar(&qmResolution, "resolution", "", "data resolution (e.g. 5m, 1h, 1d)")
-	queryMetricsCmd.Flags().StringVar(&qmEntity, "entity", "", "entity selector to filter metric data")
 }

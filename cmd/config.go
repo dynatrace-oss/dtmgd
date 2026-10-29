@@ -11,18 +11,36 @@ import (
 	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
-// configCmd is the top-level config management command.
-var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Manage dtmgd configuration",
-	Long:  `View and modify dtmgd configuration including contexts (Managed environments) and credentials.`,
+// newConfigCmd builds the top-level config management command.
+func newConfigCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage dtmgd configuration",
+		Long:  `View and modify dtmgd configuration including contexts (Managed environments) and credentials.`,
+	}
+	cmd.AddCommand(
+		newConfigViewCmd(a),
+		newConfigInitCmd(a),
+		newConfigGetContextsCmd(a),
+		newConfigCurrentContextCmd(a),
+		newConfigUseContextCmd(a),
+		newConfigSetContextCmd(a),
+		newConfigSetCredentialsCmd(a),
+		newConfigDeleteContextCmd(a),
+		newConfigMigrateTokensCmd(a),
+	)
+	return cmd
 }
 
-// configViewCmd displays the current config.
-var configViewCmd = &cobra.Command{
-	Use:   "view",
-	Short: "Display the current configuration",
-	Long: `Display the current configuration.
+// newConfigViewCmd builds `config view`, which displays the current config.
+func newConfigViewCmd(a *App) *cobra.Command {
+	var opts struct {
+		showTokens bool
+	}
+	cmd := &cobra.Command{
+		Use:   "view",
+		Short: "Display the current configuration",
+		Long: `Display the current configuration.
 
 Token values are masked. Pass --show-tokens to print them verbatim.
 
@@ -31,17 +49,19 @@ containers, CI runners — because that is where SetToken falls back to writing
 the token into the config file rather than leaving an empty placeholder. That
 is also where the output of this command is most likely to be captured in a
 build log.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-		showTokens, _ := cmd.Flags().GetBool("show-tokens")
-		if !showTokens {
-			cfg = withMaskedTokens(cfg)
-		}
-		return NewPrinter().Print(cfg)
-	},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
+			if !opts.showTokens {
+				cfg = withMaskedTokens(cfg)
+			}
+			return a.printer("").Print(cfg)
+		},
+	}
+	cmd.Flags().BoolVar(&opts.showTokens, "show-tokens", false, "print token values instead of masking them")
+	return cmd
 }
 
 // tokenMask replaces a stored token value in displayed output.
@@ -69,100 +89,125 @@ func withMaskedTokens(cfg *config.Config) *config.Config {
 	return &masked
 }
 
-// configInitCmd creates a .dtmgd.yaml template in the current directory.
-var configInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Create a .dtmgd.yaml template in the current directory",
-	Long: `Create a project-local .dtmgd.yaml configuration template.
+// newConfigInitCmd builds `config init`, which creates a .dtmgd.yaml template
+// in the current directory.
+func newConfigInitCmd(a *App) *cobra.Command {
+	var opts struct {
+		force   bool
+		context string
+	}
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Create a .dtmgd.yaml template in the current directory",
+		Long: `Create a project-local .dtmgd.yaml configuration template.
 
 Environment variables can be used with ${VAR_NAME} syntax.
 
 Examples:
   dtmgd config init
   dtmgd config init --context my-cluster`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		force, _ := cmd.Flags().GetBool("force")
-		ctxName, _ := cmd.Flags().GetString("context")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctxName := opts.context
 
-		if _, err := os.Stat(config.LocalConfigName); err == nil && !force {
-			return fmt.Errorf("%s already exists. Use --force to overwrite", config.LocalConfigName)
-		}
+			if _, err := os.Stat(config.LocalConfigName); err == nil && !opts.force {
+				return fmt.Errorf("%s already exists. Use --force to overwrite", config.LocalConfigName)
+			}
 
-		if ctxName == "" {
-			ctxName = "my-cluster"
-		}
+			if ctxName == "" {
+				ctxName = "my-cluster"
+			}
 
-		template := &config.Config{
-			APIVersion:     "dtmgd.io/v1",
-			Kind:           "Config",
-			CurrentContext: ctxName,
-			Contexts: []config.NamedContext{
-				{
-					Name: ctxName,
-					Context: config.Context{
-						Host:        "${DT_MANAGED_HOST}",
-						EnvID:       "${DT_ENV_ID}",
-						TokenRef:    "my-token",
-						Description: "Dynatrace Managed environment",
+			template := &config.Config{
+				APIVersion:     "dtmgd.io/v1",
+				Kind:           "Config",
+				CurrentContext: ctxName,
+				Contexts: []config.NamedContext{
+					{
+						Name: ctxName,
+						Context: config.Context{
+							Host:        "${DT_MANAGED_HOST}",
+							EnvID:       "${DT_ENV_ID}",
+							TokenRef:    "my-token",
+							Description: "Dynatrace Managed environment",
+						},
 					},
 				},
-			},
-			Tokens: []config.NamedToken{
-				{Name: "my-token", Token: "${DT_API_TOKEN}"},
-			},
-			Preferences: config.Preferences{Output: "table"},
-		}
+				Tokens: []config.NamedToken{
+					{Name: "my-token", Token: "${DT_API_TOKEN}"},
+				},
+				Preferences: config.Preferences{Output: "table"},
+			}
 
-		if err := template.SaveTo(config.LocalConfigName); err != nil {
-			return fmt.Errorf("failed to write %s: %w", config.LocalConfigName, err)
-		}
+			if err := template.SaveTo(config.LocalConfigName); err != nil {
+				return fmt.Errorf("failed to write %s: %w", config.LocalConfigName, err)
+			}
 
-		output.PrintSuccess("Created %s", config.LocalConfigName)
-		output.PrintInfo("Edit this file to configure your Dynatrace Managed connection.")
-		output.PrintInfo("Environment variables can be used with ${VAR_NAME} syntax.")
-		return nil
-	},
+			output.PrintSuccess("Created %s", config.LocalConfigName)
+			output.PrintInfo("Edit this file to configure your Dynatrace Managed connection.")
+			output.PrintInfo("Environment variables can be used with ${VAR_NAME} syntax.")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&opts.force, "force", false, "overwrite existing .dtmgd.yaml")
+	cmd.Flags().StringVar(&opts.context, "context", "", "context name to pre-fill in template")
+	return cmd
 }
 
-// configGetContextsCmd lists all contexts.
-var configGetContextsCmd = &cobra.Command{
-	Use:     "get-contexts",
-	Short:   "List all available contexts",
-	Aliases: []string{"get-ctx"},
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return listContexts()
-	},
+// newConfigGetContextsCmd builds `config get-contexts`, which lists all contexts.
+func newConfigGetContextsCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "get-contexts",
+		Short:   "List all available contexts",
+		Aliases: []string{"get-ctx"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.listContexts()
+		},
+	}
+	return cmd
 }
 
-// configCurrentContextCmd shows the current context name.
-var configCurrentContextCmd = &cobra.Command{
-	Use:   "current-context",
-	Short: "Display the current context",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
-		fmt.Println(cfg.CurrentContext)
-		return nil
-	},
+// newConfigCurrentContextCmd builds `config current-context`, which shows the
+// current context name.
+func newConfigCurrentContextCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "current-context",
+		Short: "Display the current context",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(a.Out, cfg.CurrentContext)
+			return nil
+		},
+	}
+	return cmd
 }
 
-// configUseContextCmd switches to a different context.
-var configUseContextCmd = &cobra.Command{
-	Use:   "use-context <context-name>",
-	Short: "Switch to a different context",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return useContext(args[0])
-	},
+// newConfigUseContextCmd builds `config use-context`, which switches to a
+// different context.
+func newConfigUseContextCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "use-context <context-name>",
+		Short: "Switch to a different context",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.useContext(args[0])
+		},
+	}
+	return cmd
 }
 
-// configSetContextCmd creates or updates a context.
-var configSetContextCmd = &cobra.Command{
-	Use:   "set-context <context-name>",
-	Short: "Create or update a context entry",
-	Long: `Create or update a context that points to a Dynatrace Managed environment.
+// newConfigSetContextCmd builds `config set-context`, which creates or updates
+// a context.
+func newConfigSetContextCmd(a *App) *cobra.Command {
+	var opts struct {
+		host, envID, tokenRef, description string
+	}
+	cmd := &cobra.Command{
+		Use:   "set-context <context-name>",
+		Short: "Create or update a context entry",
+		Long: `Create or update a context that points to a Dynatrace Managed environment.
 
 A context stores three things:
   --host       Base URL of the Dynatrace Managed cluster
@@ -182,23 +227,27 @@ Examples:
     --token-ref prod-token
 
   dtmgd config set-credentials prod-token --token <api-token>`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		host, _ := cmd.Flags().GetString("host")
-		envID, _ := cmd.Flags().GetString(flagEnvID)
-		tokenRef, _ := cmd.Flags().GetString(flagTokenRef)
-		description, _ := cmd.Flags().GetString("description")
-
-		return setContext(args[0], host, envID, tokenRef, description)
-	},
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.setContext(args[0], opts.host, opts.envID, opts.tokenRef, opts.description)
+		},
+	}
+	cmd.Flags().StringVar(&opts.host, "host", "", "Dynatrace Managed cluster URL (e.g. https://managed.company.com)")
+	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "Environment ID")
+	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name (see set-credentials)")
+	cmd.Flags().StringVar(&opts.description, "description", "", "human-readable description")
+	return cmd
 }
 
-// configSetCredentialsCmd stores an API token.
-var configSetCredentialsCmd = &cobra.Command{
-	Use:     "set-credentials <name>",
-	Short:   "Store an API token credential",
-	Aliases: []string{"set-creds"},
-	Long: `Store an API token under a name that contexts refer to with --token-ref.
+// newConfigSetCredentialsCmd builds `config set-credentials`, which stores an
+// API token. Its token flags are read by tokenInputFromCmd, which also needs
+// to know whether --token was given at all.
+func newConfigSetCredentialsCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "set-credentials <name>",
+		Short:   "Store an API token credential",
+		Aliases: []string{"set-creds"},
+		Long: `Store an API token under a name that contexts refer to with --token-ref.
 
 The token is read from the terminal by default, with echo disabled, so it
 reaches neither the screen nor your shell history:
@@ -213,19 +262,23 @@ For scripts and CI, pipe it in on stdin:
 --token is still accepted, but a value passed there is copied into the process
 argument vector by the kernel and is readable from /proc/<pid>/cmdline by any
 process running as you, as well as being recorded in your shell history.`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		token, err := tokenInputFromCmd(cmd).resolve()
-		if err != nil {
-			return err
-		}
-		return setCredentials(args[0], token)
-	},
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			token, err := tokenInputFromCmd(cmd).resolve()
+			if err != nil {
+				return err
+			}
+			return a.setCredentials(args[0], token)
+		},
+	}
+	cmd.Flags().String(flagToken, "", "API token value (exposed in the process list — prefer --token-stdin)")
+	cmd.Flags().Bool(flagTokenStdin, false, "read the API token from stdin")
+	return cmd
 }
 
 // setCredentials stores an API token under the given name.
-func setCredentials(name, token string) error {
-	cfg, err := loadConfigForUpdate()
+func (a *App) setCredentials(name, token string) error {
+	cfg, err := a.loadConfigForUpdate()
 	if err != nil {
 		return err
 	}
@@ -244,7 +297,7 @@ func setCredentials(name, token string) error {
 	if err := cfg.SetToken(name, token); err != nil {
 		return err
 	}
-	if err := saveConfig(cfg); err != nil {
+	if err := a.saveConfig(cfg); err != nil {
 		return err
 	}
 
@@ -256,71 +309,52 @@ func setCredentials(name, token string) error {
 	return nil
 }
 
-// configDeleteContextCmd removes a context.
-var configDeleteContextCmd = &cobra.Command{
-	Use:     "delete-context <context-name>",
-	Short:   "Delete a context from the config",
-	Aliases: []string{"rm-ctx"},
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return deleteContext(args[0])
-	},
+// newConfigDeleteContextCmd builds `config delete-context`, which removes a
+// context.
+func newConfigDeleteContextCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "delete-context <context-name>",
+		Short:   "Delete a context from the config",
+		Aliases: []string{"rm-ctx"},
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return a.deleteContext(args[0])
+		},
+	}
+	return cmd
 }
 
-// configMigrateTokensCmd migrates plaintext tokens to the OS keyring.
-var configMigrateTokensCmd = &cobra.Command{
-	Use:   "migrate-tokens",
-	Short: "Migrate tokens from config file to OS keyring",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if !config.IsKeyringAvailable() {
-			return fmt.Errorf("keyring not available. Tokens will remain in config file")
-		}
-		cfg, err := loadConfigRaw()
-		if err != nil {
-			return err
-		}
-		migrated, skipped, err := config.MigrateTokensToKeyring(cfg)
-		if err != nil {
-			return err
-		}
-		for _, name := range skipped {
-			output.PrintWarning("Skipped %q: it resolves from an environment variable; migrating would freeze the current value", name)
-		}
-		if migrated == 0 {
-			output.PrintInfo("No tokens to migrate")
+// newConfigMigrateTokensCmd builds `config migrate-tokens`, which migrates
+// plaintext tokens to the OS keyring.
+func newConfigMigrateTokensCmd(a *App) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "migrate-tokens",
+		Short: "Migrate tokens from config file to OS keyring",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !config.IsKeyringAvailable() {
+				return fmt.Errorf("keyring not available. Tokens will remain in config file")
+			}
+			cfg, err := a.loadConfigRaw()
+			if err != nil {
+				return err
+			}
+			migrated, skipped, err := config.MigrateTokensToKeyring(cfg)
+			if err != nil {
+				return err
+			}
+			for _, name := range skipped {
+				output.PrintWarning("Skipped %q: it resolves from an environment variable; migrating would freeze the current value", name)
+			}
+			if migrated == 0 {
+				output.PrintInfo("No tokens to migrate")
+				return nil
+			}
+			if err := a.saveConfig(cfg); err != nil {
+				return fmt.Errorf("failed to save config after migration: %w", err)
+			}
+			output.PrintSuccess("Migrated %d token(s) to %s", migrated, config.KeyringBackend())
 			return nil
-		}
-		if err := saveConfig(cfg); err != nil {
-			return fmt.Errorf("failed to save config after migration: %w", err)
-		}
-		output.PrintSuccess("Migrated %d token(s) to %s", migrated, config.KeyringBackend())
-		return nil
-	},
-}
-
-func init() {
-	rootCmd.AddCommand(configCmd)
-
-	configCmd.AddCommand(configViewCmd)
-	configCmd.AddCommand(configInitCmd)
-	configCmd.AddCommand(configGetContextsCmd)
-	configCmd.AddCommand(configCurrentContextCmd)
-	configCmd.AddCommand(configUseContextCmd)
-	configCmd.AddCommand(configSetContextCmd)
-	configCmd.AddCommand(configSetCredentialsCmd)
-	configCmd.AddCommand(configDeleteContextCmd)
-	configCmd.AddCommand(configMigrateTokensCmd)
-
-	configInitCmd.Flags().Bool("force", false, "overwrite existing .dtmgd.yaml")
-	configInitCmd.Flags().String("context", "", "context name to pre-fill in template")
-
-	configSetContextCmd.Flags().String("host", "", "Dynatrace Managed cluster URL (e.g. https://managed.company.com)")
-	configSetContextCmd.Flags().String(flagEnvID, "", "Environment ID")
-	configSetContextCmd.Flags().String(flagTokenRef, "", "credential name (see set-credentials)")
-	configSetContextCmd.Flags().String("description", "", "human-readable description")
-
-	configViewCmd.Flags().Bool("show-tokens", false, "print token values instead of masking them")
-
-	configSetCredentialsCmd.Flags().String(flagToken, "", "API token value (exposed in the process list — prefer --token-stdin)")
-	configSetCredentialsCmd.Flags().Bool(flagTokenStdin, false, "read the API token from stdin")
+		},
+	}
+	return cmd
 }

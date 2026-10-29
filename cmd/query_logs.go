@@ -24,20 +24,20 @@ type LogEntry struct {
 	Content   string                 `json:"content"`
 }
 
-var (
-	qlQuery  string
-	qlFrom   string
-	qlTo     string
-	qlLimit  int
-	qlSort   string
-	qlEntity string
-)
-
-var queryLogsCmd = &cobra.Command{
-	Use:     "logs",
-	Aliases: []string{"log"},
-	Short:   "Search log records",
-	Long: `Search log records using simple text queries.
+func newQueryLogsCmd(a *App) *cobra.Command {
+	var opts struct {
+		query  string
+		from   string
+		to     string
+		limit  int
+		sort   string
+		entity string
+	}
+	cmd := &cobra.Command{
+		Use:     "logs",
+		Aliases: []string{"log"},
+		Short:   "Search log records",
+		Long: `Search log records using simple text queries.
 
 Managed clusters support basic text search. Do NOT use structured syntax
 like "content:error" — just use the plain search term.
@@ -46,106 +46,115 @@ Examples:
   dtmgd query logs --query "error" --from now-1h --to now
   dtmgd query logs --query "timeout" --from now-30m --limit 50
   dtmgd query logs --env ALL_ENVIRONMENTS --query "error" --from now-1h`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if qlQuery == "" {
-			return fmt.Errorf("--query is required (e.g. \"error\")")
-		}
-		if qlFrom == "" {
-			return fmt.Errorf("--from is required (e.g. now-1h)")
-		}
-		if qlTo == "" {
-			qlTo = "now"
-		}
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.query == "" {
+				return fmt.Errorf("--query is required (e.g. \"error\")")
+			}
+			if opts.from == "" {
+				return fmt.Errorf("--from is required (e.g. now-1h)")
+			}
+			to := opts.to
+			if to == "" {
+				to = "now"
+			}
 
-		cfg, err := LoadConfig()
-		if err != nil {
-			return err
-		}
+			cfg, err := a.loadConfig()
+			if err != nil {
+				return err
+			}
 
-		params := map[string]string{
-			"query": qlQuery,
-			"from":  qlFrom,
-			"to":    qlTo,
-		}
-		limit := 100
-		if qlLimit > 0 {
-			limit = qlLimit
-		}
-		params["limit"] = fmt.Sprintf("%d", limit)
-		if qlSort != "" {
-			params["sort"] = qlSort
-		}
-		if qlEntity != "" {
-			params["entitySelector"] = qlEntity
-		}
+			params := map[string]string{
+				"query": opts.query,
+				"from":  opts.from,
+				"to":    to,
+			}
+			limit := 100
+			if opts.limit > 0 {
+				limit = opts.limit
+			}
+			params["limit"] = fmt.Sprintf("%d", limit)
+			if opts.sort != "" {
+				params["sort"] = opts.sort
+			}
+			if opts.entity != "" {
+				params["entitySelector"] = opts.entity
+			}
 
-		if isMultiEnv() {
-			data, err := multiExec(cfg, func(c *client.Client) (interface{}, error) {
-				raw, err := c.GetV2Paged("/logs/search", params, effectiveMaxPages(qlLimit > 0))
+			if a.isMultiEnv() {
+				data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
+					raw, err := c.GetV2Paged("/logs/search", params, a.maxPagesFor(opts.limit > 0))
+					if err != nil {
+						return nil, err
+					}
+					return raw, nil
+				})
 				if err != nil {
-					return nil, err
+					return err
 				}
-				return raw, nil
-			})
+				return a.printer("logs").Print(data)
+			}
+
+			c, err := a.newClient(cfg)
 			if err != nil {
 				return err
 			}
-			return NewPrinterForResource("logs").Print(data)
-		}
 
-		c, err := NewClientFromConfig(cfg)
-		if err != nil {
-			return err
-		}
-
-		raw, err := c.GetV2Paged("/logs/search", params, effectiveMaxPages(qlLimit > 0))
-		if err != nil {
-			return err
-		}
-
-		var resp LogsResponse
-		if err := client.DecodePaged(raw, &resp); err != nil {
-			return err
-		}
-
-		if outputFormat == "json" || agentMode() {
-			if agentMode() {
-				return NewPrinterForResource("logs").Print(resp)
-			}
-			out, err := json.MarshalIndent(resp, "", "  ")
+			raw, err := c.GetV2Paged("/logs/search", params, a.maxPagesFor(opts.limit > 0))
 			if err != nil {
 				return err
 			}
-			fmt.Println(string(out))
-			return nil
-		}
-		if outputFormat == "yaml" {
-			return NewPrinter().Print(resp)
-		}
 
-		// Human-readable text output
-		if len(resp.Results) == 0 {
-			output.PrintInfo("No log records found.")
-			return nil
-		}
-
-		output.PrintInfo("Found %d log records:", len(resp.Results))
-		fmt.Println()
-		for _, entry := range resp.Results {
-			ts := msToTime(entry.Timestamp)
-			content := resolveLogContent(entry)
-			status := resolveLogStatus(entry)
-			if status != "" {
-				fmt.Printf("[%s] [%s] %s\n", ts, status, content)
-			} else {
-				fmt.Printf("[%s] %s\n", ts, content)
+			var resp LogsResponse
+			if err := client.DecodePaged(raw, &resp); err != nil {
+				return err
 			}
-		}
-		if resp.TotalCount > 0 && resp.TotalCount > len(resp.Results) {
-			output.PrintInfo("\nShowing %d of %d records. Use --limit to retrieve more.", len(resp.Results), resp.TotalCount)
-		}
-		return nil
-	},
+
+			if a.Opts.Output == "json" || a.agentMode() {
+				if a.agentMode() {
+					return a.printer("logs").Print(resp)
+				}
+				out, err := json.MarshalIndent(resp, "", "  ")
+				if err != nil {
+					return err
+				}
+				_, _ = fmt.Fprintln(a.Out, string(out))
+				return nil
+			}
+			if a.Opts.Output == "yaml" {
+				return a.printer("").Print(resp)
+			}
+
+			// Human-readable text output
+			if len(resp.Results) == 0 {
+				output.PrintInfo("No log records found.")
+				return nil
+			}
+
+			output.PrintInfo("Found %d log records:", len(resp.Results))
+			_, _ = fmt.Fprintln(a.Out)
+			for _, entry := range resp.Results {
+				ts := msToTime(entry.Timestamp)
+				content := resolveLogContent(entry)
+				status := resolveLogStatus(entry)
+				if status != "" {
+					_, _ = fmt.Fprintf(a.Out, "[%s] [%s] %s\n", ts, status, content)
+				} else {
+					_, _ = fmt.Fprintf(a.Out, "[%s] %s\n", ts, content)
+				}
+			}
+			if resp.TotalCount > 0 && resp.TotalCount > len(resp.Results) {
+				output.PrintInfo("\nShowing %d of %d records. Use --limit to retrieve more.", len(resp.Results), resp.TotalCount)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&opts.query, "query", "", "text to search for in log content (required)")
+	cmd.Flags().StringVar(&opts.from, "from", "", "start time (required), e.g. now-1h")
+	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
+	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records (default: 100)")
+	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (e.g. -timestamp for newest first)")
+	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
+	return cmd
 }
 
 // resolveLogContent returns the log content from a LogEntry.
@@ -170,15 +179,4 @@ func resolveLogStatus(entry LogEntry) string {
 		return fmt.Sprintf("%v", s)
 	}
 	return ""
-}
-
-func init() {
-	queryCmd.AddCommand(queryLogsCmd)
-
-	queryLogsCmd.Flags().StringVar(&qlQuery, "query", "", "text to search for in log content (required)")
-	queryLogsCmd.Flags().StringVar(&qlFrom, "from", "", "start time (required), e.g. now-1h")
-	queryLogsCmd.Flags().StringVar(&qlTo, "to", "", "end time (default: now)")
-	queryLogsCmd.Flags().IntVar(&qlLimit, "limit", 0, "maximum number of records (default: 100)")
-	queryLogsCmd.Flags().StringVar(&qlSort, "sort", "", "sort order (e.g. -timestamp for newest first)")
-	queryLogsCmd.Flags().StringVar(&qlEntity, "entity", "", "entitySelector to scope log search (e.g. 'type(SERVICE),tag(\"[Environment]BookStore\")')")
 }
