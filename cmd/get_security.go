@@ -45,6 +45,9 @@ type getSecurityProblemsOptions struct {
 	status   string
 	limit    int
 	selector string
+	from     string
+	to       string
+	sort     string
 }
 
 // validate checks the enum flags against the API's values and replaces each
@@ -70,37 +73,25 @@ Examples:
   dtmgd get security-problems
   dtmgd get security-problems --risk CRITICAL
   dtmgd get security-problems --selector 'managementZones("production")'
-  dtmgd get security-problems --env ALL_ENVIRONMENTS`,
+  dtmgd get security-problems --from now-7d --sort +firstSeenTimestamp
+  dtmgd get security-problems --env ALL_ENVIRONMENTS
+
+Without --from the API returns the last 30 days. The default sort is the
+highest risk score first (-riskAssessment.riskScore).
+
+Scoping to entities: the security problems API has no entitySelector, so
+use --selector criteria instead:
+  --selector 'relatedHostIds("HOST-0123456789ABCDEF")'
+  --selector 'affectedPgIds("PROCESS_GROUP-0123456789ABCDEF")'
+  --selector 'managementZoneIds("1234567890")'`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := opts.validate(); err != nil {
 				return err
 			}
-			params := map[string]string{
-				"fields": "+riskAssessment,+managementZones",
-				"sort":   "-riskAssessment.riskScore",
-			}
-
-			// Build securityProblemSelector from all filters (status, risk, and explicit selector)
-			// Note: the API list endpoint has no standalone status/riskLevel params — all
-			// filtering goes through securityProblemSelector as a comma-separated DSL.
-			var selectorParts []string
-			if opts.status != "" {
-				selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", opts.status))
-			}
-			if opts.risk != "" {
-				selectorParts = append(selectorParts, fmt.Sprintf("riskLevel(%q)", opts.risk))
-			}
-			if opts.selector != "" {
-				selectorParts = append(selectorParts, opts.selector)
-			}
-			if len(selectorParts) > 0 {
-				params["securityProblemSelector"] = joinSelector(selectorParts...)
-			}
-
 			return a.runFetch(fetchSpec{
 				Verb:     "get",
 				Resource: "security-problems",
-				Fetch:    pagedFetch("/securityProblems", params, "securityProblems", 200, a.Opts.MaxPages),
+				Fetch:    pagedFetch("/securityProblems", securityProblemsParams(opts), "securityProblems", 200, a.Opts.MaxPages),
 				Rows:     securityProblemRows,
 				Limit:    opts.limit,
 				List:     true,
@@ -112,7 +103,40 @@ Examples:
 	cmd.Flags().StringVar(&opts.status, "status", "", "filter by status: OPEN or RESOLVED (muted ones: --selector 'muted(\"TRUE\")')")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results")
 	cmd.Flags().StringVar(&opts.selector, "selector", "", `security problem selector, e.g. managementZones("production")`)
+	cmd.Flags().StringVar(&opts.from, "from", "", "start time (default: now-30d)")
+	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
+	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order, e.g. +firstSeenTimestamp (default: -riskAssessment.riskScore)")
 	return withScopes(cmd, scopeSecurityProblemsRead)
+}
+
+// securityProblemsParams is the /securityProblems query for the flags. The
+// list endpoint has no standalone status or riskLevel parameters, so --status,
+// --risk and --selector are joined into one securityProblemSelector. --from
+// and --to are sent only when given, so the API's own defaults apply.
+func securityProblemsParams(opts getSecurityProblemsOptions) map[string]string {
+	params := map[string]string{
+		"fields": "+riskAssessment,+managementZones",
+		"sort":   "-riskAssessment.riskScore",
+	}
+	var selectorParts []string
+	if opts.status != "" {
+		selectorParts = append(selectorParts, fmt.Sprintf("status(%q)", opts.status))
+	}
+	if opts.risk != "" {
+		selectorParts = append(selectorParts, fmt.Sprintf("riskLevel(%q)", opts.risk))
+	}
+	if opts.selector != "" {
+		selectorParts = append(selectorParts, opts.selector)
+	}
+	if len(selectorParts) > 0 {
+		params["securityProblemSelector"] = joinSelector(selectorParts...)
+	}
+	for key, v := range map[string]string{"from": opts.from, "to": opts.to, "sort": opts.sort} {
+		if v != "" {
+			params[key] = v
+		}
+	}
+	return params
 }
 
 // securityProblemRows turns a /securityProblems body into table rows.

@@ -173,7 +173,7 @@ dtmgd get entity-types       # list all entity types; --limit
 dtmgd get events             # --from (required), --to, --type, --entity, --limit, --watch
 dtmgd get metrics            # --search, --entity, --limit
 dtmgd get slos               # --enabled, --limit, --evaluate, --selector (sloSelector DSL)
-dtmgd get security-problems  # --risk, --status, --selector, --limit
+dtmgd get security-problems  # --risk, --status, --selector, --from, --to, --sort, --limit
 ```
 
 `get environments` still runs its per-context connectivity check, and prints a
