@@ -1,0 +1,52 @@
+name: Drift
+
+# Weekly check that the pinned Go toolchain is the latest patch of its line,
+# that every module built into dtmgd is current, and that govulncheck is clean.
+# Findings go into a single open issue labelled "drift" (created, updated, or
+# closed when clean). It opens an issue rather than a PR because PRs opened
+# with GITHUB_TOKEN do not trigger CI, so their required checks never report.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+
+      - name: Check for drift
+        id: check
+        run: |
+          set +e
+          bash scripts/drift-check.sh > report.md
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          cat report.md
+
+      - name: Open, update or close the drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ steps.check.outputs.status }}
+        run: |
+          label=drift
+          gh label create "$label" --color FBCA04 --description "Toolchain or dependency drift" 2>/dev/null || true
+          num=$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')
+          case "$STATUS" in
+            0) if [ -n "$num" ]; then gh issue close "$num" --comment "Drift resolved as of $(date -u +%F)."; fi ;;
+            1) if [ -n "$num" ]; then gh issue edit "$num" --body-file report.md
+               else gh issue create --title "Toolchain or dependency drift" --label "$label" --body-file report.md; fi ;;
+            *) echo "::warning::Drift check could not complete; leaving issues unchanged"; exit 1 ;;
+          esac
