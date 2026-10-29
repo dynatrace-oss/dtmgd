@@ -12,8 +12,13 @@ on:
 jobs:
   snyk:
     runs-on: ubuntu-latest
-    # Requires SNYK_API_TOKEN as a repository secret:
-    # Settings → Secrets and variables → Actions → New repository secret
+    # Needs SNYK_API_TOKEN as a repository secret. Dependabot and fork PRs
+    # cannot read repository secrets, so on those runs the scan is skipped with
+    # a notice instead of failing with 401. For that reason Snyk is not a
+    # required check; make it one once the token is also available as a
+    # Dependabot secret.
+    env:
+      SNYK_TOKEN: ${{ secrets.SNYK_API_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -22,8 +27,11 @@ jobs:
           go-version-file: go.mod
 
       - name: Run Snyk to check for vulnerabilities
+        if: env.SNYK_TOKEN != ''
         uses: snyk/actions/golang@11b673cfb4b0dc0d860a1323caa199d54950dcce # master @ 2026-08-03
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_API_TOKEN }}
         with:
           args: --severity-threshold=high --org=e16245a7-d909-49b0-b72d-52af7b45a469 --all-projects
+
+      - name: Snyk unavailable
+        if: env.SNYK_TOKEN == ''
+        run: echo "::notice::Snyk skipped — SNYK_API_TOKEN is not available to this run (Dependabot and fork PRs)."
