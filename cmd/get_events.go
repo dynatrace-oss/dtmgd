@@ -46,6 +46,7 @@ func newGetEventsCmd(a *App) *cobra.Command {
 		entity    string
 		limit     int
 	}
+	var watch watchOptions
 	cmd := &cobra.Command{
 		Use:     "events",
 		Aliases: []string{"ev", "event"},
@@ -57,10 +58,10 @@ Examples:
   dtmgd get events --from now-6h --type CUSTOM_DEPLOYMENT
   dtmgd get events --env ALL_ENVIRONMENTS --from now-1h`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.watchOrRun(func() error {
-				if opts.from == "" {
-					return fmt.Errorf("--from is required (e.g. now-1h)")
-				}
+			if opts.from == "" {
+				return &UsageError{Err: fmt.Errorf("--from is required (e.g. now-1h)")}
+			}
+			return a.watchOrRun(watch, func() error {
 				to := opts.to
 				if to == "" {
 					to = "now"
@@ -149,6 +150,7 @@ Examples:
 			})
 		},
 	}
+	addWatchFlags(cmd, &watch)
 	cmd.Flags().StringVar(&opts.from, "from", "", "start time (required), e.g. now-1h")
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().StringVar(&opts.eventType, "type", "", "filter by event type (e.g. CUSTOM_DEPLOYMENT)")

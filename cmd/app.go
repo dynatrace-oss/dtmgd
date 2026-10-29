@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/spf13/cobra"
@@ -22,8 +21,6 @@ type GlobalOptions struct {
 	ConfigPath, Context, Output, Env, Columns string
 	Verbose, MaxPages, Concurrency            int
 	Agent, NoAgent, Plain                     bool
-	Watch                                     bool          // moves to get problems/events in Task 7
-	WatchInterval                             time.Duration // same
 }
 
 // App is one dtmgd invocation: where its output goes and the global flags it
@@ -118,7 +115,6 @@ Multi-environment:
 	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table output")
 	f.IntVar(&a.Opts.Concurrency, "concurrency", client.DefaultConcurrency,
 		"maximum environments queried at once with --env")
-	a.addWatchFlags(cmd)
 
 	cmd.AddCommand(
 		newGetCmd(a),

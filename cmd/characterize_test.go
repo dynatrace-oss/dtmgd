@@ -32,25 +32,30 @@ func TestCharGetProblemsTable(t *testing.T) {
 	}
 }
 
-func TestCharGetProblemsJSON(t *testing.T) {
+// -o json prints the API's own response, merged across pages (it used to
+// print dtmgd's typed subset of it).
+func TestGetProblemsJSONIsAPIShaped(t *testing.T) {
 	api := newFakeAPI(t, pagedProblems())
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "problems", "-o", "json")
-	assertGolden(t, "char_get_problems_json", r.String())
+	assertGolden(t, "get_problems_json", r.String())
 }
 
-func TestCharGetProblemsAgent(t *testing.T) {
+// The agent envelope carries the API-shaped result and a context with verb
+// and total.
+func TestGetProblemsAgentEnvelope(t *testing.T) {
 	api := newFakeAPI(t, pagedProblems())
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "problems", "-A")
-	assertGolden(t, "char_get_problems_agent", r.String())
+	assertGolden(t, "get_problems_agent", r.String())
 }
 
-// Today: an empty result with -o json writes nothing to stdout.
-func TestCharGetProblemsEmptyJSON(t *testing.T) {
+// An empty result with -o json prints the object with an empty list (it used
+// to print nothing, which broke | jq).
+func TestGetProblemsEmptyJSONPrintsEmptyList(t *testing.T) {
 	api := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_empty.json"}})
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "problems", "-o", "json")
-	assertGolden(t, "char_get_problems_empty_json", r.String())
-	if r.Stdout != "" || r.Code != 0 {
-		t.Errorf("today's behaviour changed: stdout=%q code=%d", r.Stdout, r.Code)
+	assertGolden(t, "get_problems_empty_json", r.String())
+	if !strings.Contains(r.Stdout, `"problems": []`) || r.Code != 0 {
+		t.Errorf("stdout=%q code=%d", r.Stdout, r.Code)
 	}
 }
 
