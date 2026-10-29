@@ -5,23 +5,34 @@ import (
 	"fmt"
 )
 
-// GetV2Paged performs a paginated GET, following nextPageKey until all pages are fetched.
-// It merges array fields across pages and returns the combined result.
-// maxPages limits the number of pages fetched (0 = unlimited).
-func (c *Client) GetV2Paged(path string, params map[string]string, maxPages int) (map[string]interface{}, error) {
+// Paging controls how far GetV2Paged follows nextPageKey.
+type Paging struct {
+	// MaxPages stops after this many pages (0 = no page limit).
+	MaxPages int
+	// Limit stops once ListKey holds at least this many items, and truncates
+	// the list to exactly Limit (0 = no item limit).
+	Limit int
+	// ListKey names the response's array field, e.g. "problems". Limit needs
+	// it to count items.
+	ListKey string
+}
+
+// GetV2Paged performs a paginated GET, following nextPageKey and merging the
+// array fields of every page into the first page's object.
+//
+// It stops at the last page, at p.MaxPages, or as soon as p.Limit items are in
+// hand, so a small --limit costs one or two requests rather than every page.
+// When it stops with pages remaining, the result keeps the last nextPageKey:
+// that is how callers, and JSON consumers, can tell the result is truncated.
+// totalCount stays as the first page reported it.
+func (c *Client) GetV2Paged(path string, params map[string]string, p Paging) (map[string]interface{}, error) {
 	if params == nil {
 		params = map[string]string{}
 	}
 
 	var merged map[string]interface{}
-	page := 0
-
-	for {
-		page++
-		if maxPages > 0 && page > maxPages {
-			break
-		}
-
+	npk := ""
+	for page := 1; ; page++ {
 		raw, err := c.getV2Raw(path, params)
 		if err != nil {
 			return nil, err
@@ -38,8 +49,8 @@ func (c *Client) GetV2Paged(path string, params map[string]string, maxPages int)
 			mergeArrayFields(merged, parsed)
 		}
 
-		npk, _ := parsed["nextPageKey"].(string)
-		if npk == "" {
+		npk, _ = parsed["nextPageKey"].(string)
+		if npk == "" || (p.MaxPages > 0 && page >= p.MaxPages) || p.limitReached(merged) {
 			break
 		}
 
@@ -50,9 +61,31 @@ func (c *Client) GetV2Paged(path string, params map[string]string, maxPages int)
 	if merged == nil {
 		merged = map[string]interface{}{}
 	}
-	// Remove nextPageKey from final merged result since we've consumed all pages
-	delete(merged, "nextPageKey")
+	if npk == "" {
+		delete(merged, "nextPageKey")
+	} else {
+		merged["nextPageKey"] = npk
+	}
+	p.truncate(merged)
 	return merged, nil
+}
+
+func (p Paging) list(m map[string]interface{}) []interface{} {
+	if p.ListKey == "" {
+		return nil
+	}
+	l, _ := m[p.ListKey].([]interface{})
+	return l
+}
+
+func (p Paging) limitReached(m map[string]interface{}) bool {
+	return p.Limit > 0 && len(p.list(m)) >= p.Limit
+}
+
+func (p Paging) truncate(m map[string]interface{}) {
+	if l := p.list(m); p.Limit > 0 && len(l) > p.Limit {
+		m[p.ListKey] = l[:p.Limit]
+	}
 }
 
 // getV2Raw performs a single GET and returns the raw response body.

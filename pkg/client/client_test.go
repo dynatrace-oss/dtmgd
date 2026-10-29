@@ -329,7 +329,7 @@ func TestGetV2Paged(t *testing.T) {
 		Items      []string `json:"items"`
 		TotalCount int      `json:"totalCount"`
 	}
-	raw, err := c.GetV2Paged("/items", nil, 0)
+	raw, err := c.GetV2Paged("/items", nil, Paging{MaxPages: 0})
 	if err != nil {
 		t.Fatalf("GetV2Paged failed: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestGetV2PagedMaxPages(t *testing.T) {
 
 	c, _ := New(srv.URL, "env1", "tok")
 
-	_, err := c.GetV2Paged("/items", nil, 2)
+	_, err := c.GetV2Paged("/items", nil, Paging{MaxPages: 2})
 	if err != nil {
 		t.Fatalf("GetV2Paged failed: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestGetV2PagedError(t *testing.T) {
 
 	c, _ := New(srv.URL, "env1", "tok")
 
-	_, err := c.GetV2Paged("/items", nil, 0)
+	_, err := c.GetV2Paged("/items", nil, Paging{MaxPages: 0})
 	if err == nil {
 		t.Fatal("expected error")
 	}

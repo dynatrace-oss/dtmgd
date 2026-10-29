@@ -134,7 +134,7 @@ Multi-environment:
 				// Multi-env mode
 				if a.isMultiEnv() {
 					data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-						return c.GetV2Paged("/problems", params, a.maxPagesFor(singlePageSuffices))
+						return c.GetV2Paged("/problems", params, client.Paging{MaxPages: a.maxPagesFor(singlePageSuffices)})
 					})
 					if err != nil {
 						return err
@@ -147,7 +147,7 @@ Multi-environment:
 					return err
 				}
 
-				raw, err := c.GetV2Paged("/problems", params, a.maxPagesFor(singlePageSuffices))
+				raw, err := c.GetV2Paged("/problems", params, client.Paging{MaxPages: a.maxPagesFor(singlePageSuffices)})
 				if err != nil {
 					return err
 				}

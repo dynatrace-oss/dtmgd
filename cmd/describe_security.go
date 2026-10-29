@@ -23,7 +23,7 @@ func resolveSecurityProblemID(c *client.Client, id string) string {
 	if !displayIDRegexp.MatchString(id) {
 		return id
 	}
-	raw, err := c.GetV2Paged("/securityProblems", map[string]string{"pageSize": "200"}, 0)
+	raw, err := c.GetV2Paged("/securityProblems", map[string]string{"pageSize": "200"}, client.Paging{MaxPages: 0})
 	if err != nil {
 		return id
 	}

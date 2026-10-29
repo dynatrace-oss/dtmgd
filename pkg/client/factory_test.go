@@ -142,7 +142,7 @@ func TestGetV2PagedKeepsProxyAnnotation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.GetV2Paged("/problems", nil, 0)
+	_, err = c.GetV2Paged("/problems", nil, Paging{MaxPages: 0})
 	if err == nil || !strings.Contains(err.Error(), "via proxy") {
 		t.Errorf("want error naming the proxy, got %v", err)
 	}

@@ -89,7 +89,7 @@ Examples:
 
 				if a.isMultiEnv() {
 					data, err := a.multiExec(cfg, func(c *client.Client) (interface{}, error) {
-						return c.GetV2Paged("/events", params, a.maxPagesFor(opts.limit > 0))
+						return c.GetV2Paged("/events", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
 					})
 					if err != nil {
 						return err
@@ -102,7 +102,7 @@ Examples:
 					return err
 				}
 
-				raw, err := c.GetV2Paged("/events", params, a.maxPagesFor(opts.limit > 0))
+				raw, err := c.GetV2Paged("/events", params, client.Paging{MaxPages: a.maxPagesFor(opts.limit > 0)})
 				if err != nil {
 					return err
 				}
