@@ -41,6 +41,7 @@ Global Flags:
       --max-pages int             maximum number of pages to fetch (0 = all pages)
       --no-agent                  disable auto-detected agent mode
   -o, --output string             output format: table|json|yaml|wide (default: table)
+      --plain                     plain output: no symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)
   -v, --verbose count             verbosity level (-v for summary, -vv for full request/response)
   -w, --watch                     re-run the command periodically
       --watch-interval duration   interval between watch refreshes (e.g. 5s, 30s, 1m) (default 5s)
@@ -48,4 +49,4 @@ Global Flags:
 Use "dtmgd get [command] --help" for more information about a command.
 == stderr
 
-✗ a subcommand is required
+Error: a subcommand is required

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
 // addWatchFlags registers --watch and --watch-interval on cmd, bound to a.Opts.
@@ -29,7 +31,7 @@ func (a *App) runWatch(fn func() error) error {
 	a.clearScreen()
 	a.printWatchHeader()
 	if err := fn(); err != nil {
-		fmt.Fprintf(os.Stderr, "✗ %s\n", err)
+		output.PrintHumanError("%s", err)
 	}
 
 	ticker := time.NewTicker(a.Opts.WatchInterval)
@@ -48,13 +50,19 @@ func (a *App) runWatch(fn func() error) error {
 			a.clearScreen()
 			a.printWatchHeader()
 			if err := fn(); err != nil {
-				fmt.Fprintf(os.Stderr, "✗ %s\n", err)
+				output.PrintHumanError("%s", err)
 			}
 		}
 	}
 }
 
+// clearScreen clears the terminal between watch ticks. It only does so for a
+// table on a terminal: in JSON, YAML or agent output the escape sequence would
+// corrupt the stream, and in plain mode there is no terminal to clear.
 func (a *App) clearScreen() {
+	if f := a.format(); (f != output.FormatTable && f != output.FormatWide) || a.agentMode() || a.plain() {
+		return
+	}
 	// Best effort: a failed terminal escape sequence is cosmetic only.
 	_, _ = fmt.Fprint(a.Out, "\033[H\033[2J")
 }

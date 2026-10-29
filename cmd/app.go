@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strings"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 type GlobalOptions struct {
 	ConfigPath, Context, Output, Env, Columns string
 	Verbose, MaxPages, Concurrency            int
-	Agent, NoAgent                            bool
+	Agent, NoAgent, Plain                     bool
 	Watch                                     bool          // moves to get problems/events in Task 7
 	WatchInterval                             time.Duration // same
 }
@@ -37,6 +38,14 @@ type App struct {
 // tests pass their own arguments and writers.
 func Run(args []string, stdout, stderr io.Writer) int {
 	a := &App{Out: stdout, Err: stderr}
+	// Until flags are parsed, plain mode follows the environment alone; the
+	// persistent pre-run applies --plain once it is known.
+	output.SetStderr(stderr)
+	output.SetPlain(a.plain())
+	defer func() {
+		output.SetStderr(nil)
+		output.SetPlain(false)
+	}()
 	root := newRootCmd(a)
 	root.SetArgs(rewriteNegativeArgs(args))
 	if err := root.Execute(); err != nil {
@@ -59,10 +68,18 @@ func newRootCmd(a *App) *cobra.Command {
 		Short:         "Dynatrace Managed CLI",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		PersistentPreRun: func(_ *cobra.Command, _ []string) {
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			output.SetPlain(a.plain())
+			f, err := output.ParseFormat(a.Opts.Output)
+			if err != nil {
+				return err
+			}
+			// Normalised, so every format check below sees "yaml" for yml.
+			a.Opts.Output = string(f)
 			if n := a.agentNotice(); n != "" {
 				output.PrintInfo("%s", n)
 			}
+			return nil
 		},
 		Long: `dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
 
@@ -93,6 +110,7 @@ Multi-environment:
 	f.StringVarP(&a.Opts.Env, "env", "e", "", `environment(s): context name, "prod;staging", or ALL_ENVIRONMENTS`)
 	f.BoolVarP(&a.Opts.Agent, "agent", "A", false, "force agent envelope output mode")
 	f.BoolVar(&a.Opts.NoAgent, "no-agent", false, "disable auto-detected agent mode")
+	f.BoolVar(&a.Opts.Plain, "plain", false, "plain output: no symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)")
 	f.IntVar(&a.Opts.MaxPages, "max-pages", 0, "maximum number of pages to fetch (0 = all pages)")
 	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table output")
 	f.IntVar(&a.Opts.Concurrency, "concurrency", client.DefaultConcurrency,
@@ -110,6 +128,22 @@ Multi-environment:
 		newCompletionCmd(a),
 	)
 	return cmd
+}
+
+// plain reports whether output should avoid glyphs and terminal control
+// sequences: when asked with --plain or NO_COLOR, or when stdout is not a
+// terminal (a pipe, a file, an agent's shell) unless FORCE_COLOR is set.
+func (a *App) plain() bool {
+	if a.Opts.Plain || os.Getenv("NO_COLOR") != "" {
+		return true
+	}
+	return !output.IsTerminal(a.Out) && os.Getenv("FORCE_COLOR") == ""
+}
+
+// format returns the validated --output value.
+func (a *App) format() output.Format {
+	f, _ := output.ParseFormat(a.Opts.Output)
+	return f
 }
 
 // agentMode returns true if agent envelope output should be used.

@@ -1,0 +1,23 @@
+== exit code: 0
+== stdout
+displayName: host-1
+entityId: HOST-1
+firstSeenTms: 1.729e+12
+fromRelationships:
+  isProcessOf:
+    - id: PROCESS_GROUP_INSTANCE-1
+      type: PROCESS_GROUP_INSTANCE
+lastSeenTms: 1.73e+12
+managementZones:
+  - id: "1"
+    name: prod
+properties:
+  cpuCores: 4
+  osType: LINUX
+tags:
+  - context: CONTEXTLESS
+    key: team
+    value: core
+toRelationships: {}
+type: HOST
+== stderr

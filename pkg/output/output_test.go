@@ -194,12 +194,19 @@ func TestPrintHumanError(t *testing.T) {
 	}
 }
 
-// --- DescribeKV ---
+// TestPlainPrefixes pins plain mode: words instead of glyphs, so output read
+// by scripts, screen readers or dumb terminals carries no symbols.
+func TestPlainPrefixes(t *testing.T) {
+	var buf bytes.Buffer
+	SetStderr(&buf)
+	SetPlain(true)
+	t.Cleanup(func() { SetStderr(nil); SetPlain(false) })
 
-func TestDescribeKV(t *testing.T) {
-	out := captureStdout(func() { DescribeKV("Name:", 10, "%s", "Alice") })
-	if !strings.Contains(out, "Name:") || !strings.Contains(out, "Alice") {
-		t.Errorf("unexpected DescribeKV output: %q", out)
+	PrintWarning("x")
+	PrintHumanError("y")
+	PrintHint("z")
+	if want := "Warning: x\nError: y\nHint: z\n"; buf.String() != want {
+		t.Errorf("got %q, want %q", buf.String(), want)
 	}
 }
 

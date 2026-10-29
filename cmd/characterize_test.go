@@ -54,13 +54,14 @@ func TestCharGetProblemsEmptyJSON(t *testing.T) {
 	}
 }
 
-// Today: describe in table mode prints Go map syntax.
-func TestCharDescribeEntityTable(t *testing.T) {
+// describe in table mode prints the object as YAML (it used to print Go's
+// map[...] syntax).
+func TestDescribeEntityTableIsYAML(t *testing.T) {
 	api := newFakeAPI(t, map[string]route{entitiesPath + "/HOST-1": {File: "entity.json"}})
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "describe", "entity", "HOST-1")
-	assertGolden(t, "char_describe_entity_table", r.String())
-	if !strings.Contains(r.Stdout, "map[") {
-		t.Errorf("today's behaviour changed: stdout has no map[ syntax:\n%s", r.Stdout)
+	assertGolden(t, "describe_entity_table_yaml", r.String())
+	if strings.Contains(r.Stdout, "map[") || !strings.Contains(r.Stdout, "entityId: HOST-1") {
+		t.Errorf("want YAML, got:\n%s", r.Stdout)
 	}
 }
 

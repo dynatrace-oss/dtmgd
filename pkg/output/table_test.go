@@ -152,3 +152,18 @@ func TestTablePrinterHyphenatedHeaders(t *testing.T) {
 		t.Errorf("header hyphen was padded with spaces:\n%s", out)
 	}
 }
+
+// TestTableFallbackRendersYAML pins that values the table printer cannot lay
+// out as rows (maps, scalars, untagged structs) come out as YAML, never as
+// Go's map[...] syntax.
+func TestTableFallbackRendersYAML(t *testing.T) {
+	var buf bytes.Buffer
+	p := &TablePrinter{w: &buf}
+	v := map[string]interface{}{"entityId": "HOST-1", "properties": map[string]interface{}{"a": 1}}
+	if err := p.PrintList(v); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "entityId: HOST-1") || strings.Contains(buf.String(), "map[") {
+		t.Errorf("want YAML, got:\n%s", buf.String())
+	}
+}
