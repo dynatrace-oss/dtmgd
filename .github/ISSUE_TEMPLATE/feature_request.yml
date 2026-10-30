@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest a command, flag or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        dtmgd is read-only by design: it does not create, change or delete anything on a cluster.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The question you want answered, or the task you want to automate.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed command or flag
+      placeholder: dtmgd get foos --bar ...
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

@@ -47,6 +47,7 @@ like "content:error" — just use the plain search term.
 Examples:
   dtmgd query logs --query "error" --from now-1h --to now
   dtmgd query logs --query "timeout" --from now-30m --limit 50
+  dtmgd query logs --query "error" --from now-1h --entity 'type(PROCESS_GROUP),tag("env:prod")'
   dtmgd query logs --env ALL_ENVIRONMENTS --query "error" --from now-1h`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.query == "" {

@@ -80,7 +80,14 @@ func newCommandsCmd(a *App) *cobra.Command {
 needs, for AI agents and scripts to discover the CLI.
 
 The catalog is JSON (or YAML with -o yaml) and is never wrapped in an agent
-envelope. --brief lists only the resources of get, describe and query.`,
+envelope. Global flags (--context, --env, -o and the rest) are listed once,
+under global_flags; each command lists only its own flags. --brief lists only
+the resources of get, describe and query.
+
+Examples:
+  dtmgd commands             # full catalog: paths, aliases, flags, token scopes
+  dtmgd commands --brief     # the resources of get, describe and query
+  dtmgd commands -o yaml     # the catalog as YAML`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var v interface{}

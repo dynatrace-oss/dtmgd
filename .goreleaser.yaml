@@ -32,6 +32,10 @@ archives:
       - README*
       - src: skills/dtmgd/SKILL.md
         strip_parent: true
+      # Beside SKILL.md, so its relative links to references/ work.
+      - src: skills/dtmgd/references/*
+        dst: references
+        strip_parent: true
       - completions/*
     format_overrides:
       - goos: windows
@@ -88,9 +92,9 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
+      - '^docs(\(.*\))?:'
+      - '^test(\(.*\))?:'
+      - '^ci(\(.*\))?:'
       - '^build\(deps\)'
       - '^chore\(deps\)'
       - 'Merge pull request'

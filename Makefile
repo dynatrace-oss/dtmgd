@@ -7,7 +7,7 @@ LDFLAGS  := -ldflags "-s -w \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Commit=$(COMMIT) \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Date=$(DATE)"
 
-.PHONY: build clean install vet fmt test lint vulncheck release-dry release-check
+.PHONY: build clean install vet fmt test lint vulncheck docs release-dry release-check
 
 build:
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) .
@@ -42,6 +42,11 @@ lint: vet
 vulncheck:
 	go -C tools build -o "$(CURDIR)/bin/govulncheck" golang.org/x/vuln/cmd/govulncheck
 	./bin/govulncheck ./...
+
+# Regenerates docs/reference from the commands; TestReferenceDocsAreCurrent
+# fails while it is stale.
+docs:
+	go test ./cmd/ -run '^TestReferenceDocsAreCurrent$$' -update
 
 release-dry:
 	goreleaser release --snapshot --clean

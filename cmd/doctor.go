@@ -54,8 +54,17 @@ cluster version is at least 1.328.0.
 When the token cannot read the cluster version, doctor tries a metrics call
 instead, as the Dynatrace Managed MCP server does, and reports a warning if
 that works. A cluster context (no env-id) is checked against the Cluster API:
-its token must have the ServiceProviderAPI scope. Exits 1 if any context
-fails.`,
+its token must have the ServiceProviderAPI scope, and its version is its
+lowest node's, with no metrics fallback.
+
+It prints one row per context (CONTEXT, SCOPE, HOST, ENV-ID, STATUS, VERSION,
+DETAIL) with status ok, warn or fail, checking up to --concurrency contexts at
+once. Exits 1 if any context fails.
+
+Examples:
+  dtmgd doctor               # every configured context
+  dtmgd doctor -c prod       # one context
+  dtmgd doctor -o json       # rows as JSON (also -o yaml, or -A for an agent envelope)`,
 		Args: cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error { return a.runDoctor() },
 	}

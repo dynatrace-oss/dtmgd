@@ -1,8 +1,10 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working in the `dtmgd` repository (Dynatrace Managed CLI, Go).
+@../AGENTS.md
 
-For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md`.
+The knowledge base below records lessons learned while working on dtmgd: each
+entry's context, insight and when it applies. Read the entries that match
+your task.
 
 ## Knowledge Base
 
@@ -92,7 +94,7 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 
 ### pkg/skills tests fail locally but pass on CI — not a real failure
 - **Context**: `go test ./...` fails `TestInstallAndStatusAndUninstall` and `TestStatusAll` with "expected not installed in fresh dir" on any machine that has dtmgd skills installed. Reproduces on clean `main`, so it looks like a regression when it is not.
-- **Insight**: The tests pass a `t.TempDir()` as `baseDir`, but `Status()` also consults `os.UserHomeDir()` (`pkg/skills/installer.go:327`), so the "fresh dir" is not fresh once you have run `dtmgd skills install`. CI runners have no skills installed, which is why every check is green. Use `go test ./pkg/config/... ./pkg/client/... ./cmd/... ./pkg/output/...` for a clean local signal, and do not "fix" it as part of unrelated work.
+- **Insight**: The tests pass a `t.TempDir()` as `baseDir`, but `Status()` in `pkg/skills/installer.go` also consults `os.UserHomeDir()`, so the "fresh dir" is not fresh once you have run `dtmgd skills install`. CI runners have no skills installed, which is why every check is green. Use `go test ./pkg/config/... ./pkg/client/... ./cmd/... ./pkg/output/... ./pkg/version/... ./skills/... .` for a clean local signal, and do not "fix" it as part of unrelated work.
 - **When it applies**: Any local full-suite run, especially before concluding that a change broke something
 - **Date**: 2026-08-06
 - **Ref**: impl: resolve config env vars at point of use (#29)
@@ -104,12 +106,12 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **Date**: 2026-08-06
 - **Ref**: impl: resolve config env vars at point of use (#29)
 
-### The `sonar` job always fails and does not gate; `snyk` does not gate either
-- **Context**: PR checks show three similarly named entries — `sonar`, `SonarCloud`, and `SonarCloud Code Analysis`. The `sonar` job fails on every run with "Not authorized or project not found".
-- **Insight**: `sonar.yml` sets `continue-on-error: true` because SONAR_TOKEN lacks Execute Analysis permission, so the *job* shows failed while the *workflow run* succeeds — it does not block merges, and it never actually analyses the code. Real Sonar findings arrive via the `SonarCloud Code Analysis` app integration, which posts to the PR. `snyk` is skipped with a `::notice::` when `SNYK_API_TOKEN` is unavailable (Dependabot and fork PRs cannot read repository secrets) and is **not** a required check. What gates a merge is the `main` ruleset's required checks: `test` on ubuntu, macOS and Windows, `lint`, `golangci-lint` and `vulncheck`.
-- **When it applies**: Triaging red checks on a dtmgd PR before assuming the code is at fault
-- **Date**: 2026-08-06 (snyk and required checks updated 2026-10-29)
-- **Ref**: impl: resolve config env vars at point of use (#29); Phase 1/Phase 2 catch-up (#49, #50)
+### SonarCloud findings come only from the app; `snyk` and `goreleaser-check` do not gate
+- **Context**: PR checks show `SonarCloud` and `SonarCloud Code Analysis`. Until Phase 5 there was also a `sonar` job (`sonar.yml`) that failed on every run with "Not authorized or project not found": SONAR_TOKEN lacked Execute Analysis permission, so it never analysed anything, and `continue-on-error` kept it from blocking. It re-ran the whole test suite for nothing; Phase 5 deleted it together with `sonar-project.properties`.
+- **Insight**: Sonar findings arrive only through the `SonarCloud Code Analysis` app integration, which reads `.sonarcloud.properties` and posts to the PR. Its quality gate does not block a merge, so check it on every PR (`api/qualitygates/project_status?projectKey=dynatrace-oss_dtmgd&pullRequest=<n>`) before calling the PR done; #59 merged with a red gate. `snyk` is skipped with a `::notice::` when `SNYK_API_TOKEN` is unavailable (Dependabot and fork PRs cannot read repository secrets), and `goreleaser-check` reports a config error or deprecation; neither is required. What gates a merge is the `main` ruleset's required checks: `test` on ubuntu, macOS and Windows, `lint`, `golangci-lint` and `vulncheck`.
+- **When it applies**: Triaging checks on a dtmgd PR, or deciding whether a PR is ready
+- **Date**: 2026-08-06 (sonar job removed and entry rewritten 2026-10-30)
+- **Ref**: impl: resolve config env vars at point of use (#29); Phase 5 (#59)
 
 ### Snyk, Dependabot and govulncheck resolve different dependency sets
 - **Context**: Six Snyk-sourced Jira tickets (PRISM-14120..14125) reported `golang.org/x/crypto` v0.51.0 CVEs against dtmgd. Dependabot never alerted and govulncheck never mentioned the module, which looks like two scanners missing something. They did not.
@@ -148,10 +150,10 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 
 ### CI tools come from the checksum-locked `tools/` module, never `go install …@version`
 - **Context**: SonarCloud's `githubactions:S8545` ("Dependency versions are not predictable") flagged `go install golang.org/x/vuln/cmd/govulncheck@v1.9.0` in `security.yml` and `drift.yml`, which turned `main`'s quality gate red. The install was in fact pinned and verified against sum.golang.org, but the owner chose to remove the pattern rather than dismiss the finding.
-- **Insight**: govulncheck is a `tool` directive in `tools/go.mod`, locked by `tools/go.sum`. Workflows build it with `go -C tools build -o "$RUNNER_TEMP/govulncheck" golang.org/x/vuln/cmd/govulncheck` and run the binary, not `go tool …`, so its exit code 3 still fails the job; `make vulncheck` does the same locally. To add a tool: `go -C tools get -tool <pkg>@<version>`. To bump one: `go -C tools get <module>@<version> && go -C tools mod tidy`; `lint.yml` fails if `tools/` is not tidy. `go get -tool` marks the module `// indirect`, which Dependabot skips on schedule (see the indirect-deps entry), so the `/tools` Dependabot entry sets `allow: dependency-type: all`. A newer tool may raise `tools/go.mod`'s `go` line above the root's; setup-go then fails the build (`GOTOOLCHAIN=local`), so bump the root's Go first. `go -C` changes directory before reading `-o`, so a relative `-o` path lands under `tools/`. The root module's `go list ./...` does not include `tools/`.
+- **Insight**: govulncheck and actionlint are `tool` directives in `tools/go.mod`, locked by `tools/go.sum`. Workflows build it with `go -C tools build -o "$RUNNER_TEMP/govulncheck" golang.org/x/vuln/cmd/govulncheck` and run the binary, not `go tool …`, so its exit code 3 still fails the job; `make vulncheck` does the same locally. To add a tool: `go -C tools get -tool <pkg>@<version>`. To bump one: `go -C tools get <module>@<version> && go -C tools mod tidy`; `lint.yml` fails if `tools/` is not tidy. `go get -tool` marks the module `// indirect`, which Dependabot skips on schedule (see the indirect-deps entry), so the `/tools` Dependabot entry sets `allow: dependency-type: all`. A newer tool may raise `tools/go.mod`'s `go` line above the root's; setup-go then fails the build (`GOTOOLCHAIN=local`), so bump the root's Go first. `go -C` changes directory before reading `-o`, so a relative `-o` path lands under `tools/`. The root module's `go list ./...` does not include `tools/`. golangci-lint and GoReleaser are not in `tools/` (both advise against building them from source): they are pinned by version as action inputs (`sast.yml`; `release.yml`, `lint.yml`, `build.yml`), each pin carrying a `# keep in step with …` comment, and the Makefile's `GOLANGCI_LINT_VERSION` names the golangci-lint version `make lint` expects (it only prints it in the install hint; it does not check the installed version). Dependabot cannot see those pins, so `scripts/drift-check.sh` compares them with the latest releases and reports a pin without its comment as an error.
 - **When it applies**: Adding or bumping a CI tool, or seeing `go install` reappear in a workflow
-- **Date**: 2026-10-29
-- **Ref**: Phase 3 (1/2) code health
+- **Date**: 2026-10-29 (actionlint and the pinned action inputs added 2026-10-30)
+- **Ref**: Phase 3 (1/2) code health; Phase 5 (#59)
 
 ### Command behaviour is tested end to end with the harness in cmd/harness_test.go
 - **Context**: Phase 2 replaced `Execute()` with `Run(args, stdout, stderr) int` and builds the command tree per invocation (`newRootCmd(a *App)`), so tests can run the real CLI and see its exit code.
@@ -168,7 +170,7 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 - **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
 
 ### Never point a test at the default config path
-- **Context**: `~/.config/dtmgd/config` on a developer machine may hold live tokens for real clusters. A test that runs a command without `--config` (and without `DTMGD_CONFIG`) reads that file, and one that saves config would rewrite it.
+- **Context**: The global config on a developer machine (`~/.config/dtmgd/config` on Linux, `~/Library/Application Support/dtmgd/config` on macOS, `%LOCALAPPDATA%\dtmgd\config` on Windows, or under `$XDG_CONFIG_HOME`) may hold live tokens for real clusters. A test that runs a command without `--config` (and without `DTMGD_CONFIG`) reads that file, and one that saves config would rewrite it.
 - **Insight**: Tests pass `--config` with a temp file (`withFakeEnvs` writes one; `runCLI` appends `--config` unless `cfgPath` is `""`). `DTMGD_CONFIG` is tested at path-resolution level only (`TestDTMGDConfigSelectsTheConfigFile` checks `ResolveSource`, never runs a command against the file), so a regression cannot fall back to the real config.
 - **When it applies**: Writing any test that runs a command or loads or saves config
 - **Date**: 2026-10-29
@@ -176,7 +178,7 @@ For `dtmgd` CLI usage patterns and command reference, see `skills/dtmgd/SKILL.md
 
 ### SonarCloud automatic analysis reads `.sonarcloud.properties`, and S3776 still runs on tests
 - **Context**: `sonar-project.properties` declared `sonar.tests`, yet SonarCloud kept analysing `_test.go` files as production code (qualifier `FIL`) and reporting cognitive-complexity smells on table-driven tests.
-- **Insight**: SonarCloud's automatic analysis (the `SonarCloud Code Analysis` app) reads only `.sonarcloud.properties`; `sonar-project.properties` is for scanner-based analysis, which the `sonar` job cannot run. With `.sonarcloud.properties` in place, test files show qualifier `UTS` (check with `curl -s "https://sonarcloud.io/api/components/show?component=dynatrace-oss_dtmgd:<path>"`). Even so, Go's `go:S3776` still reports test functions above 15, so keep new tests under the limit with helpers. Locally, `gocognit` in `.golangci.yml` checks only non-test code; `go run github.com/uudashr/gocognit/cmd/gocognit@v1.2.0 -over 15 <file>_test.go` measures a test (its counts run a little higher than Sonar's, which counts `t.Run` closures separately).
+- **Insight**: SonarCloud's automatic analysis (the `SonarCloud Code Analysis` app) reads only `.sonarcloud.properties`; `sonar-project.properties` was for scanner-based analysis, which the old `sonar` job could never run (both were removed in Phase 5). With `.sonarcloud.properties` in place, test files show qualifier `UTS` (check with `curl -s "https://sonarcloud.io/api/components/show?component=dynatrace-oss_dtmgd:<path>"`). Even so, Go's `go:S3776` still reports test functions above 15, so keep new tests under the limit with helpers. Locally, `gocognit` in `.golangci.yml` checks only non-test code; `go run github.com/uudashr/gocognit/cmd/gocognit@v1.2.0 -over 15 <file>_test.go` measures a test (its counts run a little higher than Sonar's, which counts `t.Run` closures separately).
 - **When it applies**: Changing Sonar configuration, or a SonarCloud PR comment flags a test
 - **Date**: 2026-10-29
 - **Ref**: Phase 3 (1/2) code health (#52)

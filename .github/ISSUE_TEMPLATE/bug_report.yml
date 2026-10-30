@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a bug or unexpected behaviour
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Remove tokens, host names, environment IDs and license keys from anything you paste.**
+        `-vv` output masks the token and the license key, but not host names or IDs.
+        To report a security vulnerability, don't open an issue: see the security policy.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What you ran, what you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. dtmgd get problems --status OPEN -o json
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: The output of `dtmgd version`, your OS, and the Dynatrace Managed version (`dtmgd doctor` shows it).
+      value: |
+        - dtmgd version:
+        - OS:
+        - Dynatrace Managed version:
+    validations:
+      required: true
