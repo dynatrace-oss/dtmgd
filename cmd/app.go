@@ -185,6 +185,14 @@ func (a *App) applyPresentation() {
 	output.SetColor(a.colors())
 }
 
+// dataOutput reports whether a command that prints a line of text for a
+// person should print an object instead: in agent mode (the envelope's
+// result) or with a data format (json, yaml, csv, tsv).
+func (a *App) dataOutput() bool {
+	f := a.format()
+	return a.agentMode() || (f != output.FormatTable && f != output.FormatWide)
+}
+
 // format returns the validated --output value.
 func (a *App) format() output.Format {
 	f, _ := output.ParseFormat(a.Opts.Output)

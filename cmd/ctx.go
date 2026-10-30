@@ -64,16 +64,36 @@ func newCtxCurrentCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "current",
 		Short: "Display the current context name",
+		Long: `Display the current context name.
+
+With -o json or -o yaml, and in agent mode, it is an object:
+{"current-context": "<name>"}.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintln(a.Out, cfg.CurrentContext)
-			return nil
+			return a.printCurrentContext()
 		},
 	}
 	return cmd
+}
+
+// currentContext is what config current-context and ctx current report in
+// json, yaml, csv and tsv, and as the agent envelope's result, keyed as in
+// the config file.
+type currentContext struct {
+	Name string `json:"current-context" yaml:"current-context" table:"CURRENT-CONTEXT"`
+}
+
+// printCurrentContext prints the config's current context: the bare name for
+// a person, an object for an agent or a data format.
+func (a *App) printCurrentContext() error {
+	cfg, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	if a.dataOutput() {
+		return a.printer("contexts").Print(currentContext{Name: cfg.CurrentContext})
+	}
+	_, err = fmt.Fprintln(a.Out, cfg.CurrentContext)
+	return err
 }
 
 func newCtxSetCmd(a *App) *cobra.Command {

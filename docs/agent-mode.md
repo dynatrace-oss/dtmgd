@@ -6,7 +6,11 @@ How dtmgd behaves when an AI agent runs it, and how to install the dtmgd skill f
 
 When running inside an AI agent (Claude Code, Cursor, GitHub Copilot, Codex, Gemini
 CLI, Kiro, and others), dtmgd auto-detects the environment and wraps all output in a
-structured JSON envelope. The envelope is the one dtctl uses (its `sdk/agentmode`
+structured JSON envelope. The two exceptions are `commands`, whose catalog is
+JSON already, and `completion`, which prints a shell script. A command that
+prints one line for a person (`version`, `config current-context`,
+`ctx current`) puts an object in `result`, for example
+`{"version": "0.5.0", "commit": "…", "date": "…"}`. The envelope is the one dtctl uses (its `sdk/agentmode`
 package), so an agent that drives both CLIs parses one shape:
 
 ```json

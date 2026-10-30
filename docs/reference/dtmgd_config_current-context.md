@@ -2,6 +2,13 @@
 
 Display the current context
 
+### Synopsis
+
+Display the current context name.
+
+With -o json or -o yaml, and in agent mode, it is an object:
+{"current-context": "&lt;name>"}.
+
 ```
 dtmgd config current-context [flags]
 ```

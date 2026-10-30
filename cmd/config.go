@@ -196,13 +196,12 @@ func newConfigCurrentContextCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "current-context",
 		Short: "Display the current context",
+		Long: `Display the current context name.
+
+With -o json or -o yaml, and in agent mode, it is an object:
+{"current-context": "<name>"}.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := a.loadConfig()
-			if err != nil {
-				return err
-			}
-			_, _ = fmt.Fprintln(a.Out, cfg.CurrentContext)
-			return nil
+			return a.printCurrentContext()
 		},
 	}
 	return cmd
