@@ -26,6 +26,14 @@ dtmgd ctx current                  # show current context
 dtmgd ctx delete <name>            # delete context
 ```
 
+With `-o json` or `-o yaml`, and in agent mode, these commands use the config
+file's keys: `config view` prints the config as the file has it
+(`current-context`, `contexts[].context.env-id`, `token-ref`, with token values
+masked), `ctx` and `config get-contexts` print one object per context
+(`current` true or false, `name`, `scope`, `host`, `env-id`, `token-ref`,
+`description`), and `config current-context` and `ctx current` print
+`{"current-context": "<name>"}`.
+
 ### Importing a Dynatrace Managed MCP server config
 
 If you already run the [Dynatrace Managed MCP server](https://github.com/dynatrace-oss/dynatrace-managed-mcp),

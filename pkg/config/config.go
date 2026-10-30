@@ -14,15 +14,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config represents the dtmgd configuration.
+// Config represents the dtmgd configuration. The json keys are the file's
+// yaml keys, so config view -o json and the agent envelope read like the file.
 type Config struct {
-	APIVersion     string            `yaml:"apiVersion"`
-	Kind           string            `yaml:"kind"`
-	CurrentContext string            `yaml:"current-context"`
-	Contexts       []NamedContext    `yaml:"contexts"`
-	Tokens         []NamedToken      `yaml:"tokens"`
-	Preferences    Preferences       `yaml:"preferences"`
-	Aliases        map[string]string `yaml:"aliases,omitempty"`
+	APIVersion     string            `json:"apiVersion" yaml:"apiVersion"`
+	Kind           string            `json:"kind" yaml:"kind"`
+	CurrentContext string            `json:"current-context" yaml:"current-context"`
+	Contexts       []NamedContext    `json:"contexts" yaml:"contexts"`
+	Tokens         []NamedToken      `json:"tokens" yaml:"tokens"`
+	Preferences    Preferences       `json:"preferences" yaml:"preferences"`
+	Aliases        map[string]string `json:"aliases,omitempty" yaml:"aliases,omitempty"`
 
 	// expandedFrom is not set by any production code path: LoadFrom no longer
 	// expands ${VAR} references at load, so there is nothing left to guard
@@ -35,23 +36,23 @@ type Config struct {
 
 // NamedContext holds a named context entry.
 type NamedContext struct {
-	Name    string  `yaml:"name"`
-	Context Context `yaml:"context"`
+	Name    string  `json:"name" yaml:"name"`
+	Context Context `json:"context" yaml:"context"`
 }
 
 // Context holds the connection information for one Dynatrace Managed
 // environment or, without an env-id, for a cluster's Cluster Management API.
 type Context struct {
 	// Host is the base URL of the Dynatrace Managed cluster, e.g. https://managed.company.com
-	Host string `yaml:"host"`
+	Host string `json:"host" yaml:"host"`
 	// EnvID is the environment identifier, e.g. "abc12345". Without one, the
 	// context is a cluster context (see IsCluster).
-	EnvID string `yaml:"env-id,omitempty"`
+	EnvID string `json:"env-id,omitempty" yaml:"env-id,omitempty"`
 	// TokenRef is the name of the token entry in the Tokens list (or OS keyring).
-	TokenRef      string `yaml:"token-ref"`
-	Description   string `yaml:"description,omitempty"`
-	HTTPProxyURL  string `yaml:"http-proxy,omitempty"`
-	HTTPSProxyURL string `yaml:"https-proxy,omitempty"`
+	TokenRef      string `json:"token-ref" yaml:"token-ref"`
+	Description   string `json:"description,omitempty" yaml:"description,omitempty"`
+	HTTPProxyURL  string `json:"http-proxy,omitempty" yaml:"http-proxy,omitempty"`
+	HTTPSProxyURL string `json:"https-proxy,omitempty" yaml:"https-proxy,omitempty"`
 }
 
 // IsCluster reports whether c is a cluster context: one with no env-id, for
@@ -62,13 +63,13 @@ func (c Context) IsCluster() bool { return c.EnvID == "" }
 
 // NamedToken holds a named API token.
 type NamedToken struct {
-	Name  string `yaml:"name"`
-	Token string `yaml:"token"`
+	Name  string `json:"name" yaml:"name"`
+	Token string `json:"token" yaml:"token"`
 }
 
 // Preferences holds user preferences.
 type Preferences struct {
-	Output string `yaml:"output,omitempty"`
+	Output string `json:"output,omitempty" yaml:"output,omitempty"`
 }
 
 // DefaultConfigPath returns the default config file path: dtmgd/config under

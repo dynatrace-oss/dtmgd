@@ -18,15 +18,18 @@ const (
 	flagTokenRef = "token-ref"
 )
 
-// ContextListItem is the table row for context listings.
+// ContextListItem is a context listing's row. Its json and yaml keys are the
+// config file's; the table marks the current context with "*", the data
+// formats with a boolean.
 type ContextListItem struct {
-	Current     string `table:"CURRENT"`
-	Name        string `table:"NAME"`
-	Scope       string `table:"SCOPE"`
-	Host        string `table:"HOST"`
-	EnvID       string `table:"ENV-ID"`
-	TokenRef    string `table:"TOKEN-REF"`
-	Description string `table:"DESCRIPTION,wide"`
+	Current     string `json:"-" yaml:"-" table:"CURRENT"`
+	IsCurrent   bool   `json:"current" yaml:"current" table:"-"`
+	Name        string `json:"name" yaml:"name" table:"NAME"`
+	Scope       string `json:"scope" yaml:"scope" table:"SCOPE"`
+	Host        string `json:"host" yaml:"host" table:"HOST"`
+	EnvID       string `json:"env-id,omitempty" yaml:"env-id,omitempty" table:"ENV-ID"`
+	TokenRef    string `json:"token-ref" yaml:"token-ref" table:"TOKEN-REF"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty" table:"DESCRIPTION,wide"`
 }
 
 // newCtxCmd builds the top-level shortcut for context management.
@@ -175,6 +178,7 @@ func (a *App) listContexts() error {
 		}
 		items = append(items, ContextListItem{
 			Current:     current,
+			IsCurrent:   current != "",
 			Name:        nc.Name,
 			Scope:       contextScope(nc.Context),
 			Host:        nc.Context.Host,
