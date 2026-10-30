@@ -24,13 +24,6 @@ an `env-id` is a cluster context, for the cluster's own Cluster Management API:
 its environments, nodes, license and backup configuration. See
 [Cluster Contexts](#cluster-contexts).
 
-## API Endpoints
-
-| Target | URL pattern |
-|---|---|
-| Environment API (observations), environment contexts | `{host}/e/{env-id}/api/v2/` |
-| Cluster Management API, cluster contexts (no `env-id`) | `{host}/api/cluster/v2/` and `{host}/api/v1.0/onpremise/` |
-
 ## Installation
 
 **Option 1 — Homebrew (macOS / Linux)**
@@ -87,6 +80,19 @@ make install   # installs to $GOPATH/bin (or $HOME/go/bin)
 ```
 
 Make sure `$(go env GOPATH)/bin` is in your `$PATH`.
+
+### Shell Completion
+
+```bash
+# Bash
+dtmgd completion bash > /etc/bash_completion.d/dtmgd
+
+# Zsh
+dtmgd completion zsh > "${fpath[1]}/_dtmgd"
+
+# Fish
+dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
+```
 
 ### Verifying a download
 
@@ -742,30 +748,6 @@ A `.dtmgd.yaml` in your working directory is the intended project-local
 workflow (`dtmgd config init` creates one) and is not announced; run with `-v`
 to print the active config path whatever its source. Use `--config` to pin the
 file explicitly and bypass the search.
-
-## Building
-
-```bash
-# Requires Go 1.26.10+
-make build        # produces ./dtmgd
-make install      # installs to $GOPATH/bin (or $HOME/go/bin)
-make vet          # run go vet
-make fmt          # format source with gofmt
-make clean        # remove ./dtmgd binary
-```
-
-### Shell Completion
-
-```bash
-# Bash
-dtmgd completion bash > /etc/bash_completion.d/dtmgd
-
-# Zsh
-dtmgd completion zsh > "${fpath[1]}/_dtmgd"
-
-# Fish
-dtmgd completion fish > ~/.config/fish/completions/dtmgd.fish
-```
 
 ## Feature Parity with Dynatrace Managed MCP Server
 

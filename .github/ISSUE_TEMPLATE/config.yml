@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/dynatrace-oss/dtmgd/security/advisories/new
+    about: Report a vulnerability privately (see SECURITY.md).
+  - name: Documentation
+    url: https://github.com/dynatrace-oss/dtmgd/tree/main/docs
+    about: Guides and the generated command reference.
