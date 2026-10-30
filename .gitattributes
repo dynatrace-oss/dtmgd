@@ -1,3 +1,7 @@
 # Golden files and API fixtures are compared byte-for-byte; keep them LF on
 # every platform (the Windows CI runner checks out with autocrlf).
 cmd/testdata/** text eol=lf
+
+# The generated command reference is compared byte-for-byte in every test
+# job, including Windows.
+docs/reference/** text eol=lf
