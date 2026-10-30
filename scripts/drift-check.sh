@@ -80,9 +80,9 @@ echo
 echo "## Pinned CI tools"
 echo
 latest_release() { # $1 = owner/repo; prints the latest release tag
-	local auth=()
+	local repo=$1 auth=()
 	if [[ -n ${GITHUB_TOKEN:-} ]]; then auth=(-H "Authorization: Bearer $GITHUB_TOKEN"); fi
-	curl -fsS --max-time 30 "${auth[@]}" "https://api.github.com/repos/$1/releases/latest" | jq -r '.tag_name // empty'
+	curl -fsS --proto =https --max-time 30 "${auth[@]}" "https://api.github.com/repos/$repo/releases/latest" | jq -r '.tag_name // empty'
 }
 # check_pins TOOL OWNER/REPO EXPECTED PIN... where each PIN is "file: version"
 # and EXPECTED is how many pins there must be (one per use of the tool).

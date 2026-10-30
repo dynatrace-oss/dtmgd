@@ -45,9 +45,15 @@ main() {
 	esac
 
 	if command -v sha256sum >/dev/null 2>&1; then
-		sha256() { sha256sum "$1" | awk '{print $1}'; }
+		sha256() {
+			sha256_file=$1
+			sha256sum "$sha256_file" | awk '{print $1}'
+		}
 	elif command -v shasum >/dev/null 2>&1; then
-		sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+		sha256() {
+			sha256_file=$1
+			shasum -a 256 "$sha256_file" | awk '{print $1}'
+		}
 	else
 		die "sha256sum or shasum is needed to verify the download"
 	fi
@@ -71,12 +77,13 @@ main() {
 	else
 		echo "Finding the latest release..."
 		api="https://api.github.com/repos/$REPO/releases/latest"
+		# --proto =https: curl -L follows redirects, never to plain http.
 		if [ -n "${GITHUB_TOKEN:-}" ]; then
 			# The header goes to curl as a config on stdin: on its command line,
 			# any user on the host could read the token in the process list.
-			release=$(printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl -fsSL -K - "$api") || die "could not query $api"
+			release=$(printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_TOKEN" | curl -fsSL --proto =https -K - "$api") || die "could not query $api"
 		else
-			release=$(curl -fsSL "$api") || die "could not query $api"
+			release=$(curl -fsSL --proto =https "$api") || die "could not query $api"
 		fi
 		tag=$(printf '%s\n' "$release" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 		[ -n "$tag" ] || die "could not find the latest release in $api"
@@ -94,7 +101,8 @@ main() {
 
 	echo "Downloading dtmgd $version ($os/$arch)..."
 	for f in "$asset" checksums.txt; do
-		curl -fsSL -o "$tmpdir/$f" "$base/v$version/$f" || die "could not download $base/v$version/$f"
+		# A mirror may be plain http by choice; a redirect never downgrades to it.
+		curl -fsSL --proto-redir =https -o "$tmpdir/$f" "$base/v$version/$f" || die "could not download $base/v$version/$f"
 	done
 
 	expected=$(awk -v f="$asset" '$2 == f || $2 == "*" f { print $1; exit }' "$tmpdir/checksums.txt")
