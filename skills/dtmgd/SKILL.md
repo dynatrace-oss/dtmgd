@@ -49,7 +49,7 @@ connectivity check.) `doctor` gives one row per context with `scope`
 below 1.328.0, or the token cannot read it) or `fail` (with the reason in
 `detail`), and exits 1 if any context fails.
 
-Agent mode is auto-detected — output will be wrapped in `{ok, result, context}` envelopes automatically.
+Agent mode is auto-detected — output will be wrapped in `{ok, result, context}` envelopes automatically, for every command except `commands` (its catalog is JSON already) and `completion` (a shell script). Commands that print one line for a person (`version`, `config current-context`, `ctx current`) put an object in `result`, such as `{"current-context": "prod"}`.
 
 ## Reading Output
 

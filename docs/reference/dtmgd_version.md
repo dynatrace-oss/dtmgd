@@ -2,6 +2,13 @@
 
 Show dtmgd version
 
+### Synopsis
+
+Show dtmgd's version, commit and build date.
+
+With -o json, -o yaml, -o csv or -o tsv they are fields (version, commit,
+date); in agent mode they are the envelope's result.
+
 ```
 dtmgd version [flags]
 ```
