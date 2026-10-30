@@ -35,3 +35,18 @@ func truncate(s string, maxLen int) string {
 func joinSelector(parts ...string) string {
 	return strings.Join(parts, ",")
 }
+
+// selectorString quotes v as a selector value: Dynatrace selectors escape a
+// quote or a tilde inside a quoted value with a tilde.
+func selectorString(v string) string {
+	return `"` + strings.NewReplacer("~", "~~", `"`, `~"`).Replace(v) + `"`
+}
+
+// mzCriterion is the entitySelector criterion for --mz: the value as given
+// when it already is an mzName(…) or mzId(…) criterion, else mzName of it.
+func mzCriterion(mz string) string {
+	if strings.HasPrefix(mz, "mzName(") || strings.HasPrefix(mz, "mzId(") {
+		return mz
+	}
+	return "mzName(" + selectorString(mz) + ")"
+}

@@ -51,8 +51,8 @@ dtmgd get entities --selector 'type(HOST),healthState("HEALTHY")'
 dtmgd get entities --selector 'type(SERVICE),entityName.contains("payment")'
 dtmgd get entities --selector 'type(SERVICE),tag("env:production")'
 
-# Filter by management zone
-dtmgd get entities --selector 'type(HOST)' --mz 'mzName("Production")'
+# Filter by management zone (a name, or an mzName("…")/mzId(…) criterion; added to --selector)
+dtmgd get entities --selector 'type(HOST)' --mz Production
 
 # Get entity details (all properties, tags, management zones, relations)
 dtmgd describe entity <entity-id> -o json
@@ -81,7 +81,7 @@ dtmgd describe event <event-id> -o json
 ```bash
 # Search available metric IDs
 dtmgd get metrics --search response.time
-dtmgd get metrics --search cpu --entity 'type(HOST)'
+# (get metrics cannot filter by entity; to read a metric for an entity, use query metrics --entity)
 
 # Get metric descriptor/metadata
 dtmgd describe metric builtin:service.response.time -o json

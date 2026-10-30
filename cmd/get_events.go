@@ -71,8 +71,10 @@ Examples:
 					"from": opts.from,
 					"to":   to,
 				}
+				// The API ignores an eventType parameter; the type goes in
+				// eventSelector.
 				if opts.eventType != "" {
-					params["eventType"] = opts.eventType
+					params["eventSelector"] = "eventType(" + selectorString(opts.eventType) + ")"
 				}
 				if opts.entity != "" {
 					params["entitySelector"] = opts.entity

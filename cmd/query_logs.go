@@ -93,7 +93,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time (default: now)")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of records, at most 1000 (default: 100)")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order: -timestamp (newest first, the default) or +timestamp")
-	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag(\"env:prod\")'); not a documented /logs/search parameter, so check results against an unscoped search")
+	cmd.Flags().StringVar(&opts.entity, "entity", "", "entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag(\"env:prod\")'); not in the published /logs/search specification, but honoured (checked on Dynatrace Managed 1.348)")
 	return withScopes(cmd, scopeLogsRead)
 }
 
