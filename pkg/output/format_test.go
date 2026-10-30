@@ -16,6 +16,8 @@ func TestParseFormat(t *testing.T) {
 		{"json", FormatJSON},
 		{"yaml", FormatYAML},
 		{"yml", FormatYAML},
+		{"csv", FormatCSV},
+		{"tsv", FormatTSV},
 	}
 	for _, tt := range tests {
 		got, err := ParseFormat(tt.in)
@@ -24,7 +26,7 @@ func TestParseFormat(t *testing.T) {
 		}
 	}
 	_, err := ParseFormat("xml")
-	if err == nil || !strings.Contains(err.Error(), `unknown output format "xml" (want one of: table, wide, json, yaml)`) {
+	if err == nil || !strings.Contains(err.Error(), `unknown output format "xml" (want one of: table, wide, json, yaml, csv, tsv)`) {
 		t.Errorf("ParseFormat(xml) error = %v", err)
 	}
 }

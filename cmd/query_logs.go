@@ -82,6 +82,7 @@ Examples:
 				Resource: "logs",
 				Fetch:    logSearchFetch(params),
 				Human:    printLogRecords,
+				Rows:     logRows, // csv and tsv; tables use printLogRecords
 				Link:     uiPage(uiLogs),
 				Limit:    opts.limit,
 				List:     true,
@@ -181,6 +182,26 @@ func printLogRecords(w io.Writer, body interface{}) error {
 		output.PrintInfo("%s. Use --limit or narrower filters.", showing(len(resp.Results), f.Total, "log records"))
 	}
 	return nil
+}
+
+// logRow is a log record as a csv or tsv row.
+type logRow struct {
+	Timestamp string `table:"TIMESTAMP"`
+	Status    string `table:"STATUS"`
+	Content   string `table:"CONTENT"`
+}
+
+// logRows is query logs' Rows, for csv and tsv output.
+func logRows(body interface{}) (interface{}, int, error) {
+	var resp LogsResponse
+	if err := client.DecodePaged(body.(map[string]interface{}), &resp); err != nil {
+		return nil, 0, err
+	}
+	rows := make([]logRow, len(resp.Results))
+	for i, entry := range resp.Results {
+		rows[i] = logRow{Timestamp: msToTime(entry.Timestamp), Status: resolveLogStatus(entry), Content: resolveLogContent(entry)}
+	}
+	return rows, len(rows), nil
 }
 
 // resolveLogContent returns the log content from a LogEntry.

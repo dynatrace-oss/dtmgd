@@ -47,7 +47,7 @@ cmd/            Cobra commands, one file per command (get_*.go, describe_*.go, q
 pkg/client/     HTTP client (resty): GetV2, GetV1, GetCluster, GetV2Paged, GetClusterPaged,
                 MultiRequest (parallel --env fan-out), exit codes, error diagnosis
 pkg/config/     config file, contexts, ${VAR} references, keyring
-pkg/output/     printers: table (struct tags), json, yaml, agent envelope
+pkg/output/     printers: table (struct tags), csv and tsv (the same tags), json, yaml, agent envelope
 pkg/skills/     `dtmgd skills install`; skills/dtmgd/ holds the embedded skill
 pkg/version/    version, commit, date: ldflags, else the module's build info
 tools/          checksum-locked CI tools (govulncheck, actionlint), a separate module

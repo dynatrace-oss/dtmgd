@@ -75,3 +75,12 @@ func TestDiagnosePartialFailure(t *testing.T) {
 		t.Errorf("403 and 401: hint %q, want none", hint)
 	}
 }
+
+// The hint must not suggest --token: it leaves the token in the process
+// list and shell history (SECURITY.md). set-credentials prompts for it.
+func TestDiagnoseTokenNotFoundSuggestsThePrompt(t *testing.T) {
+	hint := Diagnose(errors.New(`no token: token "prod-token" not found`))
+	if !strings.Contains(hint, "dtmgd config set-credentials <token-ref>") || strings.Contains(hint, "--token ") {
+		t.Errorf("hint = %q", hint)
+	}
+}

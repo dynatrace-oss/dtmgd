@@ -223,7 +223,7 @@ dtmgd get problems --env ALL_ENVIRONMENTS     # every environment context, in pa
 dtmgd get nodes --context prod-cluster        # a cluster context
 ```
 
-Output is a table by default, or `-o wide|json|yaml`. Exit codes, paging and
+Output is a table by default, or `-o wide|json|yaml|csv|tsv`. Exit codes, paging and
 time formats: [docs/output.md](docs/output.md).
 
 ## Contexts

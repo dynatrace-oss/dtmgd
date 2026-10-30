@@ -115,14 +115,14 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 	f := cmd.PersistentFlags()
 	f.StringVar(&a.Opts.ConfigPath, "config", "", `config file (default: ~/.config/dtmgd/config on Linux, ~/Library/Application Support/dtmgd/config on macOS, %LOCALAPPDATA%\dtmgd\config on Windows, or $XDG_CONFIG_HOME/dtmgd/config when set)`)
 	f.StringVarP(&a.Opts.Context, "context", "c", "", "context to use (overrides current-context)")
-	f.StringVarP(&a.Opts.Output, "output", "o", "", "output format: table|json|yaml|wide (default: table)")
+	f.StringVarP(&a.Opts.Output, "output", "o", "", "output format: table|wide|json|yaml|csv|tsv (default: table)")
 	f.CountVarP(&a.Opts.Verbose, "verbose", "v", "verbosity level (-v for summary, -vv for full request/response)")
 	f.StringVarP(&a.Opts.Env, "env", "e", "", `environment(s): context name, "prod;staging", or ALL_ENVIRONMENTS`)
 	f.BoolVarP(&a.Opts.Agent, "agent", "A", false, "force agent envelope output mode")
 	f.BoolVar(&a.Opts.NoAgent, "no-agent", false, "disable auto-detected agent mode")
 	f.BoolVar(&a.Opts.Plain, "plain", false, "plain output: no symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)")
 	f.IntVar(&a.Opts.MaxPages, "max-pages", 0, "maximum number of pages to fetch (0 = all pages)")
-	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table output")
+	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table, csv and tsv output")
 	f.IntVar(&a.Opts.Concurrency, "concurrency", client.DefaultConcurrency,
 		"maximum environments queried at once with --env")
 

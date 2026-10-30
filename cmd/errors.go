@@ -203,7 +203,7 @@ func exitCode(err error) int {
 		return client.ExitSuccess
 	}
 	var usage *UsageError
-	if errors.As(err, &usage) {
+	if errors.As(err, &usage) || errors.Is(err, output.ErrNotTabular) || errors.Is(err, output.ErrUnknownColumns) {
 		return client.ExitUsage
 	}
 	var partial *client.PartialFailureError

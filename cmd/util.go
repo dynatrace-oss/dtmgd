@@ -21,16 +21,6 @@ func msToTimeOrEmpty(ms int64) string {
 	return msToTime(ms)
 }
 
-// truncate shortens a string to maxLen runes, appending "…" if needed.
-func truncate(s string, maxLen int) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	runes := []rune(s)
-	if len(runes) <= maxLen {
-		return s
-	}
-	return string(runes[:maxLen-1]) + "…"
-}
-
 // joinSelector joins selector criteria (problemSelector, securityProblemSelector
 // or entitySelector) with a comma.
 func joinSelector(parts ...string) string {

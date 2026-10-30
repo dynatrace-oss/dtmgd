@@ -45,6 +45,9 @@ func (a *App) runClusterFetch(s fetchSpec) error {
 	if err := limitFlag(s.Limit); err != nil {
 		return err
 	}
+	if err := a.checkDelimited(s); err != nil {
+		return err
+	}
 	if a.isMultiEnv() {
 		return &UsageError{Err: fmt.Errorf("--env %q selects environments; \"dtmgd %s %s\" runs against one cluster context. Use --context <name>", a.Opts.Env, s.Verb, s.Resource)}
 	}
