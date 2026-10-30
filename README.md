@@ -215,6 +215,13 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 | `skills` | installs the dtmgd skill for an AI agent ([agent mode](docs/agent-mode.md)) |
 | `commands`, `version`, `completion` | the command catalog, the CLI's version, shell completion |
 
+`get` and `describe` are the standard verbs of the Dynatrace CLI tools. The
+others are intentional extensions, the same ones dtctl has: `query` reads
+time series and logs, which are not resources; `doctor`, `commands`,
+`skills`, `config`/`ctx`, `version` and `completion` manage the tool itself.
+`create`, `edit`, `delete` and `apply` are absent on purpose: dtmgd is
+read-only.
+
 ```bash
 dtmgd get problems --status OPEN --from now-24h
 dtmgd describe problem <problem-id> -o json
