@@ -192,6 +192,20 @@ func rawAgentMode(args []string) bool {
 	return agent || agentmode.Detect().Detected
 }
 
+// rawPlain reports whether the raw arguments ask for --plain, for errors
+// raised before flag parsing finished.
+func rawPlain(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--":
+			return false
+		case "--plain", "--plain=true":
+			return true
+		}
+	}
+	return false
+}
+
 // errReported marks an error whose output a command has already written
 // (for example an agent envelope carrying partial results). Run reports
 // nothing more for it and only computes the exit code.
@@ -233,6 +247,12 @@ func (a *App) reportError(cmd *cobra.Command, err error) {
 	agent := a.agentMode()
 	if errors.As(err, &usage) {
 		agent = rawAgentMode(a.args)
+		// The flags may not have been parsed, so the pre-run that applies
+		// --plain may not have run.
+		if rawPlain(a.args) {
+			output.SetPlain(true)
+			output.SetColor(false, false)
+		}
 	}
 	if agent {
 		// Best effort: this is the last-resort reporter, so a failed write

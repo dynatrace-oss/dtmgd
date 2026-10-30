@@ -43,7 +43,7 @@ values with a header line, for spreadsheets and scripts:
 - **Agent mode:** the agent envelope wins over any `-o`; pass `--no-agent`.
 
 On a terminal, tables have bold headers and a colored status column (`get
-problems`, `get slos`, `doctor`: green for ok, success and resolved, yellow
+problems`, `get slos`, `doctor`: green for ok, success and closed, yellow
 for warnings, red for open and failed), and the stderr symbols are colored
 (`✗` red, `⚠` yellow, `✓` green). Stderr is colored only when it is a
 terminal too. csv, tsv, json, yaml and the agent envelope never contain

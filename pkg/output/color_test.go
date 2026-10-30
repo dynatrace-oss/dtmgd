@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -116,5 +117,22 @@ func TestOnlyTablesAreColored(t *testing.T) {
 		if out := render(t, format); strings.Contains(out, "\x1b") {
 			t.Errorf("%s output has escape codes:\n%q", format, out)
 		}
+	}
+}
+
+// TestEnableVTAcceptsWhatIsNotAConsole pins that only a console is ever
+// prepared: a buffer or a file (FORCE_COLOR into a pipe or a file) can take
+// escape codes as they are.
+func TestEnableVTAcceptsWhatIsNotAConsole(t *testing.T) {
+	if !EnableVT(&bytes.Buffer{}) {
+		t.Error("EnableVT refused a buffer")
+	}
+	f, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if !EnableVT(f) {
+		t.Error("EnableVT refused a regular file")
 	}
 }

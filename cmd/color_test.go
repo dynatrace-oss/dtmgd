@@ -72,3 +72,18 @@ func TestStderrColorNeedsATerminal(t *testing.T) {
 		t.Error("FORCE_COLOR does not color a redirected stderr")
 	}
 }
+
+// TestPlainHoldsWhenFlagParsingFails pins that --plain counts even when the
+// command line has a bad flag: the persistent pre-run that applies it never
+// runs then, so the usage error came out in color, with a glyph.
+func TestPlainHoldsWhenFlagParsingFails(t *testing.T) {
+	for _, args := range [][]string{
+		{"--plain", "get", "problems", "--bogus"},
+		{"get", "problems", "--bogus", "--plain"},
+	} {
+		r := runCLIWithEnv(t, map[string]string{"FORCE_COLOR": "1"}, problemsCfg(t), args...)
+		if r.Code != 2 || !strings.HasPrefix(r.Stderr, "Error: unknown flag: --bogus") || strings.Contains(r.Stderr, "\x1b") {
+			t.Errorf("%v: %s", args, r)
+		}
+	}
+}
