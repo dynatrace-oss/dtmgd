@@ -114,9 +114,9 @@ func printSecurityProblemDetail(w io.Writer, d SecurityProblemDetail) {
 	for _, line := range strings.Split(d.Description, "\n") {
 		line = strings.TrimSpace(strings.TrimLeft(line, "#"))
 		line = strings.TrimSpace(line)
-		if len(line) > 40 {
-			if len(line) > 220 {
-				line = line[:217] + "…"
+		if r := []rune(line); len(r) > 40 {
+			if len(r) > 220 {
+				line = string(r[:217]) + "…"
 			}
 			shortDesc = line
 			break

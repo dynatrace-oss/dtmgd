@@ -26,6 +26,7 @@ cd dtmgd
 make build        # ./dtmgd
 make install      # go install into $GOPATH/bin (or $HOME/go/bin)
 make test         # go test -race ./...
+make integration  # live, read-only checks against your cluster (see below)
 make lint         # go vet, gofmt check, golangci-lint, actionlint, shellcheck
 make fmt          # gofmt -w .
 make docs         # regenerate docs/reference from the commands
@@ -33,9 +34,30 @@ make vulncheck    # govulncheck
 make clean        # remove ./dtmgd and bin/
 ```
 
-`./pkg/skills` tests fail on a machine where you have run
-`dtmgd skills install`; see [AGENTS.md](AGENTS.md#build-test-lint) for the
-test command that gives a clean local signal.
+### Live integration tests
+
+`make test` runs the CLI against fake APIs, which cannot tell whether a
+cluster honours a parameter. `make integration` runs `test/integration`
+(build tag `integration`) against a real Dynatrace Managed cluster: it checks
+that the list commands answer, that `--limit` keeps the next-page key, that
+`--type`, `--mz`, `--status` and `query logs --entity` really filter (an
+impossible value must match nothing or be rejected, and a real one must
+return fewer items than no filter), the `--env` fan-out,
+and, with a cluster context, the Cluster API commands and that
+`describe license` masks the key.
+
+1. Copy `.integrationtests.env.example` to `.integrationtests.env` (git
+   ignores it) and name your config file and contexts. It holds no tokens:
+   dtmgd reads those from your config or the OS keyring as usual.
+2. Run `make integration`. Tests whose settings are missing skip, and so do
+   filter checks that cannot tell a working filter from an ignored one: an
+   empty unfiltered result, or a filter that keeps everything.
+
+The suite only runs `get`, `describe`, `query`, `doctor` and `commands`, and
+never changes the config. A failure shows the exit code and the first line of
+stderr with URLs, host names and IP addresses removed, never response data.
+It never runs in CI, which has no cluster; CI only checks that it compiles
+(`go vet -tags integration ./test/...`).
 
 ## Making a change
 

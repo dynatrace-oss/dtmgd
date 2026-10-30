@@ -37,7 +37,8 @@ func (a *App) watchOrRun(w watchOptions, fn func() error) error {
 	return fn()
 }
 
-// Returns nil only when interrupted by signal.
+// runWatch runs fn now and then every interval until Ctrl+C (or, in tests,
+// until a.watchStop closes), and returns nil then.
 func (a *App) runWatch(w watchOptions, fn func() error) error {
 	// Run once immediately
 	a.clearScreen()
@@ -56,15 +57,18 @@ func (a *App) runWatch(w watchOptions, fn func() error) error {
 	for {
 		select {
 		case <-sigCh:
-			fmt.Fprintln(os.Stderr)
-			return nil
+		case <-a.watchStop:
 		case <-ticker.C:
 			a.clearScreen()
 			a.printWatchHeader(w)
 			if err := fn(); err != nil {
 				a.reportWatchError(err)
 			}
+			continue
 		}
+		// End the line ^C left on the terminal.
+		_, _ = fmt.Fprintln(a.Err)
+		return nil
 	}
 }
 

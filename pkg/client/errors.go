@@ -14,9 +14,10 @@ type ErrAPI struct {
 	Body string
 }
 
-// maxAPIMessageLen caps the API-supplied text that reaches a user-facing
-// error. Dynatrace validation messages are a sentence; anything much longer
-// is a stack trace or a dump, which is what the cap is there to stop.
+// maxAPIMessageLen caps, in characters, the API-supplied text that reaches a
+// user-facing error. Dynatrace validation messages are a sentence; anything
+// much longer is a stack trace or a dump, which is what the cap is there to
+// stop.
 const maxAPIMessageLen = 200
 
 func (e *ErrAPI) Error() string {
@@ -52,8 +53,8 @@ func apiErrorMessage(body string) string {
 		return ""
 	}
 	msg := envelope.Error.Message
-	if len(msg) > maxAPIMessageLen {
-		msg = msg[:maxAPIMessageLen] + "…"
+	if r := []rune(msg); len(r) > maxAPIMessageLen {
+		msg = string(r[:maxAPIMessageLen]) + "…"
 	}
 	return msg
 }

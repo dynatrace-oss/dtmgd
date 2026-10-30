@@ -7,7 +7,7 @@ LDFLAGS  := -ldflags "-s -w \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Commit=$(COMMIT) \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Date=$(DATE)"
 
-.PHONY: build clean install vet fmt test lint vulncheck docs release-dry release-check
+.PHONY: build clean install vet fmt test integration lint vulncheck docs release-dry release-check
 
 build:
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) .
@@ -18,8 +18,16 @@ install:
 test:
 	go test -race ./...
 
+# The live integration suite: read-only checks against a real cluster, never
+# run in CI. Settings come from the environment or .integrationtests.env (see
+# .integrationtests.env.example); without DTMGD_IT_CONFIG every test skips.
+integration:
+	@set -a; [ ! -f .integrationtests.env ] || . ./.integrationtests.env; set +a; \
+	go test -tags integration -count=1 -v ./test/integration/...
+
 vet:
 	go vet ./...
+	go vet -tags integration ./test/...
 
 fmt:
 	gofmt -w .

@@ -42,10 +42,11 @@ config.yaml
 .dtmgd/
 .env
 dt-config.yaml
+# Live integration test settings (context names, maybe a zone name)
+.integrationtests.env
 
 # Build artifacts
 *.log
-.integrationtests.env
 completions/
 
 # API specs (copied for reference, not tracked)

@@ -39,7 +39,10 @@ jobs:
           fi
 
       - name: Run go vet
-        run: go vet ./...
+        run: |
+          go vet ./...
+          # The live integration suite never runs in CI; this keeps it compiling.
+          go vet -tags integration ./test/...
 
       # actionlint is pinned and checksum-locked in tools/go.mod and go.sum.
       # The runner has shellcheck, so run: blocks are checked too.
