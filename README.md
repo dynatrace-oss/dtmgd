@@ -42,13 +42,40 @@ brew install dynatrace-oss/tap/dtmgd
 brew upgrade dtmgd
 ```
 
-**Option 2 — go install (requires Go 1.26.10+)**
+**Option 2 — install script (Linux, macOS, Windows)**
+
+For hosts without Homebrew or Go, such as jump hosts:
+
+```bash
+# Linux / macOS: installs to ~/.local/bin (Linux) or /usr/local/bin (macOS)
+curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtmgd/main/install.sh | sh
+```
+
+```powershell
+# Windows: installs to %LOCALAPPDATA%\dtmgd and adds it to your user PATH
+irm https://raw.githubusercontent.com/dynatrace-oss/dtmgd/main/install.ps1 | iex
+```
+
+The scripts check the archive against the release's `checksums.txt` before
+installing, and leave an installed dtmgd as it was if anything fails. They
+read these environment variables:
+
+| Variable | Meaning |
+|---|---|
+| `DTMGD_VERSION` | Version to install, e.g. `0.3.1` (default: the latest release) |
+| `DTMGD_INSTALL_DIR` | Install directory |
+| `DTMGD_DOWNLOAD_BASE` | A mirror of the release downloads, laid out as `<base>/v<version>/<asset>`, for hosts that cannot reach GitHub |
+| `DTMGD_NO_MODIFY_PATH` | `1` keeps `install.ps1` from changing your user PATH |
+
+**Option 3 — go install (requires Go 1.26.10+)**
 
 ```bash
 go install github.com/dynatrace-oss/dtmgd@latest
 ```
 
-**Option 3 — build from source**
+`dtmgd version` then reports the module version you installed.
+
+**Option 4 — build from source**
 
 ```bash
 git clone https://github.com/dynatrace-oss/dtmgd.git

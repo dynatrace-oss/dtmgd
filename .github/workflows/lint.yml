@@ -48,6 +48,10 @@ jobs:
           go -C tools build -o "$RUNNER_TEMP/actionlint" github.com/rhysd/actionlint/cmd/actionlint
           "$RUNNER_TEMP/actionlint"
 
+      # shellcheck is preinstalled on the runner.
+      - name: Check install.sh
+        run: shellcheck install.sh
+
   # Not filtered on .goreleaser.yaml: a new GoReleaser can deprecate a
   # property this repo uses, and check exits non-zero on a deprecation.
   goreleaser-check:

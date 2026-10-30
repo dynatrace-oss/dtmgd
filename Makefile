@@ -36,6 +36,7 @@ lint: vet
 	golangci-lint run
 	go -C tools build -o "$(CURDIR)/bin/actionlint" github.com/rhysd/actionlint/cmd/actionlint
 	./bin/actionlint
+	@if command -v shellcheck >/dev/null; then shellcheck install.sh; else echo "shellcheck not found; skipping install.sh"; fi
 
 # govulncheck is pinned and checksum-locked in tools/go.mod and go.sum.
 vulncheck:
