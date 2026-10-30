@@ -7,7 +7,7 @@ LDFLAGS  := -ldflags "-s -w \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Commit=$(COMMIT) \
 	-X github.com/dynatrace-oss/dtmgd/pkg/version.Date=$(DATE)"
 
-.PHONY: build clean install vet fmt test lint vulncheck release-dry
+.PHONY: build clean install vet fmt test lint vulncheck release-dry release-check
 
 build:
 	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) .
@@ -44,6 +44,9 @@ vulncheck:
 
 release-dry:
 	goreleaser release --snapshot --clean
+
+release-check:
+	goreleaser check
 
 clean:
 	rm -f $(BINARY)

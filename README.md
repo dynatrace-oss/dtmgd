@@ -58,6 +58,26 @@ make install   # installs to $GOPATH/bin (or $HOME/go/bin)
 
 Make sure `$(go env GOPATH)/bin` is in your `$PATH`.
 
+### Verifying a download
+
+Every release has a `checksums.txt` for its archives. From v0.3.1 on,
+`checksums.txt` is also signed with [cosign](https://docs.sigstore.dev/)
+(keyless, by the release workflow), and each archive has an SPDX SBOM next to
+it (`<archive>.sbom.json`). With the archive, `checksums.txt` and
+`checksums.txt.sigstore.json` from the release page in one directory:
+
+```bash
+# Is checksums.txt the one the dtmgd release workflow signed?
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/dynatrace-oss/dtmgd/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+
+# Does the archive match it? (macOS: shasum -a 256 --ignore-missing -c checksums.txt)
+sha256sum --ignore-missing -c checksums.txt
+```
+
 ## Quick Start
 
 `dtmgd` supports any number of named environments ("contexts"). The name you
