@@ -42,10 +42,17 @@ values with a header line, for spreadsheets and scripts:
 - **`--watch`** prints the header line again with every refresh.
 - **Agent mode:** the agent envelope wins over any `-o`; pass `--no-agent`.
 
-`--plain` replaces the stderr symbols (`⚠ ✗ 💡`) with words (`Warning:`,
-`Error:`, `Hint:`) and stops `--watch` from clearing the screen. It is on
-automatically when stdout is not a terminal or `NO_COLOR` is set, unless
-`FORCE_COLOR` is set.
+On a terminal, tables have bold headers and a colored status column (`get
+problems`, `get slos`, `doctor`: green for ok, success and resolved, yellow
+for warnings, red for open and failed), and the stderr symbols are colored
+(`✗` red, `⚠` yellow, `✓` green). Stderr is colored only when it is a
+terminal too. csv, tsv, json, yaml and the agent envelope never contain
+color codes.
+
+`--plain` turns colors off, replaces the stderr symbols (`⚠ ✗ 💡`) with words
+(`Warning:`, `Error:`, `Hint:`) and stops `--watch` from clearing the screen.
+It is on automatically when stdout is not a terminal or `NO_COLOR` is set,
+unless `FORCE_COLOR` is set.
 
 ## Global Flags
 
@@ -57,7 +64,7 @@ automatically when stdout is not a terminal or `NO_COLOR` is set, unless
 | `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` (or `yml`), `csv`, `tsv`; any other value is a usage error (exit 2) before any request is made |
 | `-A, --agent` | Force AI agent envelope output (`{ok, result, context}`) |
 | `--no-agent` | Disable auto-detected agent mode |
-| `--plain` | Words instead of symbols on stderr, no screen control (automatic when stdout is not a terminal) |
+| `--plain` | No colors, words instead of symbols on stderr, no screen control (automatic when stdout is not a terminal) |
 | `--max-pages <n>` | Maximum pages to fetch (0 = all, default). Pagination is automatic. |
 | `--concurrency <n>` | Maximum environments queried at once with `--env` (default: `10`) |
 | `--columns <cols>` | Comma-separated columns to show in table, csv and tsv output |
@@ -124,7 +131,7 @@ Both relative and absolute times are accepted:
 |---|---|
 | `DTMGD_CONFIG` | Config file to use when `--config` is not given. |
 | `DTMGD_CONTEXT` | Context to use when neither `--context` nor a single `--env` name is given; overrides the file's `current-context`. |
-| `NO_COLOR` | Plain output: no symbols or screen control (same as `--plain`). |
-| `FORCE_COLOR` | Keep symbols even when stdout is not a terminal. |
+| `NO_COLOR` | Plain output: no colors, symbols or screen control (same as `--plain`). |
+| `FORCE_COLOR` | Keep colors and symbols even when stdout or stderr is not a terminal. |
 
 Flags always win over environment variables, which win over the config file.

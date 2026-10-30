@@ -38,9 +38,10 @@ Any other `-o` value is a usage error (exit 2) before any request is made.
 - **Tables**: `describe problem`, `describe slo`, `describe security-problem`,
   `describe cluster`, `describe license` and `describe backup` print a summary;
   the other describe commands print the API object as YAML.
-- `--plain` swaps stderr symbols for words (`Warning:`, `Error:`, `Hint:`). It
-  is automatic when stdout is not a terminal or `NO_COLOR` is set (unless
-  `FORCE_COLOR` is set).
+- `--plain` turns colors off and swaps stderr symbols for words (`Warning:`,
+  `Error:`, `Hint:`). It is automatic when stdout is not a terminal or
+  `NO_COLOR` is set (unless `FORCE_COLOR` is set), so an agent's shell gets
+  no color codes.
 
 ## AI Agent Envelope Mode
 

@@ -13,7 +13,7 @@ type ProblemListItem struct {
 	ProblemID string `table:"PROBLEM-ID"`
 	DisplayID string `table:"DISPLAY-ID"`
 	Title     string `table:"TITLE"`
-	Status    string `table:"STATUS"`
+	Status    string `table:"STATUS,status"`
 	Severity  string `table:"SEVERITY"`
 	Impact    string `table:"IMPACT"`
 	StartTime string `table:"START-TIME,wide"`

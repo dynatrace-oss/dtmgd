@@ -21,7 +21,7 @@ type DoctorRow struct {
 	Scope   string `json:"scope" yaml:"scope" table:"SCOPE"` // environment or cluster
 	Host    string `json:"host" yaml:"host" table:"HOST"`
 	EnvID   string `json:"envId" yaml:"envId" table:"ENV-ID"`
-	Status  string `json:"status" yaml:"status" table:"STATUS"`
+	Status  string `json:"status" yaml:"status" table:"STATUS,status"`
 	Version string `json:"version" yaml:"version" table:"VERSION"`
 	Detail  string `json:"detail" yaml:"detail" table:"DETAIL"`
 }

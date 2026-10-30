@@ -18,7 +18,7 @@ const sloEvalPageSize = 25
 type SLOListItem struct {
 	ID           string `table:"ID"`
 	Name         string `table:"NAME"`
-	Status       string `table:"STATUS"`
+	Status       string `table:"STATUS,status"`
 	EvaluatedPct string `table:"EVALUATED%"`
 	TargetPct    string `table:"TARGET%"`
 	WarningPct   string `table:"WARNING%,wide"`

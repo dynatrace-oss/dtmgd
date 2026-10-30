@@ -47,10 +47,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	// Until flags are parsed, plain mode follows the environment alone; the
 	// persistent pre-run applies --plain once it is known.
 	output.SetStderr(stderr)
-	output.SetPlain(a.plain())
+	a.applyPresentation()
 	defer func() {
 		output.SetStderr(nil)
 		output.SetPlain(false)
+		output.SetColor(false, false)
 	}()
 	root := newRootCmd(a)
 	root.SetArgs(rewriteNegativeArgs(args))
@@ -75,7 +76,7 @@ func newRootCmd(a *App) *cobra.Command {
 		// cobra's would be appended to the error message itself.
 		DisableSuggestions: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			output.SetPlain(a.plain())
+			a.applyPresentation()
 			f, err := output.ParseFormat(a.Opts.Output)
 			if err != nil {
 				return &UsageError{Err: err}
@@ -124,7 +125,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 	f.StringVarP(&a.Opts.Env, "env", "e", "", `environment(s): context name, "prod;staging", or ALL_ENVIRONMENTS`)
 	f.BoolVarP(&a.Opts.Agent, "agent", "A", false, "force agent envelope output mode")
 	f.BoolVar(&a.Opts.NoAgent, "no-agent", false, "disable auto-detected agent mode")
-	f.BoolVar(&a.Opts.Plain, "plain", false, "plain output: no symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)")
+	f.BoolVar(&a.Opts.Plain, "plain", false, "plain output: no colors, symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)")
 	f.IntVar(&a.Opts.MaxPages, "max-pages", 0, "maximum number of pages to fetch (0 = all pages)")
 	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table, csv and tsv output")
 	f.IntVar(&a.Opts.Concurrency, "concurrency", client.DefaultConcurrency,
@@ -146,14 +147,42 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 	return cmd
 }
 
-// plain reports whether output should avoid glyphs and terminal control
-// sequences: when asked with --plain or NO_COLOR, or when stdout is not a
+// plain reports whether output should avoid colors, glyphs and terminal
+// control sequences: when asked with --plain or NO_COLOR, or when stdout is not a
 // terminal (a pipe, a file, an agent's shell) unless FORCE_COLOR is set.
 func (a *App) plain() bool {
 	if a.Opts.Plain || os.Getenv("NO_COLOR") != "" {
 		return true
 	}
 	return !output.IsTerminal(a.Out) && os.Getenv("FORCE_COLOR") == ""
+}
+
+// colors reports whether tables (stdout) and the stderr glyphs use color,
+// following the portfolio's rule (architecture guideline 5, as dtctl does):
+// never in plain mode or agent mode, and on stderr only when stderr is a
+// terminal too, unless FORCE_COLOR is set, so a redirected stderr gets no
+// escape codes.
+func (a *App) colors() (stdout, stderr bool) {
+	if a.plain() || a.agentMode() {
+		return false, false
+	}
+	stdout = output.EnableVT(a.Out)
+	stderr = stderrWantsColor(output.IsTerminal(a.Err)) && output.EnableVT(a.Err)
+	return stdout, stderr
+}
+
+// stderrWantsColor reports whether stderr should be colored once colors are
+// on at all: when it is a terminal, or when FORCE_COLOR says so.
+func stderrWantsColor(errIsTerminal bool) bool {
+	return errIsTerminal || os.Getenv("FORCE_COLOR") != ""
+}
+
+// applyPresentation sets plain mode and colors for the output helpers. Run
+// calls it before the flags are parsed, from the environment alone, and the
+// persistent pre-run again once --plain, --agent and --no-agent are known.
+func (a *App) applyPresentation() {
+	output.SetPlain(a.plain())
+	output.SetColor(a.colors())
 }
 
 // format returns the validated --output value.

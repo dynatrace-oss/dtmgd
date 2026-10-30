@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
@@ -82,10 +83,15 @@ func errOut() io.Writer {
 	return os.Stderr
 }
 
-func printPrefixed(glyph, word, format string, args ...interface{}) {
+// printPrefixed writes one stderr line led by glyph, colored with color when
+// stderr color is on, or by word in plain mode.
+func printPrefixed(glyph, color, word, format string, args ...interface{}) {
 	prefix := glyph
-	if plain {
+	switch {
+	case plain:
 		prefix = word
+	case stderrColor && color != "" && glyph != "":
+		prefix = colorize(color, strings.TrimSuffix(glyph, " ")) + " "
 	}
 	// Best effort: there is nowhere left to report a failed stderr write.
 	_, _ = fmt.Fprintf(errOut(), prefix+format+"\n", args...)
@@ -93,27 +99,27 @@ func printPrefixed(glyph, word, format string, args ...interface{}) {
 
 // PrintSuccess writes a success message to stderr.
 func PrintSuccess(format string, args ...interface{}) {
-	printPrefixed("✓ ", "", format, args...)
+	printPrefixed("✓ ", ansiBoldGreen, "", format, args...)
 }
 
 // PrintWarning writes a warning message to stderr.
 func PrintWarning(format string, args ...interface{}) {
-	printPrefixed("⚠ ", "Warning: ", format, args...)
+	printPrefixed("⚠ ", ansiBoldYellow, "Warning: ", format, args...)
 }
 
 // PrintInfo writes an informational message to stderr.
 func PrintInfo(format string, args ...interface{}) {
-	printPrefixed("", "", format, args...)
+	printPrefixed("", "", "", format, args...)
 }
 
 // PrintHumanError writes an error message to stderr.
 func PrintHumanError(format string, args ...interface{}) {
-	printPrefixed("✗ ", "Error: ", format, args...)
+	printPrefixed("✗ ", ansiBoldRed, "Error: ", format, args...)
 }
 
 // PrintHint writes a suggestion for what to do next to stderr.
 func PrintHint(format string, args ...interface{}) {
-	printPrefixed("💡 ", "Hint: ", format, args...)
+	printPrefixed("💡 ", "", "Hint: ", format, args...)
 }
 
 // IsTerminal reports whether w is an interactive terminal.
