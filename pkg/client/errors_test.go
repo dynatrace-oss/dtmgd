@@ -3,6 +3,7 @@ package client
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // realBody is the shape a Dynatrace Managed cluster actually returns for a
@@ -88,5 +89,18 @@ func TestErrAPINoCrossStatusFalseMatch(t *testing.T) {
 
 	if hint := Diagnose(err); strings.Contains(hint, "Resource not found") {
 		t.Errorf("a 400 was diagnosed from text in its own message: %q", hint)
+	}
+}
+
+// TestErrAPICapsMessageByCharacters pins that the cap counts characters:
+// cutting a message of three-byte characters at byte 200 split one in half.
+func TestErrAPICapsMessageByCharacters(t *testing.T) {
+	long := strings.Repeat("€", maxAPIMessageLen*2)
+	got := APIError(400, `{"error":{"message":"`+long+`"}}`).Error()
+	if !utf8.ValidString(got) {
+		t.Fatalf("message is not valid UTF-8: %q", got)
+	}
+	if n := strings.Count(got, "€"); n != maxAPIMessageLen {
+		t.Errorf("kept %d characters, want %d", n, maxAPIMessageLen)
 	}
 }

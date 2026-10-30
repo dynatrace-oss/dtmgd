@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 
@@ -361,5 +362,74 @@ func TestPrintSecurityProblemDetail(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("printSecurityProblemDetail output missing %q\n---\n%s", want, out)
 		}
+	}
+}
+
+// securityDetailWith returns a detail whose summary takes the branches the
+// minimal fixture above skips: a vulnerable component, no affected entities
+// of its own, management zones and a long description.
+func securityDetailWith(description string) SecurityProblemDetail {
+	var d SecurityProblemDetail
+	d.PackageName = "org.example:lib"
+	d.Description = description
+	d.VulnerableComponents = append(d.VulnerableComponents, struct {
+		DisplayName      string   `json:"displayName"`
+		FileName         string   `json:"fileName"`
+		NumberOfAffected int      `json:"numberOfAffectedEntities"`
+		AffectedEntities []string `json:"affectedEntities"`
+	}{DisplayName: "lib 1.2.3", NumberOfAffected: 7})
+	d.ManagementZones = append(d.ManagementZones, struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}{ID: "1", Name: "Zone A"}, struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}{ID: "2", Name: "Zone B"})
+	return d
+}
+
+func summaryLine(t *testing.T, out, label string) string {
+	t.Helper()
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, label) {
+			return strings.TrimSpace(strings.TrimPrefix(line, label))
+		}
+	}
+	t.Fatalf("no %q line in:\n%s", label, out)
+	return ""
+}
+
+func TestPrintSecurityProblemDetailSummaryBranches(t *testing.T) {
+	long := strings.Repeat("x", 300)
+	var buf bytes.Buffer
+	printSecurityProblemDetail(&buf, securityDetailWith("# Heading\n\nshort line\n"+long+"\n"))
+	out := buf.String()
+
+	if got := summaryLine(t, out, "Package:"); got != "lib 1.2.3" {
+		t.Errorf("Package = %q, want the component's display name", got)
+	}
+	if got := summaryLine(t, out, "Affected Processes:"); got != "7" {
+		t.Errorf("Affected Processes = %q, want the component's count", got)
+	}
+	if got := summaryLine(t, out, "Management Zones:"); got != "Zone A, Zone B" {
+		t.Errorf("Management Zones = %q", got)
+	}
+	if got := summaryLine(t, out, "Description:"); got != strings.Repeat("x", 217)+"…" {
+		t.Errorf("Description = %q (%d bytes), want the first long line cut to 217 + …", got, len(got))
+	}
+}
+
+// TestPrintSecurityProblemDetailKeepsUTF8 pins that a long non-ASCII
+// description is shortened by characters, not bytes: cutting at byte 217
+// split a character in half.
+func TestPrintSecurityProblemDetailKeepsUTF8(t *testing.T) {
+	var buf bytes.Buffer
+	printSecurityProblemDetail(&buf, securityDetailWith(strings.Repeat("é", 300)))
+	out := buf.String()
+	if !utf8.ValidString(out) {
+		t.Fatalf("summary is not valid UTF-8:\n%q", out)
+	}
+	if got := summaryLine(t, out, "Description:"); got != strings.Repeat("é", 217)+"…" {
+		t.Errorf("Description = %q, want 217 characters + …", got)
 	}
 }
