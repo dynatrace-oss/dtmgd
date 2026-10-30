@@ -46,10 +46,13 @@ func TestNoColorWhereItWouldCorruptData(t *testing.T) {
 		"plain":    {map[string]string{"FORCE_COLOR": "1"}, []string{"--plain"}},
 		"pipe":     {nil, nil},
 	} {
-		r := runCLIWithEnv(t, c.env, problemsCfg(t), append([]string{"get", "problems"}, c.args...)...)
-		if strings.Contains(r.Stdout+r.Stderr, "\x1b") {
-			t.Errorf("%s: escape codes in output:\n%q\n%q", name, r.Stdout, r.Stderr)
-		}
+		// A subtest each, so one case's t.Setenv cannot leak into the next.
+		t.Run(name, func(t *testing.T) {
+			r := runCLIWithEnv(t, c.env, problemsCfg(t), append([]string{"get", "problems"}, c.args...)...)
+			if strings.Contains(r.Stdout+r.Stderr, "\x1b") {
+				t.Errorf("escape codes in output:\n%q\n%q", r.Stdout, r.Stderr)
+			}
+		})
 	}
 }
 
