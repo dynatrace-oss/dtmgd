@@ -11,6 +11,7 @@ Examples:
 ```
   dtmgd get entities --selector 'type(SERVICE)'
   dtmgd get entities --selector 'type(HOST),healthState("HEALTHY")'
+  dtmgd get entities --selector 'type(SERVICE)' --mz Production
   dtmgd get entities --env ALL_ENVIRONMENTS --selector 'type(SERVICE)'
 ```
 
@@ -24,7 +25,7 @@ dtmgd get entities [flags]
       --from string       start time for entity observation
   -h, --help              help for entities
       --limit int         maximum number of entities
-      --mz string         management zone selector
+      --mz string         management zone: a name, or an mzName("…") or mzId(…) criterion, added to --selector
       --selector string   entity selector (required), e.g. 'type(SERVICE)'
       --sort string       sort order (name or -name)
       --to string         end time for entity observation

@@ -106,9 +106,9 @@ your task.
 - **Date**: 2026-08-06
 - **Ref**: impl: resolve config env vars at point of use (#29)
 
-### SonarCloud findings come only from the app; `snyk` and `goreleaser-check` do not gate
+### SonarCloud findings come only from the app, and neither SonarCloud nor `snyk` gates
 - **Context**: PR checks show `SonarCloud` and `SonarCloud Code Analysis`. Until Phase 5 there was also a `sonar` job (`sonar.yml`) that failed on every run with "Not authorized or project not found": SONAR_TOKEN lacked Execute Analysis permission, so it never analysed anything, and `continue-on-error` kept it from blocking. It re-ran the whole test suite for nothing; Phase 5 deleted it together with `sonar-project.properties`.
-- **Insight**: Sonar findings arrive only through the `SonarCloud Code Analysis` app integration, which reads `.sonarcloud.properties` and posts to the PR. Its quality gate does not block a merge, so check it on every PR (`api/qualitygates/project_status?projectKey=dynatrace-oss_dtmgd&pullRequest=<n>`) before calling the PR done; #59 merged with a red gate. `snyk` is skipped with a `::notice::` when `SNYK_API_TOKEN` is unavailable (Dependabot and fork PRs cannot read repository secrets), and `goreleaser-check` reports a config error or deprecation; neither is required. What gates a merge is the `main` ruleset's required checks: `test` on ubuntu, macOS and Windows, `lint`, `golangci-lint` and `vulncheck`.
+- **Insight**: Sonar findings arrive only through the `SonarCloud Code Analysis` app integration, which reads `.sonarcloud.properties` and posts to the PR. Its quality gate does not block a merge, so check it on every PR (`api/qualitygates/project_status?projectKey=dynatrace-oss_dtmgd&pullRequest=<n>`) before calling the PR done; #59 merged with a red gate. `snyk` is skipped with a `::notice::` when `SNYK_API_TOKEN` is unavailable (Dependabot and fork PRs cannot read repository secrets), and it is not required. What gates a merge is the `main` ruleset's required checks: `test` on ubuntu, macOS and Windows, `lint`, `golangci-lint`, `vulncheck` and (since 2026-10-30) `goreleaser-check`, which reports a config error or deprecation.
 - **When it applies**: Triaging checks on a dtmgd PR, or deciding whether a PR is ready
 - **Date**: 2026-08-06 (sonar job removed and entry rewritten 2026-10-30)
 - **Ref**: impl: resolve config env vars at point of use (#29); Phase 5 (#59)
@@ -190,12 +190,16 @@ your task.
 - **Date**: 2026-10-29
 - **Ref**: Phase 3 (2/2) MCP parity
 
-### `/logs/search` returns no `totalCount` and does not document `entitySelector`
-- **Context**: Phase 3 planned to verify `query logs --entity` by comparing `jq .totalCount` with and without a nonexistent-host selector on a live environment.
-- **Insight**: `/logs/search` returns `{results, sliceSize, nextSliceKey}` with no `totalCount`, and its documented parameters are only `from`, `to`, `limit`, `query`, `sort` and `nextSliceKey`. Count `.results | length` instead. The 2026-10-29 check on the owner's `stage` environment was inconclusive: `--query error` matched 0 records over both 1 hour and 24 hours, with and without `--entity`. `--entity` was therefore kept, and its help says the parameter is undocumented. To settle it, repeat the comparison against a query and time range that return records. `sort` takes only `+timestamp` and `-timestamp`; dtmgd now always sends `-timestamp` unless `--sort` says otherwise.
+### `/logs/search` returns no `totalCount`; its undocumented `entitySelector` is honoured
+- **Context**: Phase 3 planned to verify `query logs --entity` by comparing counts with and without a nonexistent-host selector on a live environment. The 2026-10-29 attempt on `stage` was inconclusive, because no query matched any records there.
+- **Insight**:
+  - `/logs/search` returns `{results, sliceSize, nextSliceKey}` with no `totalCount`, so count `.results | length`.
+  - Its documented parameters are only `from`, `to`, `limit`, `query`, `sort` and `nextSliceKey`. Even so, `entitySelector` filters. On 2026-10-30, on `prod` (Dynatrace Managed 1.348), `--query exception --from now-24h` matched 167 records, 68 with `--entity 'type(PROCESS_GROUP)'`, and 0 with an impossible selector (a nonexistent entity ID or name).
+  - `sort` takes only `+timestamp` and `-timestamp`; dtmgd always sends `-timestamp` unless `--sort` says otherwise.
+  - To repeat a check, first find a query that returns records: `stage` had none for `error`, `info`, `warn`, `GET` or `exception`.
 - **When it applies**: Changing `query logs`, or deciding whether `--entity` can be trusted
-- **Date**: 2026-10-29
-- **Ref**: Phase 3 (2/2) MCP parity
+- **Date**: 2026-10-29 (verified live 2026-10-30)
+- **Ref**: Phase 3 (2/2) MCP parity; filter fixes after v0.3.1
 
 ### Change the keyring only after the config save succeeds
 - **Context**: `config delete-credentials`, `delete-context --delete-credentials` and `config import` (when a `${VAR}` reference replaces a keyring token) deleted the keyring entry first and saved the config afterwards. When the save failed (for example, a read-only config), the token was gone while the config still pointed at it.
@@ -204,16 +208,18 @@ your task.
 - **Date**: 2026-10-29
 - **Ref**: Phase 3 (2/2) MCP parity (#53); v0.2.1
 
-### Parameters the MCP server and dtmgd send that the API does not document
-- **Context**: Comparing the Dynatrace Managed MCP server (2.0.0) with dtmgd request by request for the Phase 3 parity table, against `env2temp.json`.
+### Undocumented filter parameters: three are ignored by the cluster, one is honoured
+- **Context**: The Phase 3 parity review found parameters that the Dynatrace Managed MCP server (2.0.0) and dtmgd send but `env2temp.json` does not document. On 2026-10-30 each was checked live on `prod` and `stage` (Dynatrace Managed 1.348). The check uses a value that cannot match anything: a filter that is honoured returns nothing (or a 400), and an ignored one returns the unfiltered count.
 - **Insight**:
-  - The MCP server alone sends top-level `impactLevel` on `/problems`, and `riskLevel` and `entitySelector` on `/securityProblems`. dtmgd uses `problemSelector` / `securityProblemSelector` criteria instead.
-  - Both send `entitySelector` on `/metrics` (`get metrics --entity`), `eventType` on `/events` (`get events --type`; the spec documents `eventSelector=eventType("…")`) and `mzSelector` on `/entities` (`get entities --mz`).
-  - dtmgd alone sends `entitySelector` on `/logs/search` (`query logs --entity`) and `fields=+affectedEntities,+managementZones` on `/problems`.
-  - Whether a cluster honours any of these is unverified. Before trusting one, compare a filtered and an unfiltered call on a live environment, choosing a query and time range that return results. The parity table in README and SKILL.md marks them "undocumented".
-- **When it applies**: Adding or debugging a filter flag; deciding whether dtmgd's own undocumented parameters should move to documented selectors
-- **Date**: 2026-10-29
-- **Ref**: Phase 3 (2/2) MCP parity
+  - `eventType` on `/events` is **ignored**: 864 events with and without `eventType=ZZ_NOT_A_TYPE`. `eventSelector=eventType("PROCESS_RESTART")` filters (305 of 864), and an unknown type there gets 400 "Constraints violated".
+  - `mzSelector` on `/entities` is **ignored**, even with a real zone (38 of 38 hosts). `mzName("<zone>")` inside `entitySelector` filters (18 of 38); a nonexistent zone name there gets 400 "Constraints violated".
+  - `entitySelector` on `/metrics` (the descriptor list) is **ignored**: 17 = 17. The endpoint has no documented entity filter at all.
+  - `entitySelector` on `/logs/search` is **honoured** (see the logs entry).
+  - Since the release after v0.3.1, dtmgd sends `get events --type` as `eventSelector=eventType("…")`, adds `get entities --mz` to `entitySelector` as `mzName("…")` (quote and tilde escaped with `~`; an `mzName(…)`/`mzId(…)` value passes through), and refuses `get metrics --entity` with exit 2, pointing at `query metrics --entity`. `cmd/filters_test.go` pins the parameters sent.
+  - The MCP server still sends the ignored parameters. It also sends top-level `impactLevel` on `/problems`, and `riskLevel` and `entitySelector` on `/securityProblems`, which dtmgd covers with `problemSelector` / `securityProblemSelector` criteria (reported in dynatrace-oss/dynatrace-managed-mcp#329). dtmgd's `fields=+affectedEntities,+managementZones` on `/problems` is unchecked and harmless: both fields are in the default response.
+- **When it applies**: Adding or debugging a filter flag. Before trusting any undocumented parameter, compare an impossible value with no filter on a live environment, choosing a query and time range that return results.
+- **Date**: 2026-10-29 (checked live 2026-10-30)
+- **Ref**: Phase 3 (2/2) MCP parity; filter fixes after v0.3.1
 
 ### A cluster context's host is the cluster's own address, not an environment context's node host
 - **Context**: Phase 4 planned the Cluster API commands on top of the owner's existing environment contexts. Their hosts are node addresses on port 9999 (`https://<node>:9999`), where `/api/cluster/v2/...` and `/api/v1.0/onpremise/...` answer 404. The Cluster API answers on the cluster's public name, the address the Cluster Management Console uses.

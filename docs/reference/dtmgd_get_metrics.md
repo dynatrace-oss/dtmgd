@@ -4,13 +4,14 @@ List available metric descriptors
 
 ### Synopsis
 
-List available metrics in the Managed environment, optionally filtered by text
-or entity selector.
+List available metrics in the Managed environment, optionally filtered by text.
+
+The metrics API cannot list the metrics of an entity. To read a metric for an
+entity, use query metrics with --entity.
 
 Examples:
 ```
   dtmgd get metrics --search response.time
-  dtmgd get metrics --search cpu --entity 'type(HOST)'
   dtmgd get metrics --env ALL_ENVIRONMENTS --search cpu
 ```
 
@@ -21,7 +22,6 @@ dtmgd get metrics [flags]
 ### Options
 
 ```
-      --entity string   entity selector to filter metrics
   -h, --help            help for metrics
       --limit int       maximum number of metrics
       --search string   text search in metric names/descriptions

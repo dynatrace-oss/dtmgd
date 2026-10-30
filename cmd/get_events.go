@@ -71,17 +71,23 @@ Examples:
 					"from": opts.from,
 					"to":   to,
 				}
+				// The API ignores an eventType parameter; the type goes in
+				// eventSelector.
 				if opts.eventType != "" {
-					params["eventType"] = opts.eventType
+					params["eventSelector"] = "eventType(" + selectorString(opts.eventType) + ")"
 				}
 				if opts.entity != "" {
 					params["entitySelector"] = opts.entity
+				}
+				fetch := pagedFetch("/events", params, "events", 100, a.Opts.MaxPages)
+				if opts.eventType != "" {
+					fetch = hintOnBadRequest(fetch, "Event types are upper-case names such as CUSTOM_DEPLOYMENT, PROCESS_RESTART or CUSTOM_INFO; the TYPE column of dtmgd get events shows the ones in this environment.")
 				}
 
 				return a.runFetch(fetchSpec{
 					Verb:     "get",
 					Resource: "events",
-					Fetch:    pagedFetch("/events", params, "events", 100, a.Opts.MaxPages),
+					Fetch:    fetch,
 					Rows:     eventRows,
 					Limit:    opts.limit,
 					List:     true,

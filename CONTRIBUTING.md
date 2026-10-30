@@ -64,8 +64,8 @@ optional scope (`fix(install): …`). Release notes are built from them;
 
 - Keep a PR to one change, and fill in the template.
 - These checks must pass: `test` on ubuntu, macOS and Windows, `lint`,
-  `golangci-lint` and `vulncheck`. Also look at the SonarCloud and
-  `goreleaser-check` results.
+  `golangci-lint`, `vulncheck` and `goreleaser-check`. Also look at the
+  SonarCloud result.
 - A changed golden file is a changed behaviour: say why in the PR.
 - Breaking changes go into the release notes with the new way to do the old
   thing.

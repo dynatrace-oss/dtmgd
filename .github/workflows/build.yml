@@ -1,7 +1,9 @@
 name: Build
 
-# Cross-compiles every release target with the release's own GoReleaser config,
-# on main only. PRs get goreleaser-check (lint.yml) and the tests on three OSes.
+# Runs the release's own GoReleaser config end to end except publishing and
+# signing, on main only: every target, archive and the cask, so a broken
+# archive file list shows here, not at tag time. PRs get goreleaser-check
+# (lint.yml) and the tests on three OSes.
 on:
   push:
     branches: [main]
@@ -25,4 +27,4 @@ jobs:
       - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: v2.19.0 # keep in step with release.yml
-          args: build --snapshot --clean
+          args: release --snapshot --clean --skip=publish,sign,sbom

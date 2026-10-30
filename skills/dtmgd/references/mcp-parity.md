@@ -4,21 +4,22 @@ dtmgd covers every tool of the [Dynatrace Managed MCP Server](https://github.com
 (compared with its 2.0.0 release, which prefixes every tool name with
 `dynatrace_managed_`; the table leaves the prefix out). The two send mostly the
 same requests; the table lists where they differ. "Undocumented" means the parameter is not in the
-endpoint's published API specification; whether a cluster honours it has not
-been verified.
+endpoint's published API specification. "Checked live" means a filtered and an
+unfiltered call were compared on Dynatrace Managed 1.348 (2026-10-30); an
+undocumented parameter not marked so has not been verified.
 
 | MCP tool | dtmgd command | Differences |
 |---|---|---|
 | `get_environments_info` | `dtmgd doctor` | `doctor` checks each context live (token, cluster version ≥ 1.328.0, falling back to a metrics call) and exits 1 on failure. The MCP server reports the check it ran at startup and a fixed scope list. |
-| `list_available_metrics` | `dtmgd get metrics [--search] [--entity]` | Both send `--entity` as `entitySelector`, which `/metrics` does not document. |
+| `list_available_metrics` | `dtmgd get metrics [--search]` | The MCP server sends an entity filter as `entitySelector`, which `/metrics` does not document and a cluster ignores (checked live): it returns every metric. dtmgd refuses `get metrics --entity`; `query metrics --entity` reads a metric for an entity. |
 | `get_metric_details` | `dtmgd describe metric <id>` | Same request. |
 | `query_metrics_data` | `dtmgd query metrics --metric <sel> --from <t> [--to] [--resolution] [--entity]` | The MCP server defaults to `resolution=Inf` (one value per series) and requires `to`. dtmgd sends no resolution unless `--resolution` is given (the API default: a time series), and `--to` defaults to now. |
-| `query_logs` | `dtmgd query logs --query <text> --from <t> [--to] [--sort] [--limit] [--entity]` | Both sort newest first (`-timestamp`) and return one slice of at most 1000 records (100 by default; 50 for dtmgd in agent mode). dtmgd clamps a larger `--limit` to 1000 where the MCP server rejects it, and `--to` defaults to now. dtmgd's `--entity` sends `entitySelector`, which `/logs/search` does not document. |
-| `list_events` | `dtmgd get events --from <t> [--to] [--type] [--entity] [--watch]` | Both send `--type` as `eventType`, which `/events` does not document (it documents `eventSelector`). dtmgd adds `--watch`. |
+| `query_logs` | `dtmgd query logs --query <text> --from <t> [--to] [--sort] [--limit] [--entity]` | Both sort newest first (`-timestamp`) and return one slice of at most 1000 records (100 by default; 50 for dtmgd in agent mode). dtmgd clamps a larger `--limit` to 1000 where the MCP server rejects it, and `--to` defaults to now. dtmgd's `--entity` sends `entitySelector`, which `/logs/search` does not document but honours (checked live). |
+| `list_events` | `dtmgd get events --from <t> [--to] [--type] [--entity] [--watch]` | The MCP server sends the type as `eventType`, which `/events` does not document and a cluster ignores (checked live): it returns every event. dtmgd sends `--type` as `eventSelector=eventType("…")`, which filters. dtmgd adds `--watch`. |
 | `get_event_details` | `dtmgd describe event <id>` | Same request. |
 | `list_entity_types` | `dtmgd get entity-types` | dtmgd's json output has the full type schemas; the MCP server lists type names. |
 | `get_entity_type_details` | `dtmgd describe entity-type <type>` | Same request. |
-| `discover_entities` | `dtmgd get entities --selector <sel> [--mz] [--from] [--to] [--sort]` | The MCP server returns 10 entities unless asked for more (at most 50). Both send `--mz` as `mzSelector`, which `/entities` does not document. |
+| `discover_entities` | `dtmgd get entities --selector <sel> [--mz] [--from] [--to] [--sort]` | The MCP server returns 10 entities unless asked for more (at most 50). The MCP server sends the zone as `mzSelector`, which `/entities` does not document and a cluster ignores (checked live). dtmgd adds `--mz` to the entity selector as `mzName("…")`, which filters. |
 | `get_entity_details` | `dtmgd describe entity <id>` | dtmgd asks for properties, relationships, tags and management zones explicitly (`fields`); the MCP server relies on the API's default fields. |
 | `get_entity_relationships` | `dtmgd describe entity-relations <id>` | dtmgd asks for the relationship fields explicitly. |
 | `list_problems` | `dtmgd get problems [--status] [--impact] [--selector] [--entity] [--sort] [--watch]` | The MCP server sends the impact level as a top-level `impactLevel`, which `/problems` does not document; dtmgd puts it in `problemSelector`. dtmgd adds `--selector` and `--watch`, and sends `fields=+affectedEntities,+managementZones`, which `/problems` does not document. Both default to the last 24 hours. |

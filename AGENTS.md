@@ -148,8 +148,9 @@ dtctl, and it stays that way.
 ## CI and releases
 
 - **Required checks** on `main`: `test` on ubuntu, macOS and Windows, `lint`,
-  `golangci-lint`, `vulncheck`. `goreleaser-check`, `snyk` and SonarCloud
-  report but don't gate; check SonarCloud on every PR anyway.
+  `golangci-lint`, `vulncheck` and `goreleaser-check`. `snyk` and SonarCloud
+  report but don't gate; check SonarCloud on every PR anyway. A ruleset on
+  `v*` tags lets only admins create, move or delete release tags.
 - **Tools:** govulncheck and actionlint are `tool` entries in `tools/go.mod`
   (checksum-locked), built with `go -C tools build`. Never add
   `go install …@version` to a workflow. golangci-lint and GoReleaser are pinned

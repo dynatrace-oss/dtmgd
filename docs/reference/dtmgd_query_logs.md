@@ -24,7 +24,7 @@ dtmgd query logs [flags]
 ### Options
 
 ```
-      --entity string   entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag("env:prod")'); not a documented /logs/search parameter, so check results against an unscoped search
+      --entity string   entitySelector to scope log search (e.g. 'type(PROCESS_GROUP),tag("env:prod")'); not in the published /logs/search specification, but honoured (checked on Dynatrace Managed 1.348)
       --from string     start time (required), e.g. now-1h
   -h, --help            help for logs
       --limit int       maximum number of records, at most 1000 (default: 100)

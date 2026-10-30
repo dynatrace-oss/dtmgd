@@ -52,10 +52,23 @@ function Resolve-LongPath([string]$Path) {
     return $Path
 }
 
-$arch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) {
-    'X64' { 'amd64' }
-    'Arm64' { 'arm64' }
-    default { Fail "unsupported architecture: $_" }
+# RuntimeInformation needs .NET Framework 4.7.1+; older Windows PowerShell
+# hosts fall back to the environment. PROCESSOR_ARCHITEW6432 is set for a
+# 32-bit PowerShell on 64-bit Windows, and names the OS's architecture.
+$osArch = $null
+try {
+    $osArch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+} catch {
+    Write-Debug "RuntimeInformation unavailable: $_"
+}
+if (-not $osArch) {
+    $osArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+}
+# -in ignores case, so 'Arm64' also matches PROCESSOR_ARCHITECTURE's ARM64.
+$arch = switch ($osArch) {
+    { $_ -in 'X64', 'AMD64' } { 'amd64' }
+    { $_ -in 'Arm64' } { 'arm64' }
+    default { Fail "unsupported architecture: $(if ($osArch) { $osArch } else { 'unknown' })" }
 }
 
 if ($env:DTMGD_VERSION) {

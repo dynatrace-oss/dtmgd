@@ -112,14 +112,25 @@ func newGetEntitiesCmd(a *App) *cobra.Command {
 Examples:
   dtmgd get entities --selector 'type(SERVICE)'
   dtmgd get entities --selector 'type(HOST),healthState("HEALTHY")'
+  dtmgd get entities --selector 'type(SERVICE)' --mz Production
   dtmgd get entities --env ALL_ENVIRONMENTS --selector 'type(SERVICE)'`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.selector == "" {
 				return &UsageError{Err: fmt.Errorf("--selector is required (e.g. 'type(SERVICE)')")}
 			}
 
+			// The API ignores an mzSelector parameter; the zone goes in
+			// entitySelector.
+			selector := opts.selector
+			if opts.mz != "" {
+				selector = joinSelector(selector, mzCriterion(opts.mz))
+			}
 			params := map[string]string{
-				"entitySelector": opts.selector,
+				"entitySelector": selector,
+			}
+			fetch := pagedFetch("/entities", params, "entities", 100, a.Opts.MaxPages)
+			if opts.mz != "" {
+				fetch = hintOnBadRequest(fetch, `A zone name must match exactly: it is case-sensitive, and each environment has its own zones. Check that the zone exists in this environment, or pass mzId(<id>).`)
 			}
 			if opts.from != "" {
 				params["from"] = opts.from
@@ -130,18 +141,15 @@ Examples:
 			if opts.sort != "" {
 				params["sort"] = opts.sort
 			}
-			if opts.mz != "" {
-				params["mzSelector"] = opts.mz
-			}
 
 			return a.runFetch(fetchSpec{
 				Verb:     "get",
 				Resource: "entities",
-				Fetch:    pagedFetch("/entities", params, "entities", 100, a.Opts.MaxPages),
+				Fetch:    fetch,
 				Rows:     entityRows,
 				Limit:    opts.limit,
 				List:     true,
-				Empty:    fmt.Sprintf("No entities found for selector: %s", opts.selector),
+				Empty:    fmt.Sprintf("No entities found for selector: %s", selector),
 			})
 		},
 	}
@@ -150,7 +158,7 @@ Examples:
 	cmd.Flags().StringVar(&opts.to, "to", "", "end time for entity observation")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of entities")
 	cmd.Flags().StringVar(&opts.sort, "sort", "", "sort order (name or -name)")
-	cmd.Flags().StringVar(&opts.mz, "mz", "", "management zone selector")
+	cmd.Flags().StringVar(&opts.mz, "mz", "", `management zone: a name, or an mzName("…") or mzId(…) criterion, added to --selector`)
 	return withScopes(cmd, scopeEntitiesRead)
 }
 
