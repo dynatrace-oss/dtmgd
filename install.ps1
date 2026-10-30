@@ -27,6 +27,9 @@
 & {
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue' # Invoke-WebRequest is much slower with a progress bar
+# Windows PowerShell 5.1 on older .NET defaults to TLS 1.0/1.1, which GitHub
+# refuses. Adds TLS 1.2 to what the process already allows.
+[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $repo = 'dynatrace-oss/dtmgd'
 

@@ -205,15 +205,27 @@ func runInstallSh(t *testing.T, base, version, dir string) (stdout, stderr strin
 	return runScript(t, installEnv(t, base, version, dir), "sh", "install.sh")
 }
 
-func runInstallPs1(t *testing.T, base, version, dir string) (stdout, stderr string, code int) {
+// powershell is the PowerShell to run install.ps1 with: pwsh, else Windows
+// PowerShell 5.1, which every Windows machine has. On Windows the tests never
+// skip, so a green Windows job means they ran.
+func powershell(t *testing.T) string {
 	t.Helper()
 	if runtime.GOOS != "windows" {
 		t.Skip("install.ps1 is for Windows")
 	}
-	if _, err := exec.LookPath("pwsh"); err != nil {
-		t.Skip("pwsh not found")
+	for _, name := range []string{"pwsh", "powershell"} {
+		if path, err := exec.LookPath(name); err == nil {
+			return path
+		}
 	}
-	return runScript(t, installEnv(t, base, version, dir), "pwsh", "-NoProfile", "-NonInteractive", "-File", "install.ps1")
+	t.Fatal("neither pwsh nor powershell is on PATH")
+	return ""
+}
+
+func runInstallPs1(t *testing.T, base, version, dir string) (stdout, stderr string, code int) {
+	t.Helper()
+	ps := powershell(t)
+	return runScript(t, installEnv(t, base, version, dir), ps, "-NoProfile", "-NonInteractive", "-File", "install.ps1")
 }
 
 // installedVersion runs the installed binary's version command.
@@ -397,6 +409,12 @@ esac
 	if strings.Contains(string(argv), token) {
 		t.Errorf("the token is on curl's command line:\n%s", argv)
 	}
+	// curl -L follows redirects; the token must never follow one to plain http.
+	for _, line := range strings.Split(strings.TrimSpace(string(argv)), "\n") {
+		if strings.Contains(line, "api.github.com") && !strings.Contains(line, "--proto =https") {
+			t.Errorf("the API request is not restricted to https: %s", line)
+		}
+	}
 	if !strings.Contains(string(stdin), "Authorization: Bearer "+token) {
 		t.Errorf("the API request did not carry the token; curl's stdin:\n%s", stdin)
 	}
@@ -499,16 +517,11 @@ func TestInstallPs1KeepsTheOldBinaryWhenTheArchiveIsTruncated(t *testing.T) {
 }
 
 func TestInstallPs1LeavesTheCallersSessionAlone(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("install.ps1 is for Windows")
-	}
-	if _, err := exec.LookPath("pwsh"); err != nil {
-		t.Skip("pwsh not found")
-	}
+	ps := powershell(t)
 	// "irm … | iex" runs the script in the caller's scope.
 	dir := t.TempDir()
 	base := fakeRelease(t, testVersion, releaseOpts{})
-	stdout, stderr, code := runScript(t, installEnv(t, base, testVersion, dir), "pwsh", "-NoProfile", "-NonInteractive", "-Command",
+	stdout, stderr, code := runScript(t, installEnv(t, base, testVersion, dir), ps, "-NoProfile", "-NonInteractive", "-Command",
 		`Invoke-Expression (Get-Content -Raw install.ps1); "EAP=$ErrorActionPreference PP=$ProgressPreference"`)
 	if code != 0 {
 		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
