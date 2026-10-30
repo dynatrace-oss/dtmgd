@@ -16,7 +16,17 @@ dtmgd config get-contexts
 # Show or switch context
 dtmgd ctx current
 dtmgd ctx <context-name>
+```
 
+In agent mode (and with `-o json`), `dtmgd ctx` returns one object per context,
+keyed as in the config file, with `current` as a boolean:
+`{"current": true, "name": "prod", "scope": "environment", "host": "…", "env-id": "…", "token-ref": "prod-token"}`
+(a cluster context has no `env-id`). `dtmgd ctx current` returns
+`{"current-context": "prod"}`, and `dtmgd config view` the whole config with the
+file's keys (`current-context`, `contexts[].context.env-id`, …) and token values
+masked.
+
+```bash
 # Configure a new environment (pick any name you like for <context-name>)
 dtmgd config set-context <context-name> \
   --host https://managed.company.com \

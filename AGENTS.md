@@ -196,7 +196,10 @@ dtctl, and it stays that way.
 - **No real host names or environment IDs in repository files.** New examples
   use `example.com` hosts (`https://cluster.example.com`) and synthetic IDs;
   older ones use `managed.company.com`, so don't add more of those.
-- **Ask the maintainer before every push, PR, merge, tag, repository-settings
-  change, and anything in another repository.**
+- **Push branches and open PRs for the work you were asked to do without
+  asking first**, then say what you pushed. Never force-push a shared branch.
+- **Ask the maintainer before merging, tagging or releasing, changing
+  repository settings, rulesets or secrets, and anything in another
+  repository.**
 - Don't run destructive commands (`git clean`, `git reset --hard`,
   `go clean -modcache`) unless asked.
