@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/zalando/go-keyring"
+
+	"github.com/dynatrace-oss/dtmgd/internal/testsandbox"
 )
 
 // TestMain swaps in an in-memory keyring provider for the whole test binary.
@@ -19,9 +21,12 @@ import (
 // IsKeyringAvailable() consistently report true for the rest of the run, so
 // every keyring-touching test below takes the keyring branch against the
 // mock store instead of the plaintext-config branch.
+//
+// testsandbox.Main runs the tests with a temporary home and config
+// directory, so Save and Load without a path cannot reach the real config.
 func TestMain(m *testing.M) {
 	keyring.MockInit()
-	os.Exit(m.Run())
+	os.Exit(testsandbox.Main(m.Run))
 }
 
 // withoutKeyring makes IsKeyringAvailable() report false for the duration of

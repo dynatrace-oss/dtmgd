@@ -33,10 +33,6 @@ make vulncheck    # govulncheck
 make clean        # remove ./dtmgd and bin/
 ```
 
-`./pkg/skills` tests fail on a machine where you have run
-`dtmgd skills install`; see [AGENTS.md](AGENTS.md#build-test-lint) for the
-test command that gives a clean local signal.
-
 ## Making a change
 
 [AGENTS.md](AGENTS.md) describes the architecture, how to add a command, the

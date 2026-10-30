@@ -26,11 +26,9 @@ make docs         # regenerate docs/reference after changing a command
 make vulncheck    # govulncheck from the tools/ module
 ```
 
-For a clean local signal run
-`go test ./pkg/config/... ./pkg/client/... ./cmd/... ./pkg/output/... ./pkg/version/... ./skills/... .`.
-`./pkg/skills` fails on any machine where the dtmgd skill is installed for
-real (its "fresh dir" tests also look at your home directory); CI runners
-have none, so it passes there. Don't "fix" it as part of unrelated work.
+`go test ./...` gives the same result on your machine as in CI: the test
+binaries that touch the home or config directory run in a sandbox (see
+Testing).
 
 ## Architecture
 
@@ -132,7 +130,12 @@ dtctl, and it stays that way.
 - **Never use the default config path.** Pass `--config` with a temp file
   (`runCLI` does). A developer's global config (`~/.config/dtmgd/config` on
   Linux, `~/Library/Application Support/dtmgd/config` on macOS,
-  `%LOCALAPPDATA%\dtmgd\config` on Windows) may hold live tokens.
+  `%LOCALAPPDATA%\dtmgd\config` on Windows) may hold live tokens. As a
+  safety net, `TestMain` in `cmd`, `pkg/config` and `pkg/skills` runs the
+  tests through `testsandbox.Main` (`internal/testsandbox`), which points the
+  home and config directories at a temporary directory and refuses to run if
+  the default config path is still outside it. Add the same `TestMain` to any
+  new package whose tests reach the config or the home directory.
 - **HTTP error cases use 400 or 403,** never 5xx or 429: the client retries
   those, which adds seconds of waiting.
 - **Keyring:** `cmd` and `pkg/config` call `keyring.MockInit()` in `TestMain`.

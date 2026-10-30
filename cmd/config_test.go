@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/zalando/go-keyring"
+
+	"github.com/dynatrace-oss/dtmgd/internal/testsandbox"
 )
 
 // TestMain swaps in an in-memory keyring provider for the whole test binary.
@@ -18,9 +20,12 @@ import (
 // API token stored under that exact name. MockInit makes IsKeyringAvailable
 // report true against an in-memory store instead, so the test is hermetic
 // everywhere.
+//
+// testsandbox.Main runs the tests with a temporary home and config
+// directory, so a command run without --config cannot reach the real config.
 func TestMain(m *testing.M) {
 	keyring.MockInit()
-	os.Exit(m.Run())
+	os.Exit(testsandbox.Main(m.Run))
 }
 
 // withTempConfig writes contents to a temp config file for one test and

@@ -92,12 +92,12 @@ your task.
 - **Date**: 2026-04-15
 - **Ref**: impl: check logs of BookStore services using dtmgd
 
-### pkg/skills tests fail locally but pass on CI — not a real failure
-- **Context**: `go test ./...` fails `TestInstallAndStatusAndUninstall` and `TestStatusAll` with "expected not installed in fresh dir" on any machine that has dtmgd skills installed. Reproduces on clean `main`, so it looks like a regression when it is not.
-- **Insight**: The tests pass a `t.TempDir()` as `baseDir`, but `Status()` in `pkg/skills/installer.go` also consults `os.UserHomeDir()`, so the "fresh dir" is not fresh once you have run `dtmgd skills install`. CI runners have no skills installed, which is why every check is green. Use `go test ./pkg/config/... ./pkg/client/... ./cmd/... ./pkg/output/... ./pkg/version/... ./skills/... .` for a clean local signal, and do not "fix" it as part of unrelated work.
-- **When it applies**: Any local full-suite run, especially before concluding that a change broke something
-- **Date**: 2026-08-06
-- **Ref**: impl: resolve config env vars at point of use (#29)
+### Tests run in a home and config sandbox; `go test ./...` is the local signal
+- **Context**: Until 2026-10-30, `go test ./...` failed `TestInstallAndStatusAndUninstall` and `TestStatusAll` in `pkg/skills` on any machine with a real dtmgd skill installed: the tests passed a `t.TempDir()` as `baseDir`, but `Status()` also looks in `os.UserHomeDir()`. CI runners have no skill installed, so CI stayed green, and a narrower package list was the documented local signal.
+- **Insight**: `internal/testsandbox` fixes the cause. `testsandbox.Main(m.Run)`, called from `TestMain` in `cmd`, `pkg/config` and `pkg/skills`, sets `HOME`, `USERPROFILE`, `XDG_CONFIG_HOME`, `LOCALAPPDATA` and `APPDATA` to a temporary directory, then calls `xdg.Reload()`: adrg/xdg resolves its directories in its package `init`, before `TestMain`, so setting the variables alone changes nothing. It exits 1 if the default config path is still outside the sandbox. `TestDefaultConfigPathIsSandboxed` (in `cmd` and `pkg/config`) pins it.
+- **When it applies**: Any local test run (`go test ./...` now matches CI), and adding a package whose tests reach the config, the keyring-adjacent config, or the home directory: give it the same `TestMain`.
+- **Date**: 2026-08-06 (sandbox and rewrite 2026-10-30)
+- **Ref**: impl: resolve config env vars at point of use (#29); coverage and architecture gaps
 
 ### Keyring-touching tests must install a mock, or they eat real credentials
 - **Context**: A test called `setCredentials("prod-token", ...)`, which reaches `config.SetToken` → `keyring.Set("dtmgd", "prod-token", ...)` whenever `IsKeyringAvailable()` is true. `prod-token` is the credential name used in the README quick start, so `go test ./cmd/...` silently overwrote a developer's live API token. Headless CI takes the other branch, so CI never surfaced it.
@@ -174,7 +174,7 @@ your task.
 
 ### Never point a test at the default config path
 - **Context**: The global config on a developer machine (`~/.config/dtmgd/config` on Linux, `~/Library/Application Support/dtmgd/config` on macOS, `%LOCALAPPDATA%\dtmgd\config` on Windows, or under `$XDG_CONFIG_HOME`) may hold live tokens for real clusters. A test that runs a command without `--config` (and without `DTMGD_CONFIG`) reads that file, and one that saves config would rewrite it.
-- **Insight**: Tests pass `--config` with a temp file (`withFakeEnvs` writes one; `runCLI` appends `--config` unless `cfgPath` is `""`). `DTMGD_CONFIG` is tested at path-resolution level only (`TestDTMGDConfigSelectsTheConfigFile` checks `ResolveSource`, never runs a command against the file), so a regression cannot fall back to the real config.
+- **Insight**: Tests pass `--config` with a temp file (`withFakeEnvs` writes one; `runCLI` appends `--config` unless `cfgPath` is `""`). Since 2026-10-30 the test sandbox (see the sandbox entry) also moves the default path into a temporary directory, so a test that forgets `--config` reaches only that. `DTMGD_CONFIG` is tested at path-resolution level only (`TestDTMGDConfigSelectsTheConfigFile` checks `ResolveSource`, never runs a command against the file), so a regression cannot fall back to the real config.
 - **When it applies**: Writing any test that runs a command or loads or saves config
 - **Date**: 2026-10-29
 - **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
