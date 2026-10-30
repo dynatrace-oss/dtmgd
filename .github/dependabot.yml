@@ -20,6 +20,12 @@ updates:
       interval: weekly
     allow:
       - dependency-type: all
+    # go.yaml.in/yaml/v4 is a pre-release whose API still changes between
+    # release candidates: v4.0.0-rc.6 broke the actionlint build (#60). Leave
+    # it at the version actionlint itself requires; bumping actionlint raises
+    # it when actionlint is ready.
+    ignore:
+      - dependency-name: go.yaml.in/yaml/v4
     open-pull-requests-limit: 5
     groups:
       tools:
