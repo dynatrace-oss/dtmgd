@@ -61,17 +61,13 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 homebrew_casks:
+  # Committed straight to the tap's main branch, as dtctl does (#58). The
+  # token needs write access to dynatrace-oss/homebrew-tap: release.yml mints
+  # one from the tap's GitHub App when its secrets are available.
   - repository:
-      owner: ivan-gudak
+      owner: dynatrace-oss
       name: homebrew-tap
-      branch: "{{ .ProjectName }}-{{ .Version }}"
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-      pull_request:
-        enabled: true
-        base:
-          owner: dynatrace-oss
-          name: homebrew-tap
-          branch: main
     homepage: https://github.com/dynatrace-oss/dtmgd
     description: "kubectl-inspired CLI for Dynatrace Managed - problems, entities, events, logs, metrics, SLOs, and security from your terminal"
     skip_upload: auto

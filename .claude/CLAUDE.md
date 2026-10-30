@@ -134,12 +134,15 @@ your task.
 - **Date**: 2026-10-29
 - **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
 
-### goreleaser's tap PR gets 403; open it by hand
-- **Context**: The `homebrew_casks` step pushes the cask to branch `dtmgd-<version>` of the `ivan-gudak/homebrew-tap` fork, then opens a PR to `dynatrace-oss/homebrew-tap`. That PR call fails with 403 "Resource not accessible" with the current `HOMEBREW_TAP_GITHUB_TOKEN`, which can push only to the fork.
-- **Insight**: The release itself publishes; only the tap PR is missing. Open it by hand: `gh pr create --repo dynatrace-oss/homebrew-tap --head ivan-gudak:dtmgd-<version> --base main` (`<version>` without the `v`, as in `.goreleaser.yaml`'s `{{ .ProjectName }}-{{ .Version }}` branch).
-- **When it applies**: Every dtmgd release until the token can open PRs on `dynatrace-oss/homebrew-tap`
-- **Date**: 2026-10-29
-- **Ref**: Phase 1/Phase 2 catch-up (#49, #50)
+### The Homebrew cask goes straight to `dynatrace-oss/homebrew-tap`, with the tap App's token
+- **Context**: Until v0.3.1 the `homebrew_casks` step pushed the cask to a branch (`dtmgd-<version>`) of the personal fork `ivan-gudak/homebrew-tap` and asked for a PR to `dynatrace-oss/homebrew-tap`. Every release failed there with 403 "Resource not accessible", because the PAT could push only to the fork. The tap PRs were opened by hand (tap #10–#16), and only someone with write access to the tap could merge them (#58).
+- **Insight**:
+  - The cask is now committed straight to the tap's `main`, as dtctl does.
+  - `release.yml` mints the token from the tap's GitHub App (`HOMEBREW_TAP_APP_ID`, `HOMEBREW_TAP_APP_PRIVATE_KEY`, the same App as dtctl) when those secrets are available to dtmgd. Otherwise it uses `HOMEBREW_TAP_GITHUB_TOKEN`, which must then have contents-write access to the tap itself.
+  - If the cask step fails with 403, the credential lacks tap access. The release itself is already published by then; fix the secret, then add the cask by hand. `dist/homebrew/Casks/dtmgd.rb` from a local `goreleaser release --snapshot --skip=publish` shows what it should contain.
+- **When it applies**: Every release, and whenever the cask step fails
+- **Date**: 2026-10-29 (direct publishing 2026-10-30)
+- **Ref**: Phase 1/Phase 2 catch-up (#49, #50); #58
 
 ### Release-asset upload "408 Upload body timed out" is a GitHub flake
 - **Context**: A release job failed uploading assets with "408 Upload body timed out due to inactivity".

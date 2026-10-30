@@ -160,12 +160,12 @@ dtctl, and it stays that way.
 - **Releases are tag-triggered** and the maintainer pushes the tag (no
   release-please). `release.yml` runs the tests and govulncheck, then
   GoReleaser builds, signs `checksums.txt` with cosign (keyless), attaches an
-  SPDX SBOM per archive, publishes the release, and pushes the Homebrew cask to
-  a branch of the tap fork.
+  SPDX SBOM per archive, publishes the release, and commits the Homebrew cask
+  straight to `dynatrace-oss/homebrew-tap`.
   Steps:
   1. Annotated tag on the merge commit (`git tag -a vX.Y.Z -m vX.Y.Z <sha>`), push it.
-  2. Wait for `release.yml`. The tap PR step currently fails with a 403;
-     open the tap PR by hand (see the knowledge base).
+  2. Wait for `release.yml`, then check that the tap's `main` has the new
+     cask (see the knowledge base if the cask step fails).
   3. Add release notes at the top with `gh release edit vX.Y.Z --notes-file …`.
   4. Verify: `cosign verify-blob` and `sha256sum -c` as in the README's
      "Verifying a download", then smoke-test the binary with a temp `--config`.
