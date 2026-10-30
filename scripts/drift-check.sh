@@ -3,8 +3,9 @@
 #
 # Writes a Markdown report to stdout. Exit status:
 #   0  no drift
-#   1  drift found (a newer toolchain patch, a linked module behind, or a
-#      known vulnerability in code dtmgd calls)
+#   1  drift found (a newer toolchain patch, a linked module behind, a CI
+#      tool pinned behind its latest release, or a known vulnerability in
+#      code dtmgd calls)
 #   2  a check could not run (network, proxy, tool failure)
 #
 # Run by .github/workflows/drift.yml, which turns the report into an issue.
@@ -73,6 +74,57 @@ else
 	echo "Could not check: \`go list\` failed."
 	raise 2
 fi
+
+# --- CI tools pinned by version (Dependabot cannot see a `version:` input) ---
+echo
+echo "## Pinned CI tools"
+echo
+latest_release() { # $1 = owner/repo; prints the latest release tag
+	local auth=()
+	if [[ -n ${GITHUB_TOKEN:-} ]]; then auth=(-H "Authorization: Bearer $GITHUB_TOKEN"); fi
+	curl -fsS --max-time 30 "${auth[@]}" "https://api.github.com/repos/$1/releases/latest" | jq -r '.tag_name // empty'
+}
+# check_pins TOOL OWNER/REPO EXPECTED PIN... where each PIN is "file: version"
+# and EXPECTED is how many pins there must be (one per use of the tool).
+check_pins() {
+	local tool=$1 repo=$2 expected=$3 latest versions
+	shift 3
+	if (($# != expected)); then
+		echo "Could not check $tool: found $# pinned versions for $expected uses; is a '# keep in step with' comment missing?"
+		raise 2
+		return
+	fi
+	versions=$(printf '%s\n' "$@" | awk '{print $NF}' | sort -u)
+	if ! latest=$(latest_release "$repo") || [[ -z $latest ]]; then
+		echo "Could not check $tool: the GitHub API was unreachable."
+		raise 2
+		return
+	fi
+	if [[ $(wc -l <<<"$versions") -gt 1 ]]; then
+		echo "$tool pins disagree; latest is \`$latest\`:"
+		printf -- "- \`%s\`\n" "$@"
+		raise 1
+	elif [[ $versions != "$latest" ]]; then
+		echo "$tool is pinned at \`$versions\`, latest is \`$latest\`. Fix: update every pin:"
+		printf -- "- \`%s\`\n" "$@"
+		raise 1
+	else
+		echo "$tool \`$latest\` is the latest release."
+	fi
+}
+mapfile -t golangci_pins < <(
+	grep -HoE 'version: v[0-9.]+ # keep in step with GOLANGCI_LINT_VERSION' .github/workflows/sast.yml | sed -E 's/ # .*//; s/:version: /: /' || true
+	grep -HoE '^GOLANGCI_LINT_VERSION := v[0-9.]+' Makefile | sed -E 's/:GOLANGCI_LINT_VERSION := /: /' || true
+)
+mapfile -t goreleaser_pins < <(
+	grep -HoE 'version: v[0-9.]+ # keep in step with [a-z. ]+\.yml' .github/workflows/{release,lint,build}.yml | sed -E 's/ # .*//; s/:version: /: /' || true
+)
+# One pin per action use, plus the Makefile's GOLANGCI_LINT_VERSION.
+golangci_uses=$(cat .github/workflows/*.yml | grep -c 'uses: golangci/golangci-lint-action@' || true)
+goreleaser_uses=$(cat .github/workflows/*.yml | grep -c 'uses: goreleaser/goreleaser-action@' || true)
+check_pins golangci-lint golangci/golangci-lint "$((golangci_uses + 1))" "${golangci_pins[@]}"
+echo
+check_pins GoReleaser goreleaser/goreleaser "$goreleaser_uses" "${goreleaser_pins[@]}"
 
 # --- Known vulnerabilities in code dtmgd calls ---
 echo

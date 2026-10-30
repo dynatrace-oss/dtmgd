@@ -1,13 +1,19 @@
 version: 2
 updates:
+  # Minor and patch updates arrive as one PR a week; a major bump keeps its
+  # own PR, since it may need code changes.
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      go-modules:
+        patterns: ["*"]
+        update-types: [minor, patch]
 
-  # CI tooling (govulncheck), pinned in its own module. Tool modules are
-  # `// indirect` in go.mod, which scheduled updates skip unless allowed.
+  # CI tooling (govulncheck, actionlint), pinned in its own module. Tool modules
+  # are `// indirect` in go.mod, which scheduled updates skip unless allowed.
   - package-ecosystem: gomod
     directory: /tools
     schedule:
@@ -15,9 +21,15 @@ updates:
     allow:
       - dependency-type: all
     open-pull-requests-limit: 5
+    groups:
+      tools:
+        patterns: ["*"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]

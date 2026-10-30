@@ -18,7 +18,9 @@ coverage.out
 
 # Dependency directories
 vendor/
-go/
+# A GOPATH inside the checkout (some containers set one); anchored, so a
+# package directory named go/ is never silently ignored.
+/go/
 
 # Go workspace file
 go.work
@@ -36,6 +38,7 @@ Thumbs.db
 
 # Config files (might contain tokens)
 config.yaml
+.dtmgd.yaml
 .dtmgd/
 .env
 dt-config.yaml

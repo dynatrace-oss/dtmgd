@@ -42,13 +42,43 @@ brew install dynatrace-oss/tap/dtmgd
 brew upgrade dtmgd
 ```
 
-**Option 2 — go install (requires Go 1.26.10+)**
+**Option 2 — install script (Linux, macOS, Windows)**
+
+For hosts without Homebrew or Go, such as jump hosts:
+
+```bash
+# Linux / macOS: installs to ~/.local/bin (Linux) or /usr/local/bin (macOS)
+curl -fsSL https://raw.githubusercontent.com/dynatrace-oss/dtmgd/main/install.sh | sh
+```
+
+```powershell
+# Windows: installs to %LOCALAPPDATA%\dtmgd and adds it to your user PATH
+irm https://raw.githubusercontent.com/dynatrace-oss/dtmgd/main/install.ps1 | iex
+```
+
+The scripts check the archive against the release's `checksums.txt` before
+installing, and leave an installed dtmgd as it was if anything fails. That
+catches a corrupted or incomplete download; it cannot catch a compromised
+release, because `checksums.txt` comes from the same place. For that, verify
+the signature (see [Verifying a download](#verifying-a-download)). The
+scripts read these environment variables:
+
+| Variable | Meaning |
+|---|---|
+| `DTMGD_VERSION` | Version to install, e.g. `0.3.1` (default: the latest release; required with `DTMGD_DOWNLOAD_BASE`) |
+| `DTMGD_INSTALL_DIR` | Install directory |
+| `DTMGD_DOWNLOAD_BASE` | A mirror of the release downloads, laid out as `<base>/v<version>/<asset>`, for hosts that cannot reach GitHub |
+| `DTMGD_NO_MODIFY_PATH` | `1` keeps `install.ps1` from changing your user PATH |
+
+**Option 3 — go install (requires Go 1.26.10+)**
 
 ```bash
 go install github.com/dynatrace-oss/dtmgd@latest
 ```
 
-**Option 3 — build from source**
+`dtmgd version` then reports the module version you installed.
+
+**Option 4 — build from source**
 
 ```bash
 git clone https://github.com/dynatrace-oss/dtmgd.git
@@ -57,6 +87,26 @@ make install   # installs to $GOPATH/bin (or $HOME/go/bin)
 ```
 
 Make sure `$(go env GOPATH)/bin` is in your `$PATH`.
+
+### Verifying a download
+
+Every release has a `checksums.txt` for its archives. From v0.3.1 on,
+`checksums.txt` is also signed with [cosign](https://docs.sigstore.dev/)
+(keyless, by the release workflow), and each archive has an SPDX SBOM next to
+it (`<archive>.sbom.json`). With the archive, `checksums.txt` and
+`checksums.txt.sigstore.json` from the release page in one directory:
+
+```bash
+# Is checksums.txt the one the dtmgd release workflow signed?
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github\.com/dynatrace-oss/dtmgd/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+
+# Does the archive match it? (macOS: shasum -a 256 --ignore-missing -c checksums.txt)
+sha256sum --ignore-missing -c checksums.txt
+```
 
 ## Quick Start
 

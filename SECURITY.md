@@ -75,6 +75,11 @@ the Dynatrace Open Source Community, except where needed to fix the issue.
    change the cluster, so treat it as an admin credential even though dtmgd
    only reads.
 8. **Stay current.** Security fixes ship only in the latest release.
+9. **Verify what you download.** Release archives are listed in a
+   `checksums.txt` that the release workflow signs with cosign. The install
+   scripts check each archive against that file, which catches a corrupted
+   download but not a compromised release; they do not check the signature.
+   To check it, see "Verifying a download" in the README.
 
 ## Design decisions
 

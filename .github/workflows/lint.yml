@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -37,3 +40,26 @@ jobs:
 
       - name: Run go vet
         run: go vet ./...
+
+      # actionlint is pinned and checksum-locked in tools/go.mod and go.sum.
+      # The runner has shellcheck, so run: blocks are checked too.
+      - name: Lint workflows
+        run: |
+          go -C tools build -o "$RUNNER_TEMP/actionlint" github.com/rhysd/actionlint/cmd/actionlint
+          "$RUNNER_TEMP/actionlint"
+
+      # shellcheck is preinstalled on the runner.
+      - name: Check install.sh
+        run: shellcheck install.sh
+
+  # Not filtered on .goreleaser.yaml: a new GoReleaser can deprecate a
+  # property this repo uses, and check exits non-zero on a deprecation.
+  goreleaser-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
+        with:
+          version: v2.19.0 # keep in step with release.yml
+          args: check
