@@ -14,8 +14,9 @@ import (
 
 // TablePrinter formats data as a terminal table using struct field tags.
 // Tag format: `table:"HEADER"`, plus options after commas: "wide" (only
-// shown with --output wide) and "max=N" (shortened to N runes on one line, in
-// tables only).
+// shown with --output wide), "max=N" (shortened to N runes on one line, in
+// tables only) and "status" (colored by value when colors are on, see
+// statusColors). With colors on, headers are bold.
 type TablePrinter struct {
 	w       io.Writer
 	wide    bool
@@ -55,10 +56,11 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 		return p.printYAML(v)
 	}
 
-	headers, fieldIdx, maxes := p.tableColumns(elemType)
+	headers, fieldIdx, maxes, status := p.tableColumns(elemType)
 	if len(headers) == 0 {
 		return p.printYAML(v)
 	}
+	headers = tableHeaders(headers)
 
 	// WithHeaderAutoFormat must precede WithHeader: WithHeader applies the
 	// headers immediately, and tablewriter defaults AutoFormat to On at that
@@ -83,20 +85,42 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 	}
 
 	for _, row := range rows {
-		rv := row
-		if rv.Kind() == reflect.Pointer {
-			rv = rv.Elem()
-		}
-		var cells []string
-		for i, idx := range fieldIdx {
-			cells = append(cells, shorten(fmt.Sprintf("%v", rv.Field(idx).Interface()), maxes[i]))
-		}
-		if err := tbl.Append(cells); err != nil {
+		if err := tbl.Append(rowCells(row, fieldIdx, maxes, status)); err != nil {
 			return err
 		}
 	}
 
 	return tbl.Render()
+}
+
+// tableHeaders returns the headers as the table shows them: bold when table
+// colors are on.
+func tableHeaders(headers []string) []string {
+	if !tableColor {
+		return headers
+	}
+	bold := make([]string, len(headers))
+	for i, h := range headers {
+		bold[i] = colorize(ansiBold, h)
+	}
+	return bold
+}
+
+// rowCells returns one row's cells for the columns tableColumns chose:
+// shortened to their max=N, and colored by value in a status column when
+// table colors are on.
+func rowCells(row reflect.Value, fieldIdx, maxes []int, status []bool) []string {
+	if row.Kind() == reflect.Pointer {
+		row = row.Elem()
+	}
+	cells := make([]string, len(fieldIdx))
+	for i, idx := range fieldIdx {
+		cells[i] = shorten(fmt.Sprintf("%v", row.Field(idx).Interface()), maxes[i])
+		if tableColor && status[i] {
+			cells[i] = statusCell(cells[i])
+		}
+	}
+	return cells
 }
 
 // tableRows is what PrintList prints a row for: the elements of a slice, or
@@ -116,22 +140,25 @@ func tableRows(v interface{}) []reflect.Value {
 	return rows
 }
 
-// tableColumns returns the headers, field indices and max=N lengths (0 for
-// none) of the columns to show for struct type t, in field order: every
-// field with a table tag except wide ones (unless wide output or --columns
-// asks for them), and only the --columns ones when that is set.
-func (p *TablePrinter) tableColumns(t reflect.Type) (headers []string, fieldIdx, maxes []int) {
+// tableColumns returns the headers, field indices, max=N lengths (0 for
+// none) and status flags of the columns to show for struct type t, in field
+// order: every field with a table tag except wide ones (unless wide output or
+// --columns asks for them), and only the --columns ones when that is set.
+func (p *TablePrinter) tableColumns(t reflect.Type) (headers []string, fieldIdx, maxes []int, status []bool) {
 	for i := 0; i < t.NumField(); i++ {
 		tag := t.Field(i).Tag.Get("table")
 		if tag == "" || tag == "-" {
 			continue
 		}
 		parts := strings.Split(tag, ",")
-		header, isWide, maxLen := parts[0], false, 0
+		header, isWide, maxLen, isStatus := parts[0], false, 0, false
 		for _, opt := range parts[1:] {
-			if strings.EqualFold(opt, "wide") {
+			switch n, isMax := strings.CutPrefix(opt, "max="); {
+			case strings.EqualFold(opt, "wide"):
 				isWide = true
-			} else if n, ok := strings.CutPrefix(opt, "max="); ok {
+			case strings.EqualFold(opt, "status"):
+				isStatus = true
+			case isMax:
 				maxLen, _ = strconv.Atoi(n)
 			}
 		}
@@ -141,8 +168,9 @@ func (p *TablePrinter) tableColumns(t reflect.Type) (headers []string, fieldIdx,
 		headers = append(headers, header)
 		fieldIdx = append(fieldIdx, i)
 		maxes = append(maxes, maxLen)
+		status = append(status, isStatus)
 	}
-	return headers, fieldIdx, maxes
+	return headers, fieldIdx, maxes, status
 }
 
 // shorten puts s on one line and cuts it to maxLen runes, ending in "…"

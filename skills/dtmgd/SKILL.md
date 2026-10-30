@@ -81,7 +81,7 @@ Formats, every error code, paging, `--watch`, `--columns` and time formats:
 -o, --output <format>   table | wide | json | yaml (yml) | csv | tsv
 -A, --agent             force agent envelope output
 --no-agent              disable auto-detected agent mode
---plain                 words instead of symbols on stderr (automatic when stdout is not a terminal)
+--plain                 no colors, words instead of symbols on stderr (automatic when stdout is not a terminal)
 --max-pages <n>         max pages to fetch (0 = all). Pagination is automatic.
 --columns <cols>        comma-separated columns to show in table output
 -v                      verbose: show HTTP request/response summary

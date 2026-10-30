@@ -100,9 +100,9 @@ func (p *CSVPrinter) header(v interface{}) ([]string, []int, error) {
 	if t == nil || t.Kind() != reflect.Struct {
 		return nil, nil, ErrNotTabular
 	}
-	headers, fieldIdx, _ := (&TablePrinter{wide: true, columns: p.columns}).tableColumns(t)
+	headers, fieldIdx, _, _ := (&TablePrinter{wide: true, columns: p.columns}).tableColumns(t)
 	if len(headers) == 0 && len(p.columns) > 0 {
-		all, _, _ := (&TablePrinter{wide: true}).tableColumns(t)
+		all, _, _, _ := (&TablePrinter{wide: true}).tableColumns(t)
 		if len(all) > 0 {
 			return nil, nil, fmt.Errorf("%w: --columns %s matches none of: %s", ErrUnknownColumns, strings.Join(p.columns, ","), strings.Join(all, ", "))
 		}
