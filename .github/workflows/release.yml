@@ -11,8 +11,13 @@ jobs:
   # The tagged commit passed CI on main, but nothing stops a tag on another
   # commit; a release is never built from code that fails its tests or has a
   # reachable vulnerability.
+  # Same three OSes as the PR checks, so a tag on a commit that never passed
+  # them (one not on main) still cannot publish code broken on one of them.
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
     steps:
@@ -24,9 +29,11 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+        shell: bash
 
       # govulncheck is pinned and checksum-locked in tools/go.mod and go.sum.
       - name: Vulnerability check
+        if: runner.os == 'Linux'
         run: |
           go -C tools build -o "$RUNNER_TEMP/govulncheck" golang.org/x/vuln/cmd/govulncheck
           "$RUNNER_TEMP/govulncheck" ./...

@@ -37,6 +37,18 @@ archives:
         dst: references
         strip_parent: true
       - completions/*
+      # The docs the README links to, at their repository paths, so its links
+      # also work offline (jump hosts read the archive's README).
+      - SECURITY.md
+      - CONTRIBUTING.md
+      - CODE_OF_CONDUCT.md
+      - AGENTS.md
+      - .claude/CLAUDE.md
+      - assets/architecture.png
+      - docs/*.md
+      - docs/reference/*.md
+      - skills/dtmgd/SKILL.md
+      - skills/dtmgd/references/*.md
     format_overrides:
       - goos: windows
         formats: [zip]
