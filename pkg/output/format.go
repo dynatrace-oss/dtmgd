@@ -11,6 +11,8 @@ const (
 	FormatWide  Format = "wide"
 	FormatJSON  Format = "json"
 	FormatYAML  Format = "yaml"
+	FormatCSV   Format = "csv"
+	FormatTSV   Format = "tsv"
 )
 
 // ParseFormat validates an --output value. An empty value is a table and yml
@@ -26,6 +28,16 @@ func ParseFormat(s string) (Format, error) {
 		return FormatJSON, nil
 	case "yaml", "yml":
 		return FormatYAML, nil
+	case "csv":
+		return FormatCSV, nil
+	case "tsv":
+		return FormatTSV, nil
 	}
-	return "", fmt.Errorf("unknown output format %q (want one of: table, wide, json, yaml)", s)
+	return "", fmt.Errorf("unknown output format %q (want one of: table, wide, json, yaml, csv, tsv)", s)
+}
+
+// Delimited reports whether f is csv or tsv: table rows with a separator,
+// for spreadsheets and scripts.
+func (f Format) Delimited() bool {
+	return f == FormatCSV || f == FormatTSV
 }

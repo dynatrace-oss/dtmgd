@@ -11,7 +11,13 @@ Use `-o json` for AI/script consumption. Default is human-friendly `table`.
 -o wide     # table with extra columns (timestamps, root cause, etc.)
 -o json     # indented JSON — best for parsing and piping to jq
 -o yaml     # YAML output (-o yml also works)
+-o csv      # table rows as CSV with a header line (-o tsv: tab-separated)
 ```
+
+csv and tsv hold every table column (wide ones too; `--columns` narrows),
+lead with a `CONTEXT` column for several `--env` environments, and are
+refused by commands without table rows (describe, `query metrics`,
+`query log-counts`). In agent mode the envelope wins: add `--no-agent`.
 
 Any other `-o` value is a usage error (exit 2) before any request is made.
 

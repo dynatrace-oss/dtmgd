@@ -78,7 +78,7 @@ Formats, every error code, paging, `--watch`, `--columns` and time formats:
 ```
 -c, --context <name>    override the current context (environment)
 -e, --env <spec>        target environment(s): name, "prod;staging", or ALL_ENVIRONMENTS
--o, --output <format>   table | wide | json | yaml (yml)
+-o, --output <format>   table | wide | json | yaml (yml) | csv | tsv
 -A, --agent             force agent envelope output
 --no-agent              disable auto-detected agent mode
 --plain                 words instead of symbols on stderr (automatic when stdout is not a terminal)

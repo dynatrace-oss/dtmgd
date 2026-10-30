@@ -49,7 +49,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
   -h, --help              help for dtmgd
       --max-pages int     maximum number of pages to fetch (0 = all pages)
       --no-agent          disable auto-detected agent mode
-  -o, --output string     output format: table|json|yaml|wide (default: table)
+  -o, --output string     output format: table|wide|json|yaml|csv|tsv (default: table)
       --plain             plain output: no symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)
   -v, --verbose count     verbosity level (-v for summary, -vv for full request/response)
 ```

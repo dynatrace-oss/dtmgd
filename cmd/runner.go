@@ -83,6 +83,9 @@ func (a *App) runFetch(s fetchSpec) error {
 	if err := limitFlag(s.Limit); err != nil {
 		return err
 	}
+	if err := a.checkDelimited(s); err != nil {
+		return err
+	}
 	cfg, err := a.loadConfig()
 	if err != nil {
 		return err
@@ -129,6 +132,16 @@ func hintOnBadRequest(fetch func(*client.Client, int) (fetched, error), hint str
 		}
 		return f, err
 	}
+}
+
+// checkDelimited refuses -o csv or -o tsv, before any request, for a command
+// without table rows: one that only prints a summary or the API object.
+// Agent mode keeps its envelope whatever -o says.
+func (a *App) checkDelimited(s fetchSpec) error {
+	if f := a.format(); f.Delimited() && s.Rows == nil && !a.agentMode() {
+		return &UsageError{Err: fmt.Errorf("\"dtmgd %s %s\" has no table rows for -o %s; use -o json or -o yaml", s.Verb, s.Resource, f)}
+	}
+	return nil
 }
 
 // fetchFrom is the per-environment call runFetch gives client.MultiRequest:
@@ -191,8 +204,40 @@ func (a *App) renderMulti(s fetchSpec, results []client.EnvResult) error {
 			}
 		}
 		return partial
+	case output.FormatCSV, output.FormatTSV:
+		return a.renderMultiDelimited(s, results, partial)
 	}
 	return a.renderMultiHuman(s, results, partial)
+}
+
+// renderMultiDelimited prints every environment's rows as one csv or tsv
+// table led by a CONTEXT column; a failed environment's error goes to stderr.
+func (a *App) renderMultiDelimited(s fetchSpec, results []client.EnvResult, partial error) error {
+	var names []string
+	var lists []interface{}
+	for _, r := range results {
+		if r.Error != nil {
+			output.PrintHumanError("%s: %v", r.Name, r.Error)
+			continue
+		}
+		f := r.Data.(fetched)
+		rows, _, err := s.Rows(f.Body)
+		if err != nil {
+			return err
+		}
+		if rows != nil {
+			names, lists = append(names, r.Name), append(lists, rows)
+		}
+		printWarnings(r.Name+": ", f)
+	}
+	p := output.NewPrinterToWithColumns(string(a.format()), a.Out, a.columns()).(*output.CSVPrinter)
+	if err := p.PrintSections(names, lists); err != nil {
+		return err
+	}
+	if partial != nil {
+		return fmt.Errorf("%w: %w", errReported, partial)
+	}
+	return nil
 }
 
 // mergeResults keys each environment's Body by context name, with
@@ -288,6 +333,9 @@ func (a *App) renderHuman(s fetchSpec, f fetched) error {
 
 // renderBody is renderHuman without the warnings.
 func (a *App) renderBody(s fetchSpec, f fetched) error {
+	if a.format().Delimited() {
+		return a.renderDelimited(s, f)
+	}
 	switch {
 	case s.Human != nil:
 		return s.Human(a.Out, f.Body)
@@ -311,6 +359,28 @@ func (a *App) renderBody(s fetchSpec, f fetched) error {
 		return nil
 	}
 	return output.NewPrinterTo(string(output.FormatYAML), a.Out).Print(f.Body)
+}
+
+// renderDelimited prints one environment's rows as csv or tsv: the header
+// line even when there are no rows, so a script always gets the columns.
+// checkDelimited has made sure the command has Rows.
+func (a *App) renderDelimited(s fetchSpec, f fetched) error {
+	rows, n, err := s.Rows(f.Body)
+	if err != nil {
+		return err
+	}
+	if n == 0 && s.Empty != "" {
+		output.PrintInfo("%s", s.Empty)
+	}
+	if rows != nil {
+		if err := output.NewPrinterToWithColumns(string(a.format()), a.Out, a.columns()).PrintList(rows); err != nil {
+			return err
+		}
+	}
+	if f.HasMore {
+		output.PrintInfo("%s. Use --limit or narrower filters.", showing(n, f.Total, s.Resource))
+	}
+	return nil
 }
 
 // responseContext is the agent envelope context for one environment's result.

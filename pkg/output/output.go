@@ -31,6 +31,10 @@ func NewPrinterToWithColumns(format string, w io.Writer, columns []string) Print
 		return &JSONPrinter{w: w}
 	case "yaml", "yml":
 		return &YAMLPrinter{w: w}
+	case "csv":
+		return &CSVPrinter{w: w, comma: ',', columns: columns}
+	case "tsv":
+		return &CSVPrinter{w: w, comma: '\t', columns: columns}
 	default:
 		return &TablePrinter{w: w, wide: format == "wide", columns: columns}
 	}

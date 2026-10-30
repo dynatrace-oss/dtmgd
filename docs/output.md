@@ -16,6 +16,22 @@ and `describe license` masks `licenseKey`), with its camelCase keys (`problemId`
 not the table's columns. An empty result prints that object with an empty list
 (`"problems": []`) rather than nothing.
 
+`-o csv` and `-o tsv` print the table's rows as comma- or tab-separated
+values with a header line, for spreadsheets and scripts:
+
+- **Columns:** every column, wide ones included; `--columns` narrows them.
+- **Empty results:** the header line alone.
+- **`--env` with several environments:** one table led by a `CONTEXT` column.
+- **Spreadsheet formulas:** a cell a spreadsheet would run as a formula (one
+  starting with `=`, `+`, `@`, or `-` followed by more than a number or an ID)
+  gets a leading `'`. Log content and entity names can carry text an attacker
+  chose.
+- **Commands without rows:** the ones that print a summary or the API object
+  (`describe` commands, `query metrics`, `query log-counts`) refuse csv and
+  tsv; use `-o json` or `-o yaml`. `query logs` gives a timestamp, status and
+  content per record.
+- **Agent mode:** the agent envelope wins over any `-o`; pass `--no-agent`.
+
 `--plain` replaces the stderr symbols (`⚠ ✗ 💡`) with words (`Warning:`,
 `Error:`, `Hint:`) and stops `--watch` from clearing the screen. It is on
 automatically when stdout is not a terminal or `NO_COLOR` is set, unless
