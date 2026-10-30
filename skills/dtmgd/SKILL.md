@@ -53,9 +53,12 @@ Agent mode is auto-detected — output will be wrapped in `{ok, result, context}
 
 ## Reading Output
 
-- Parse with `-o json`, or rely on the agent envelope. **stdout is data only**;
-  notes, warnings, errors and hints go to stderr, so don't merge stderr into
-  stdout (`2>&1`) before parsing.
+- Parse with `-o json`, or rely on the agent envelope. **stdout is data only**:
+  outside agent mode, notes, warnings, errors and hints go to stderr. In agent
+  mode everything is in the envelope on stdout (errors as `ok: false`,
+  warnings in `context.warnings`), and stderr carries only notices such as the
+  agent-mode line. Either way, don't merge stderr into stdout (`2>&1`) before
+  parsing.
 - json, yaml and the envelope's `result` are **the API's own response**, with
   its camelCase keys (`problemId`, `totalCount`, `nextPageKey`), not the table
   columns. An empty result is the object with an empty list.
@@ -128,7 +131,7 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 ## Gotchas
 
 - `describe problem` requires the **UUID** (`PROBLEM-ID` column), not the display ID (`P-XXXXX`).
-- Problem UUIDs can be **negative integers** (e.g. `-6546711275898328738_1776193140000V2`). Always pass them after `--` to prevent the leading `-` being parsed as a flag: `dtmgd describe problem -- -6546711275898328738_V2`
+- Problem UUIDs can be **negative integers** (e.g. `-6546711275898328738_1776193140000V2`). `describe problem` inserts the `--` that keeps the leading `-` from being read as a flag, so `dtmgd describe problem -6546711275898328738_V2` works; an explicit `dtmgd describe problem -- -6546711275898328738_V2` works too.
 - `get events` requires `--from`; it won't default like `get problems` does.
 - `query logs` uses plain text search only — no `content:`, `status:`, or `loglevel:` structured syntax (LQL structured queries are unsupported on DT Managed Classic).
 - `query log-counts` counts log levels using full-text matching; accurate for Spring Boot/Java logs, may under-count WARN if framework uses "WARNING".

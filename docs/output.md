@@ -25,7 +25,7 @@ automatically when stdout is not a terminal or `NO_COLOR` is set, unless
 
 | Flag | Description |
 |---|---|
-| `--config <file>` | Config file path (default: `~/.config/dtmgd/config`) |
+| `--config <file>` | Config file path (default: the global config, see [Which config file is used](configuration.md#which-config-file-is-used)) |
 | `-c, --context <name>` | Override current context |
 | `-e, --env <spec>` | Target environment(s): context name, `"prod;staging"`, or `ALL_ENVIRONMENTS` |
 | `-o, --output <format>` | Output format: `table` (default), `wide`, `json`, `yaml` (or `yml`); any other value is a usage error (exit 2) before any request is made |

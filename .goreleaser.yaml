@@ -92,9 +92,9 @@ changelog:
   sort: asc
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
-      - '^ci:'
+      - '^docs(\(.*\))?:'
+      - '^test(\(.*\))?:'
+      - '^ci(\(.*\))?:'
       - '^build\(deps\)'
       - '^chore\(deps\)'
       - 'Merge pull request'

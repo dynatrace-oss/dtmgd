@@ -46,7 +46,7 @@ cmd/            Cobra commands, one file per command (get_*.go, describe_*.go, q
   commands.go   the `dtmgd commands` catalog
 pkg/client/     HTTP client (resty): GetV2, GetV1, GetCluster, GetV2Paged, GetClusterPaged,
                 MultiRequest (parallel --env fan-out), exit codes, error diagnosis
-pkg/config/     config file (~/.config/dtmgd/config), contexts, ${VAR} references, keyring
+pkg/config/     config file, contexts, ${VAR} references, keyring
 pkg/output/     printers: table (struct tags), json, yaml, agent envelope
 pkg/skills/     `dtmgd skills install`; skills/dtmgd/ holds the embedded skill
 pkg/version/    version, commit, date: ldflags, else the module's build info
@@ -89,9 +89,12 @@ dtctl, and it stays that way.
      (`table:"HEADER,wide"` for `-o wide` only); `Human` renders a summary
      instead. With neither, a table shows the body as YAML.
    - Set `List: true` for lists, so agents get the default 50-item limit.
-3. Declare token scopes with `withScopes(cmd, "foos.read")`. A test keeps the
-   README scope list (between `<!-- scopes:start -->` and `<!-- scopes:end -->`)
-   in step with what commands declare.
+3. Declare an environment command's token scopes with
+   `withScopes(cmd, "foos.read")`. A cluster command needs nothing more:
+   `clusterCommand` already declares `ServiceProviderAPI`, and `withScopes`
+   replaces the list rather than adding to it. A test keeps the README scope
+   list (between `<!-- scopes:start -->` and `<!-- scopes:end -->`) in step
+   with what commands declare.
 4. Add `--watch` only where re-running makes sense: `addWatchFlags` and
    `a.watchOrRun`.
 5. Test it end to end (see Testing), then run `make docs`: the reference in
@@ -102,8 +105,10 @@ dtctl, and it stays that way.
 - **Pagination:** a later page is requested with `nextPageKey` alone; resending
   the filters gives HTTP 400. `GetV2Paged` stops once `Limit` items are in hand
   and keeps the last `nextPageKey`, so truncation is never silent.
-- **Output contract:** stdout is data only; notes, warnings and errors go to
-  stderr. json, yaml and the envelope's `result` are the API's own response.
+- **Output contract:** stdout is data only. Outside agent mode, notes,
+  warnings and errors go to stderr; in agent mode errors are an `ok: false`
+  envelope on stdout and warnings go into `context.warnings`. json, yaml and
+  the envelope's `result` are the API's own response.
 - **Errors and exit codes:** `0` success, `1` other error, `2` usage error,
   `3` authentication failed (401), `4` not found (404), `5` permission denied
   (403). Usage errors are `UsageError`. Add a next step to an error with
@@ -125,7 +130,9 @@ dtctl, and it stays that way.
   regenerate with `go test ./cmd/ -run <Test> -update`. A changed golden is a
   changed behaviour: read the diff.
 - **Never use the default config path.** Pass `--config` with a temp file
-  (`runCLI` does). A developer's `~/.config/dtmgd/config` may hold live tokens.
+  (`runCLI` does). A developer's global config (`~/.config/dtmgd/config` on
+  Linux, `~/Library/Application Support/dtmgd/config` on macOS,
+  `%LOCALAPPDATA%\dtmgd\config` on Windows) may hold live tokens.
 - **HTTP error cases use 400 or 403,** never 5xx or 429: the client retries
   those, which adds seconds of waiting.
 - **Keyring:** `cmd` and `pkg/config` call `keyring.MockInit()` in `TestMain`.
@@ -146,12 +153,14 @@ dtctl, and it stays that way.
 - **Tools:** govulncheck and actionlint are `tool` entries in `tools/go.mod`
   (checksum-locked), built with `go -C tools build`. Never add
   `go install …@version` to a workflow. golangci-lint and GoReleaser are pinned
-  by version in the workflows (and the Makefile); `scripts/drift-check.sh`
+  by version in the workflows, and the Makefile's `GOLANGCI_LINT_VERSION` names
+  the golangci-lint version `make lint` expects; `scripts/drift-check.sh`
   reports when a pin falls behind. Every action is pinned to a commit SHA.
 - **Releases are tag-triggered** and the maintainer pushes the tag (no
   release-please). `release.yml` runs the tests and govulncheck, then
   GoReleaser builds, signs `checksums.txt` with cosign (keyless), attaches an
-  SPDX SBOM per archive, publishes the release and updates the Homebrew tap.
+  SPDX SBOM per archive, publishes the release, and pushes the Homebrew cask to
+  a branch of the tap fork.
   Steps:
   1. Annotated tag on the merge commit (`git tag -a vX.Y.Z -m vX.Y.Z <sha>`), push it.
   2. Wait for `release.yml`. The tap PR step currently fails with a 403;
@@ -169,8 +178,9 @@ dtctl, and it stays that way.
 - **Calls to a real cluster are read-only GETs**, and only when the maintainer
   asks for them. Filter their output (`jq`) so license keys, emails, IPs and
   storage paths stay out of the transcript.
-- **No real host names or environment IDs in repository files.** Examples use
-  `https://cluster.example.com`, `https://managed.company.com` or synthetic IDs.
+- **No real host names or environment IDs in repository files.** New examples
+  use `example.com` hosts (`https://cluster.example.com`) and synthetic IDs;
+  older ones use `managed.company.com`, so don't add more of those.
 - **Ask the maintainer before every push, PR, merge, tag, repository-settings
   change, and anything in another repository.**
 - Don't run destructive commands (`git clean`, `git reset --hard`,

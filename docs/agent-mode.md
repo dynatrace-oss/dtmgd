@@ -56,9 +56,15 @@ or pass `-A`.
 
 ### Install the dtmgd Skill for Your AI Agent
 
-`dtmgd` ships with an embedded skill file (`SKILL.md`) that teaches your AI
-coding assistant how to use the CLI effectively — including command patterns,
-output formats, and gotchas specific to Dynatrace Managed Classic.
+`dtmgd` ships with an embedded skill (`SKILL.md` and the `references/` it
+points to) that teaches your AI coding assistant how to use the CLI
+effectively — including command patterns, output formats, and gotchas
+specific to Dynatrace Managed Classic.
+
+To update an installed skill after upgrading dtmgd, run the install again
+with `--force` (for example `dtmgd skills install --for claude --force`). It
+rewrites the skill's own files, adds new ones such as `references/`, and keeps
+any files of your own in the skill's directory.
 
 Install it with one command — the target agent is auto-detected from your
 environment, or you can pick it explicitly. Outside an interactive terminal

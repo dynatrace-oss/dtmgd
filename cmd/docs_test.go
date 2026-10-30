@@ -25,7 +25,8 @@ func genReferenceDocs(dir string) error {
 	var prepare func(*cobra.Command)
 	prepare = func(c *cobra.Command) {
 		c.DisableAutoGenTag = true // the tag carries the generation date
-		c.Long = fenceIndented(c.Long)
+		c.Short = escapeAngles(c.Short)
+		c.Long = escapeAngles(fenceIndented(c.Long))
 		for _, sub := range c.Commands() {
 			prepare(sub)
 		}
@@ -62,33 +63,58 @@ func fenceIndented(long string) string {
 	return strings.Join(append(out, blanks...), "\n")
 }
 
+// escapeAngles escapes each "<" outside fenced code blocks and code spans,
+// which GitHub would otherwise drop as an unknown HTML tag (<resource>).
+func escapeAngles(text string) string {
+	lines := strings.Split(text, "\n")
+	inFence := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, "```") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		parts := strings.Split(line, "`") // odd parts are code spans
+		for j := 0; j < len(parts); j += 2 {
+			parts[j] = strings.ReplaceAll(parts[j], "<", "&lt;")
+		}
+		lines[i] = strings.Join(parts, "`")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// readFiles returns the regular files directly in dir by name, or none when
+// dir does not exist.
+func readFiles(dir string) (map[string][]byte, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	files := map[string][]byte{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		files[e.Name()] = data
+	}
+	return files, nil
+}
+
 // diffDirs names every file that differs between the directories want and
 // got, sorted: "missing: x" (only in want), "extra: y" (only in got) and
 // "changed: z".
 func diffDirs(want, got string) ([]string, error) {
-	read := func(dir string) (map[string][]byte, error) {
-		entries, err := os.ReadDir(dir)
-		if err != nil && !os.IsNotExist(err) {
-			return nil, err
-		}
-		files := map[string][]byte{}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				return nil, err
-			}
-			files[e.Name()] = data
-		}
-		return files, nil
-	}
-	w, err := read(want)
+	w, err := readFiles(want)
 	if err != nil {
 		return nil, err
 	}
-	g, err := read(got)
+	g, err := readFiles(got)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +141,15 @@ func TestFenceIndentedFencesEachIndentedRun(t *testing.T) {
 	want := "Lists things.\n\nExamples:\n```\n  dtmgd get x\n  dtmgd get x -o json\n```\n\nMore text.\n```\n  one more\n```"
 	if got := fenceIndented(long); got != want {
 		t.Errorf("fenceIndented =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestEscapeAnglesOutsideCode(t *testing.T) {
+	// GitHub drops <resource> as an unknown HTML tag; code keeps it as text.
+	in := "dtmgd get <resource>, `<x>` stays\n```\n  dtmgd get <id>\n```\n/proc/<pid>/cmdline"
+	want := "dtmgd get &lt;resource>, `<x>` stays\n```\n  dtmgd get <id>\n```\n/proc/&lt;pid>/cmdline"
+	if got := escapeAngles(in); got != want {
+		t.Errorf("escapeAngles =\n%s\nwant\n%s", got, want)
 	}
 }
 

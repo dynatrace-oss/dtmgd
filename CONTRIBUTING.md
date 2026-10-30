@@ -57,8 +57,8 @@ conventions and the testing rules. The short version:
 Use [Conventional Commits](https://www.conventionalcommits.org/) prefixes:
 `feat`, `fix`, `docs`, `test`, `refactor`, `ci`, `build`, `chore`, with an
 optional scope (`fix(install): …`). Release notes are built from them;
-`docs:`, `test:`, `ci:`, `build(deps):` and `chore(deps):` commits are left
-out.
+`docs`, `test` and `ci` commits (with or without a scope), `build(deps)` and
+`chore(deps)` are left out.
 
 ## Pull requests
 

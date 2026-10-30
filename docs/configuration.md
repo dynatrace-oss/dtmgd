@@ -227,11 +227,15 @@ credentials for only one of them.
 `dtmgd` picks the first of these that exists:
 
 1. the path given to `--config`
-2. a `.dtmgd.yaml` found by searching the working directory and then each
+2. the path in the `DTMGD_CONFIG` environment variable
+3. a `.dtmgd.yaml` found by searching the working directory and then each
    parent directory in turn, up to the filesystem root
-3. the global `~/.config/dtmgd/config`
+4. the global config: `~/.config/dtmgd/config` on Linux,
+   `~/Library/Application Support/dtmgd/config` on macOS,
+   `%LOCALAPPDATA%\dtmgd\config` on Windows, or
+   `$XDG_CONFIG_HOME/dtmgd/config` when that variable is set
 
-Step 2 is worth knowing about on shared machines. Anyone who can write to a
+Step 3 is worth knowing about on shared machines. Anyone who can write to a
 directory above the one you work in — `/tmp`, a group-writable project root, a
 CI workspace — can leave a `.dtmgd.yaml` there, and it will take precedence
 over your global config on your next `dtmgd` run. Because such a file sets
@@ -247,5 +251,5 @@ are in, `dtmgd` says so on stderr:
 
 A `.dtmgd.yaml` in your working directory is the intended project-local
 workflow (`dtmgd config init` creates one) and is not announced; run with `-v`
-to print the active config path whatever its source. Use `--config` to pin the
-file explicitly and bypass the search.
+to print the active config path whatever its source. Use `--config` or
+`DTMGD_CONFIG` to pin the file explicitly and bypass the search.

@@ -21,7 +21,7 @@ For scripts and CI, pipe it in on stdin:
 ```
 
 --token is still accepted, but a value passed there is copied into the process
-argument vector by the kernel and is readable from /proc/<pid>/cmdline by any
+argument vector by the kernel and is readable from /proc/&lt;pid>/cmdline by any
 process running as you, as well as being recorded in your shell history.
 
 ```
@@ -42,7 +42,7 @@ dtmgd config set-credentials <name> [flags]
   -A, --agent             force agent envelope output mode
       --columns string    comma-separated list of columns to show in table output
       --concurrency int   maximum environments queried at once with --env (default 10)
-      --config string     config file (default: ~/.config/dtmgd/config)
+      --config string     config file (default: ~/.config/dtmgd/config on Linux, ~/Library/Application Support/dtmgd/config on macOS, %LOCALAPPDATA%\dtmgd\config on Windows, or $XDG_CONFIG_HOME/dtmgd/config when set)
   -c, --context string    context to use (overrides current-context)
   -e, --env string        environment(s): context name, "prod;staging", or ALL_ENVIRONMENTS
       --max-pages int     maximum number of pages to fetch (0 = all pages)

@@ -113,7 +113,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 	cmd.SetFlagErrorFunc(flagError)
 
 	f := cmd.PersistentFlags()
-	f.StringVar(&a.Opts.ConfigPath, "config", "", "config file (default: ~/.config/dtmgd/config)")
+	f.StringVar(&a.Opts.ConfigPath, "config", "", `config file (default: ~/.config/dtmgd/config on Linux, ~/Library/Application Support/dtmgd/config on macOS, %LOCALAPPDATA%\dtmgd\config on Windows, or $XDG_CONFIG_HOME/dtmgd/config when set)`)
 	f.StringVarP(&a.Opts.Context, "context", "c", "", "context to use (overrides current-context)")
 	f.StringVarP(&a.Opts.Output, "output", "o", "", "output format: table|json|yaml|wide (default: table)")
 	f.CountVarP(&a.Opts.Verbose, "verbose", "v", "verbosity level (-v for summary, -vv for full request/response)")

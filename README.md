@@ -148,7 +148,7 @@ for cross-context fan-out.
 > Windows Credential Manager) is available, the token is stored there and the
 > config file keeps only an empty placeholder. On headless Linux systems without
 > a keyring daemon, the token is stored in plaintext in the config file
-> (`~/.config/dtmgd/config`, mode 0600). Run
+> (`~/.config/dtmgd/config` on Linux; see [Which config file is used](docs/configuration.md#which-config-file-is-used)), with mode 0600. Run
 > `dtmgd config migrate-tokens` any time after a keyring becomes available.
 
 ### Supplying the token in scripts and CI

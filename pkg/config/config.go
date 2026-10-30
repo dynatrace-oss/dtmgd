@@ -71,7 +71,9 @@ type Preferences struct {
 	Output string `yaml:"output,omitempty"`
 }
 
-// DefaultConfigPath returns the default config file path (~/.config/dtmgd/config).
+// DefaultConfigPath returns the default config file path: dtmgd/config under
+// the XDG config home, which is ~/.config on Linux, ~/Library/Application
+// Support on macOS and %LOCALAPPDATA% on Windows, unless $XDG_CONFIG_HOME is set.
 func DefaultConfigPath() string {
 	return filepath.Join(xdg.ConfigHome, "dtmgd", "config")
 }

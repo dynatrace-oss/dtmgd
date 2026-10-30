@@ -55,7 +55,7 @@ the Dynatrace Open Source Community, except where needed to fix the issue.
    `dtmgd config migrate-tokens` once a keyring becomes available.
 3. **Entering tokens.** Use `--token-stdin` or the interactive prompt rather
    than `--token`, which is visible in the process list and shell history.
-4. **Never commit config files** (`~/.config/dtmgd/config`, `.dtmgd.yaml`)
+4. **Never commit config files** (the global `dtmgd/config`, `.dtmgd.yaml`)
    that contain tokens.
 5. **Config discovery.** dtmgd uses a `.dtmgd.yaml` found in the working
    directory or any parent directory. A file found in a *parent* directory

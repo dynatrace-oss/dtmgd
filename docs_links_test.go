@@ -69,7 +69,11 @@ func headingSlugs(md string) map[string]bool {
 // checkMarkdownLinks reports each relative link in files (paths relative to
 // root) whose target does not exist, or whose #anchor names no heading of
 // the target, as "file: target". Links in code blocks and code spans, and
-// http(s) and mailto links, are not checked.
+// http(s) and mailto links, are not checked. Neither are forms this
+// repository does not use: reference-style links ([text][ref]), titles in
+// single quotes or parentheses, and HTML <a href>. A heading that contains a
+// link or emphasis gets its slug from the raw text, which differs from
+// GitHub's.
 func checkMarkdownLinks(root string, files []string) []string {
 	var broken []string
 	for _, file := range files {
