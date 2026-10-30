@@ -23,7 +23,7 @@ type SLOListItem struct {
 	TargetPct    string `table:"TARGET%"`
 	WarningPct   string `table:"WARNING%,wide"`
 	Enabled      string `table:"ENABLED,wide"`
-	Description  string `table:"DESCRIPTION,wide"`
+	Description  string `table:"DESCRIPTION,wide,max=60"`
 }
 
 // SLOsResponse models /api/v2/slo.
@@ -222,7 +222,7 @@ func sloRows(body interface{}) (interface{}, int, error) {
 			TargetPct:    fmt.Sprintf("%.2f%%", s.TargetSuccess),
 			WarningPct:   warningPct,
 			Enabled:      enabled,
-			Description:  truncate(s.Description, 60),
+			Description:  s.Description,
 		})
 	}
 	return items, len(items), nil

@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -64,18 +65,23 @@ func TestCSVPrinterRefusesValuesWithoutColumns(t *testing.T) {
 }
 
 // Log content and entity names can carry text an attacker chose; a
-// spreadsheet would run a cell starting with = + @ (or - followed by a
-// formula) as a formula. Plain negative numbers and negative problem IDs are
-// data, and stay as they are.
+// spreadsheet would run a cell starting with = + @ tab or CR, or a - that is
+// not a plain number, as a formula. Plain negative numbers stay numbers.
 func TestCSVCellsThatLookLikeFormulasAreDefused(t *testing.T) {
 	cases := map[string]string{
-		"=1+1":                                 "'=1+1",
-		"+cmd":                                 "'+cmd",
-		"@SUM(A1)":                             "'@SUM(A1)",
-		"-2+3+cmd|' /C calc'!A0":               "'-2+3+cmd|' /C calc'!A0",
-		"\t=x":                                 "'\t=x",
-		"-1.5":                                 "-1.5",
-		"-6546711275898328738_1776193140000V2": "-6546711275898328738_1776193140000V2",
+		"=1+1":                   "'=1+1",
+		"+cmd":                   "'+cmd",
+		"@SUM(A1)":               "'@SUM(A1)",
+		"-2+3+cmd|' /C calc'!A0": "'-2+3+cmd|' /C calc'!A0",
+		"\t=x":                   "'\t=x",
+		"\r=x":                   "'\r=x",
+		"-A1":                    "'-A1",
+		"-1.5":                   "-1.5",
+		"-42":                    "-42",
+		"-1e3":                   "-1e3",
+		// Not a number, so a spreadsheet would read a formula (#NAME?); as
+		// text it shows as the ID.
+		"-6546711275898328738_1776193140000V2": "'-6546711275898328738_1776193140000V2",
 		"plain":                                "plain",
 		"":                                     "",
 	}
@@ -83,5 +89,44 @@ func TestCSVCellsThatLookLikeFormulasAreDefused(t *testing.T) {
 		if got := csvSafe(in); got != want {
 			t.Errorf("csvSafe(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// In a locale whose list separator is ";" (German, French…), a spreadsheet
+// splits an unquoted cell at ";", and the part after it could start with =.
+func TestCSVQuotesSemicolons(t *testing.T) {
+	got, err := printCSV(t, ',', []string{"name"}, []csvItem{{Name: "x;=cmd"}})
+	if want := "NAME\n\"x;=cmd\"\n"; err != nil || got != want {
+		t.Errorf("got %q, %v; want %q", got, err, want)
+	}
+}
+
+func TestCSVTablePlaceholdersAreEmpty(t *testing.T) {
+	got, err := printCSV(t, ',', []string{"id", "name"}, []csvItem{{ID: "—", Name: "-"}})
+	if want := "ID,NAME\n,\n"; err != nil || got != want {
+		t.Errorf("got %q, %v; want %q", got, err, want)
+	}
+}
+
+func TestCSVUnknownColumnsAreNamed(t *testing.T) {
+	_, err := printCSV(t, ',', []string{"NOPE"}, []csvItem{{ID: "a"}})
+	if err == nil || !strings.Contains(err.Error(), "NOPE") || !strings.Contains(err.Error(), "ID, NAME, NOTE, COUNT") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// max=N shortens a column to N runes, on one line, in tables only: csv keeps
+// the full text.
+func TestMaxTagShortensTablesOnly(t *testing.T) {
+	type item struct {
+		Desc string `table:"DESC,max=8"`
+	}
+	v := []item{{Desc: "a long\ndescription"}}
+	var table bytes.Buffer
+	if err := (&TablePrinter{w: &table}).PrintList(v); err != nil || !strings.Contains(table.String(), "a long …") {
+		t.Errorf("table: %v\n%s", err, table.String())
+	}
+	if got, err := printCSV(t, ',', nil, v); err != nil || got != "DESC\n\"a long\ndescription\"\n" {
+		t.Errorf("csv: %q, %v", got, err)
 	}
 }

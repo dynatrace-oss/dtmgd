@@ -29,9 +29,9 @@ type fetched struct {
 	// every other format prints each to stderr after the result.
 	Warnings []string
 
-	// Count is the number of items in Body, for a result that has no table
-	// Rows to count them (query logs); 0 when unknown. Set by listFetched
-	// and logsFetched.
+	// Count is the number of items in Body, for results whose count the
+	// runner does not get from Rows (such as query logs, whose tables are
+	// printed by Human); 0 when unknown. Set by listFetched and logsFetched.
 	Count int
 
 	// UIBase is the environment's Dynatrace UI base URL, {host}/e/{env-id},
@@ -51,10 +51,11 @@ type fetchSpec struct {
 
 	// Rows turns one environment's Body into table rows ([]T of a struct with
 	// table tags) and their count. With neither Rows nor Human, table mode
-	// prints the Body as YAML.
+	// prints the Body as YAML. csv and tsv need Rows (checkDelimited).
 	Rows func(body interface{}) (rows interface{}, n int, err error)
 
-	// Human renders one environment's Body for a person, overriding Rows.
+	// Human renders one environment's Body for a person, overriding Rows in
+	// table output; csv and tsv always use Rows.
 	Human func(w io.Writer, body interface{}) error
 
 	// Link builds the Dynatrace UI link for one environment's Body from its
@@ -227,6 +228,9 @@ func (a *App) renderMultiDelimited(s fetchSpec, results []client.EnvResult, part
 		}
 		if rows != nil {
 			names, lists = append(names, r.Name), append(lists, rows)
+		}
+		if f.HasMore {
+			output.PrintInfo("%s: %s. Use --limit or narrower filters.", r.Name, truncationNote(s, f))
 		}
 		printWarnings(r.Name+": ", f)
 	}
@@ -419,8 +423,9 @@ func shownCount(s fetchSpec, f fetched) (int, bool) {
 	return f.Count, f.Count > 0
 }
 
-// humanOutput reports whether results go to a person: table or wide output,
-// not agent mode. Fetches use it to skip work only a table needs.
+// humanOutput reports whether results go to rows a person reads: table,
+// wide, csv or tsv output, not agent mode. Fetches use it to skip work only
+// those need (such as name lookups for a column).
 func (a *App) humanOutput() bool {
 	if a.agentMode() {
 		return false

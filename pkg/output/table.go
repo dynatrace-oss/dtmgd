@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/olekukonko/tablewriter"
@@ -12,7 +13,9 @@ import (
 )
 
 // TablePrinter formats data as a terminal table using struct field tags.
-// Tag format: `table:"HEADER"` or `table:"HEADER,wide"` (only shown with --output wide).
+// Tag format: `table:"HEADER"`, plus options after commas: "wide" (only
+// shown with --output wide) and "max=N" (shortened to N runes on one line, in
+// tables only).
 type TablePrinter struct {
 	w       io.Writer
 	wide    bool
@@ -52,7 +55,7 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 		return p.printYAML(v)
 	}
 
-	headers, fieldIdx := p.tableColumns(elemType)
+	headers, fieldIdx, maxes := p.tableColumns(elemType)
 	if len(headers) == 0 {
 		return p.printYAML(v)
 	}
@@ -85,8 +88,8 @@ func (p *TablePrinter) PrintList(v interface{}) error {
 			rv = rv.Elem()
 		}
 		var cells []string
-		for _, idx := range fieldIdx {
-			cells = append(cells, fmt.Sprintf("%v", rv.Field(idx).Interface()))
+		for i, idx := range fieldIdx {
+			cells = append(cells, shorten(fmt.Sprintf("%v", rv.Field(idx).Interface()), maxes[i]))
 		}
 		if err := tbl.Append(cells); err != nil {
 			return err
@@ -113,30 +116,46 @@ func tableRows(v interface{}) []reflect.Value {
 	return rows
 }
 
-// tableColumns returns the headers and field indices of the columns to show
-// for struct type t, in field order: every field with a table tag except
-// wide ones (unless wide output or --columns asks for them), and only the
-// --columns ones when that is set.
-func (p *TablePrinter) tableColumns(t reflect.Type) (headers []string, fieldIdx []int) {
+// tableColumns returns the headers, field indices and max=N lengths (0 for
+// none) of the columns to show for struct type t, in field order: every
+// field with a table tag except wide ones (unless wide output or --columns
+// asks for them), and only the --columns ones when that is set.
+func (p *TablePrinter) tableColumns(t reflect.Type) (headers []string, fieldIdx, maxes []int) {
 	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		tag := f.Tag.Get("table")
+		tag := t.Field(i).Tag.Get("table")
 		if tag == "" || tag == "-" {
 			continue
 		}
 		parts := strings.Split(tag, ",")
-		header := parts[0]
-		isWide := len(parts) > 1 && strings.ToLower(parts[1]) == "wide"
-		if isWide && !p.wide && !p.columnRequested(header) {
-			continue
+		header, isWide, maxLen := parts[0], false, 0
+		for _, opt := range parts[1:] {
+			if strings.EqualFold(opt, "wide") {
+				isWide = true
+			} else if n, ok := strings.CutPrefix(opt, "max="); ok {
+				maxLen, _ = strconv.Atoi(n)
+			}
 		}
-		if len(p.columns) > 0 && !p.columnRequested(header) {
+		if (isWide && !p.wide && !p.columnRequested(header)) || (len(p.columns) > 0 && !p.columnRequested(header)) {
 			continue
 		}
 		headers = append(headers, header)
 		fieldIdx = append(fieldIdx, i)
+		maxes = append(maxes, maxLen)
 	}
-	return headers, fieldIdx
+	return headers, fieldIdx, maxes
+}
+
+// shorten puts s on one line and cuts it to maxLen runes, ending in "…"
+// when cut; maxLen 0 keeps s as it is.
+func shorten(s string, maxLen int) string {
+	if maxLen <= 0 {
+		return s
+	}
+	s = strings.ReplaceAll(s, "\n", " ")
+	if r := []rune(s); len(r) > maxLen {
+		return string(r[:maxLen-1]) + "…"
+	}
+	return s
 }
 
 // printYAML renders v as YAML, the fallback for values without table columns.

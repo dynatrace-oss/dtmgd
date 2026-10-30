@@ -77,3 +77,32 @@ func TestAgentModeKeepsTheEnvelopeForCSV(t *testing.T) {
 		t.Errorf("exit %d, stdout:\n%s", r.Code, r.Stdout)
 	}
 }
+
+func TestMultiEnvironmentCSVKeepsTheTruncationNote(t *testing.T) {
+	a := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_small.json"}})
+	b := newFakeAPI(t, map[string]route{problemsPath: {File: "problems_small.json"}})
+	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "problems", "--env", "a;b", "-o", "csv", "--limit", "1")
+	if r.Code != 0 || !strings.Contains(r.Stderr, "a: Showing 1") || !strings.Contains(r.Stderr, "b: Showing 1") {
+		t.Errorf("exit %d, stderr:\n%s", r.Code, r.Stderr)
+	}
+}
+
+func TestCSVOfAValueWithoutColumnsIsAUsageError(t *testing.T) {
+	cfg := withFakeEnvs(t, fakeEnv{"a", newFakeAPI(t, nil)})
+	if r := runCLI(t, cfg, "config", "view", "-o", "csv"); r.Code != 2 {
+		t.Errorf("exit %d, want 2\nstderr: %s", r.Code, r.Stderr)
+	}
+}
+
+func TestQueryLogCountsCSV(t *testing.T) {
+	api, _ := logCountsAPI(t, logCountEntitiesBody, map[string]string{"INFO": logAggregateBody})
+	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "query", "log-counts", "--entity", `type(SERVICE),tag("team:shop")`, "--max-services", "2", "-o", "csv")
+	lines := strings.Split(strings.TrimRight(r.Stdout, "\n"), "\n")
+	if r.Code != 0 || lines[0] != "SERVICE,INFO,WARN,ERROR,TOTAL" || len(lines) < 2 {
+		t.Errorf("exit %d, stdout:\n%s\nstderr: %s", r.Code, r.Stdout, r.Stderr)
+	}
+	// The table's "-" (unknown count) is an empty cell.
+	if strings.Contains(r.Stdout, ",-") || strings.Contains(r.Stdout, "'-") {
+		t.Errorf("csv has the table placeholder:\n%s", r.Stdout)
+	}
+}

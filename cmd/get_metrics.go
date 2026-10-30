@@ -13,7 +13,7 @@ type MetricListItem struct {
 	MetricID    string `table:"METRIC-ID"`
 	DisplayName string `table:"DISPLAY-NAME"`
 	Unit        string `table:"UNIT"`
-	Description string `table:"DESCRIPTION,wide"`
+	Description string `table:"DESCRIPTION,wide,max=80"`
 }
 
 // MetricsDescriptorResponse models /api/v2/metrics.
@@ -92,7 +92,7 @@ func metricRows(body interface{}) (interface{}, int, error) {
 			MetricID:    m.MetricID,
 			DisplayName: m.DisplayName,
 			Unit:        m.Unit,
-			Description: truncate(m.Description, 80),
+			Description: m.Description,
 		})
 	}
 	return items, len(items), nil

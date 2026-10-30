@@ -112,6 +112,10 @@ Examples:
 				Verb:     "query",
 				Resource: "log-counts",
 				Fetch:    a.logCountsFetch(pgSelector, from, to, maxGroupValues),
+				Rows: func(body interface{}) (interface{}, int, error) { // csv and tsv
+					rows := logCountRows(body.(LogCounts))
+					return rows, len(rows), nil
+				},
 				Human: func(w io.Writer, body interface{}) error {
 					output.PrintInfo("Log counts for entity selector: %s", opts.entity)
 					output.PrintInfo("Time range: %s → %s", from, to)
@@ -291,6 +295,18 @@ func (a *App) printLogCounts(w io.Writer, counts LogCounts, maxGroupValues int) 
 		output.PrintInfo("No entities found for the specified entity selector.")
 		return nil
 	}
+	if err := output.NewPrinterToWithColumns(string(a.format()), w, a.columns()).PrintList(logCountRows(counts)); err != nil {
+		return err
+	}
+	for _, level := range unknownLevels(counts) {
+		output.PrintInfo(`Some process groups are outside the top %d for %s; their counts are shown as "-".`, maxGroupValues, level)
+	}
+	return nil
+}
+
+// logCountRows is a row per process group, with "-" for a count outside the
+// aggregation's top-N window (an empty cell in csv and tsv).
+func logCountRows(counts LogCounts) []LogCountRow {
 	cell := func(n *int64) string {
 		if n == nil {
 			return "-"
@@ -307,13 +323,7 @@ func (a *App) printLogCounts(w io.Writer, counts LogCounts, maxGroupValues int) 
 			Total:   cell(lc.Total),
 		})
 	}
-	if err := output.NewPrinterToWithColumns(string(a.format()), w, a.columns()).PrintList(rows); err != nil {
-		return err
-	}
-	for _, level := range unknownLevels(counts) {
-		output.PrintInfo(`Some process groups are outside the top %d for %s; their counts are shown as "-".`, maxGroupValues, level)
-	}
-	return nil
+	return rows
 }
 
 // unknownLevels lists, in logLevels order, the levels at which some process

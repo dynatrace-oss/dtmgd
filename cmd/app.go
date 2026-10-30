@@ -122,7 +122,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 	f.BoolVar(&a.Opts.NoAgent, "no-agent", false, "disable auto-detected agent mode")
 	f.BoolVar(&a.Opts.Plain, "plain", false, "plain output: no symbols or screen control (automatic when stdout is not a terminal or NO_COLOR is set)")
 	f.IntVar(&a.Opts.MaxPages, "max-pages", 0, "maximum number of pages to fetch (0 = all pages)")
-	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table output")
+	f.StringVar(&a.Opts.Columns, "columns", "", "comma-separated list of columns to show in table, csv and tsv output")
 	f.IntVar(&a.Opts.Concurrency, "concurrency", client.DefaultConcurrency,
 		"maximum environments queried at once with --env")
 

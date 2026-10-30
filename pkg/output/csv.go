@@ -1,21 +1,27 @@
 package output
 
 import (
-	"encoding/csv"
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"reflect"
 	"regexp"
+	"strings"
 )
 
 // ErrNotTabular is what a CSVPrinter returns for a value without table
 // columns: a map, a scalar, or a slice of either.
 var ErrNotTabular = errors.New("this output has no table columns for csv or tsv; use -o json or -o yaml")
 
+// ErrUnknownColumns is what a CSVPrinter returns when no column matches
+// --columns; the message lists the columns there are.
+var ErrUnknownColumns = errors.New("unknown column")
+
 // CSVPrinter writes table rows as comma- (csv) or tab-separated (tsv)
 // values with a header line, using the same struct tags as TablePrinter.
-// Every tagged column is written, wide ones included; --columns narrows them.
+// Every tagged column is written, wide ones included and never shortened;
+// --columns narrows them. Fields are quoted as in RFC 4180, for tsv too.
 type CSVPrinter struct {
 	w       io.Writer
 	comma   rune
@@ -31,15 +37,10 @@ func (p *CSVPrinter) PrintList(v interface{}) error {
 	if err != nil {
 		return err
 	}
-	w := p.writer()
-	if err := w.Write(headers); err != nil {
-		return err
-	}
-	if err := p.writeRows(w, "", v, fieldIdx); err != nil {
-		return err
-	}
-	w.Flush()
-	return w.Error()
+	w := bufio.NewWriter(p.w)
+	p.writeRecord(w, headers)
+	p.writeRows(w, "", v, fieldIdx)
+	return w.Flush()
 }
 
 // PrintSections writes the lists of several environments as one table whose
@@ -53,23 +54,41 @@ func (p *CSVPrinter) PrintSections(names []string, lists []interface{}) error {
 	if err != nil {
 		return err
 	}
-	w := p.writer()
-	if err := w.Write(append([]string{"CONTEXT"}, headers...)); err != nil {
-		return err
-	}
+	w := bufio.NewWriter(p.w)
+	p.writeRecord(w, append([]string{"CONTEXT"}, headers...))
 	for i, list := range lists {
-		if err := p.writeRows(w, names[i], list, fieldIdx); err != nil {
-			return err
-		}
+		p.writeRows(w, names[i], list, fieldIdx)
 	}
-	w.Flush()
-	return w.Error()
+	return w.Flush()
 }
 
-func (p *CSVPrinter) writer() *csv.Writer {
-	w := csv.NewWriter(p.w)
-	w.Comma = p.comma
-	return w
+// writeRecord writes one line of fields, quoting a field that holds the
+// separator, a quote, a line break, leading or trailing space, or (in csv) a
+// semicolon: a spreadsheet whose list separator is ";" splits an unquoted
+// field there, and the part after it could start with "=".
+func (p *CSVPrinter) writeRecord(w *bufio.Writer, fields []string) {
+	for i, f := range fields {
+		if i > 0 {
+			_, _ = w.WriteRune(p.comma)
+		}
+		if p.needsQuotes(f) {
+			_, _ = w.WriteString(`"` + strings.ReplaceAll(f, `"`, `""`) + `"`)
+		} else {
+			_, _ = w.WriteString(f)
+		}
+	}
+	_ = w.WriteByte('\n')
+}
+
+func (p *CSVPrinter) needsQuotes(f string) bool {
+	if f == "" {
+		return false
+	}
+	special := string(p.comma) + "\"\r\n"
+	if p.comma == ',' {
+		special += ";"
+	}
+	return strings.ContainsAny(f, special) || f[0] == ' ' || f[len(f)-1] == ' '
 }
 
 // header returns the columns of v's row type, or ErrNotTabular.
@@ -81,7 +100,13 @@ func (p *CSVPrinter) header(v interface{}) ([]string, []int, error) {
 	if t == nil || t.Kind() != reflect.Struct {
 		return nil, nil, ErrNotTabular
 	}
-	headers, fieldIdx := (&TablePrinter{wide: true, columns: p.columns}).tableColumns(t)
+	headers, fieldIdx, _ := (&TablePrinter{wide: true, columns: p.columns}).tableColumns(t)
+	if len(headers) == 0 && len(p.columns) > 0 {
+		all, _, _ := (&TablePrinter{wide: true}).tableColumns(t)
+		if len(all) > 0 {
+			return nil, nil, fmt.Errorf("%w: --columns %s matches none of: %s", ErrUnknownColumns, strings.Join(p.columns, ","), strings.Join(all, ", "))
+		}
+	}
 	if len(headers) == 0 {
 		return nil, nil, ErrNotTabular
 	}
@@ -89,9 +114,9 @@ func (p *CSVPrinter) header(v interface{}) ([]string, []int, error) {
 }
 
 // writeRows writes one line per row of v, led by context when it is not "".
-func (p *CSVPrinter) writeRows(w *csv.Writer, context string, v interface{}, fieldIdx []int) error {
+func (p *CSVPrinter) writeRows(w *bufio.Writer, context string, v interface{}, fieldIdx []int) {
 	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.Len() == 0 {
-		return nil
+		return
 	}
 	for _, row := range tableRows(v) {
 		if row.Kind() == reflect.Pointer {
@@ -102,23 +127,30 @@ func (p *CSVPrinter) writeRows(w *csv.Writer, context string, v interface{}, fie
 			cells = append(cells, csvSafe(context))
 		}
 		for _, idx := range fieldIdx {
-			cells = append(cells, csvSafe(fmt.Sprintf("%v", row.Field(idx).Interface())))
+			cells = append(cells, csvCell(fmt.Sprintf("%v", row.Field(idx).Interface())))
 		}
-		if err := w.Write(cells); err != nil {
-			return err
-		}
+		p.writeRecord(w, cells)
 	}
-	return nil
 }
 
-// plainAfterMinus is what may follow a leading "-" in a cell that is data, not
-// a formula: a negative number or a negative problem ID.
-var plainAfterMinus = regexp.MustCompile(`^[0-9A-Za-z_.:]*$`)
+// csvCell is a table cell as a csv or tsv field: the table's placeholders
+// for "none" or "unknown" ("—", "-") become empty, and formulas are defused.
+func csvCell(s string) string {
+	if s == "—" || s == "-" {
+		return ""
+	}
+	return csvSafe(s)
+}
 
-// csvSafe defuses a cell a spreadsheet would run as a formula (CSV
+// negativeNumber is a cell starting with "-" that a spreadsheet reads as a
+// number rather than a formula.
+var negativeNumber = regexp.MustCompile(`^-[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+
+// csvSafe defuses a cell a spreadsheet would read as a formula (CSV
 // injection), by prefixing "'": one starting with = + @ tab or carriage
-// return, or with "-" followed by anything but a plain number or ID. Log
-// content and entity names can hold text an attacker chose.
+// return, or with "-" unless it is a plain number. Log content and entity
+// names can hold text an attacker chose, and a negative problem ID would
+// otherwise show as #NAME?.
 func csvSafe(s string) string {
 	if s == "" {
 		return s
@@ -127,7 +159,7 @@ func csvSafe(s string) string {
 	case '=', '+', '@', '\t', '\r':
 		return "'" + s
 	case '-':
-		if !plainAfterMinus.MatchString(s[1:]) {
+		if !negativeNumber.MatchString(s) {
 			return "'" + s
 		}
 	}

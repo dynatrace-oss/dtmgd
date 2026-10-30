@@ -31,26 +31,6 @@ func TestMsToTimeOrEmpty(t *testing.T) {
 	}
 }
 
-func TestTruncate(t *testing.T) {
-	if truncate("short", 10) != "short" {
-		t.Error("short string should not be truncated")
-	}
-	result := truncate("this is a long string", 10)
-	if len([]rune(result)) != 10 {
-		t.Errorf("expected 10 runes, got %d", len([]rune(result)))
-	}
-	if result[len(result)-3:] != "…" {
-		t.Error("should end with ellipsis")
-	}
-}
-
-func TestTruncateNewlines(t *testing.T) {
-	result := truncate("line1\nline2\nline3", 50)
-	if result != "line1 line2 line3" {
-		t.Errorf("newlines should be replaced with spaces, got '%s'", result)
-	}
-}
-
 func TestJoinSelector(t *testing.T) {
 	tests := []struct {
 		name  string

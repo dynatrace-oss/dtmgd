@@ -16,7 +16,7 @@ dtmgd describe entity-type <type> [flags]
 
 ```
   -A, --agent             force agent envelope output mode
-      --columns string    comma-separated list of columns to show in table output
+      --columns string    comma-separated list of columns to show in table, csv and tsv output
       --concurrency int   maximum environments queried at once with --env (default 10)
       --config string     config file (default: ~/.config/dtmgd/config on Linux, ~/Library/Application Support/dtmgd/config on macOS, %LOCALAPPDATA%\dtmgd\config on Windows, or $XDG_CONFIG_HOME/dtmgd/config when set)
   -c, --context string    context to use (overrides current-context)
