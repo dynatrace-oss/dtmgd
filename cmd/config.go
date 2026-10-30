@@ -212,9 +212,10 @@ func newConfigCurrentContextCmd(a *App) *cobra.Command {
 // different context.
 func newConfigUseContextCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "use-context <context-name>",
-		Short: "Switch to a different context",
-		Args:  cobra.ExactArgs(1),
+		Use:               "use-context <context-name>",
+		Short:             "Switch to a different context",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.contextCompletionFn,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.useContext(args[0])
 		},
@@ -360,10 +361,11 @@ func reportStoredCredential(name string) {
 func newConfigDeleteContextCmd(a *App) *cobra.Command {
 	var deleteCreds bool
 	cmd := &cobra.Command{
-		Use:     "delete-context <context-name>",
-		Short:   "Delete a context from the config",
-		Aliases: []string{"rm-ctx"},
-		Args:    cobra.ExactArgs(1),
+		Use:               "delete-context <context-name>",
+		Short:             "Delete a context from the config",
+		Aliases:           []string{"rm-ctx"},
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.contextCompletionFn,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.deleteContext(args[0], deleteCreds)
 		},

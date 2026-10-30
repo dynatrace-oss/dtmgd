@@ -33,6 +33,10 @@ type App struct {
 	// args are the raw arguments, for decisions that must be made even when
 	// flag parsing failed (see rawAgentMode).
 	args []string
+
+	// watchStop ends a --watch loop when it closes, as Ctrl+C does. Only
+	// tests set it; nil never fires.
+	watchStop <-chan struct{}
 }
 
 // Run executes dtmgd with args (without the program name), writing to stdout
