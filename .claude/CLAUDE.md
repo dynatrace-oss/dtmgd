@@ -247,3 +247,13 @@ your task.
 - **When it applies**: Adding a command (pick `runFetch` or `runClusterFetch`), or touching context selection
 - **Date**: 2026-10-29
 - **Ref**: Phase 4 Cluster API
+
+### Dependabot's `/tools` group can break a tool by raising its pre-release dependency
+- **Context**: The first grouped tools PR (#60) raised `go.yaml.in/yaml/v4` from `v4.0.0-rc.3` to `rc.6` along with five other modules. actionlint v1.7.12 stopped building ("undefined: yaml.ParserError"), so the `lint` job, which builds actionlint before running it, failed on `main`. #60 had been merged with its own `lint` check red.
+- **Insight**: The `/tools` entry sets `allow: dependency-type: all`, so Dependabot raises the *indirect* dependencies of the tools too, past what a tool supports. The tools module's own `require` then wins under minimum version selection. A pre-release such as `v4.0.0-rc.N` may change its API between candidates. The fix:
+  1. Find the version the tool requires: `go -C tools mod graph | grep <module>`.
+  2. Pin it with `go -C tools get <module>@<that version> && go -C tools mod tidy`.
+  3. Add an `ignore` for the module to the `/tools` Dependabot entry, with the reason. A newer tool raises the module itself once it supports the newer version.
+- **When it applies**: Reviewing a Dependabot tools PR (don't merge one whose `lint` is red: that job is the only one that builds actionlint), or when `lint` fails while building a tool
+- **Date**: 2026-10-30
+- **Ref**: #60, #63
