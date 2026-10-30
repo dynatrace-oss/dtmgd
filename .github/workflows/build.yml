@@ -1,28 +1,17 @@
 name: Build
 
+# Cross-compiles every release target with the release's own GoReleaser config,
+# on main only. PRs get goreleaser-check (lint.yml) and the tests on three OSes.
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
-          - goos: windows
-            goarch: arm64
+  snapshot:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -33,36 +22,7 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Get version info
-        id: version
-        run: |
-          VERSION=$(git describe --tags --dirty 2>/dev/null || echo "dev")
-          COMMIT=$(git rev-parse --short HEAD)
-          DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          {
-            echo "version=$VERSION"
-            echo "commit=$COMMIT"
-            echo "date=$DATE"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build
-        env:
-          CGO_ENABLED: 0
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          EXT=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
-          go build \
-            -ldflags "-s -w \
-              -X github.com/dynatrace-oss/dtmgd/pkg/version.Version=${{ steps.version.outputs.version }} \
-              -X github.com/dynatrace-oss/dtmgd/pkg/version.Commit=${{ steps.version.outputs.commit }} \
-              -X github.com/dynatrace-oss/dtmgd/pkg/version.Date=${{ steps.version.outputs.date }}" \
-            -o dtmgd-${{ matrix.goos }}-${{ matrix.goarch }}${EXT} .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
-          name: dtmgd-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dtmgd-*
-          retention-days: 30
+          version: v2.19.0 # keep in step with release.yml
+          args: build --snapshot --clean

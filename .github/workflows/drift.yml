@@ -31,6 +31,9 @@ jobs:
 
       - name: Check for drift
         id: check
+        env:
+          # Authenticates the GitHub API lookups of the pinned CI tools.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set +e
           GOVULNCHECK="$RUNNER_TEMP/govulncheck" bash scripts/drift-check.sh > report.md
