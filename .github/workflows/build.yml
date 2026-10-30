@@ -39,9 +39,11 @@ jobs:
           VERSION=$(git describe --tags --dirty 2>/dev/null || echo "dev")
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
-          echo "date=$DATE" >> $GITHUB_OUTPUT
+          {
+            echo "version=$VERSION"
+            echo "commit=$COMMIT"
+            echo "date=$DATE"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build
         env:

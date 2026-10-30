@@ -24,9 +24,18 @@ vet:
 fmt:
 	gofmt -w .
 
-lint: vet fmt
+# Keep in step with .github/workflows/sast.yml.
+GOLANGCI_LINT_VERSION := v2.15.0
+
+# Checks only; make fmt rewrites. actionlint is pinned and checksum-locked in
+# tools/go.mod and go.sum.
+lint: vet
 	@UNFORMATTED=$$(gofmt -l .); \
-	if [ -n "$$UNFORMATTED" ]; then echo "Unformatted files: $$UNFORMATTED"; exit 1; fi
+	if [ -n "$$UNFORMATTED" ]; then echo "Unformatted files (run make fmt):"; echo "$$UNFORMATTED"; exit 1; fi
+	@command -v golangci-lint >/dev/null || { echo "golangci-lint not found: install $(GOLANGCI_LINT_VERSION) (https://golangci-lint.run/docs/welcome/install/)"; exit 1; }
+	golangci-lint run
+	go -C tools build -o "$(CURDIR)/bin/actionlint" github.com/rhysd/actionlint/cmd/actionlint
+	./bin/actionlint
 
 # govulncheck is pinned and checksum-locked in tools/go.mod and go.sum.
 vulncheck:

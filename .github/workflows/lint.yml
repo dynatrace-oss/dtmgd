@@ -37,3 +37,10 @@ jobs:
 
       - name: Run go vet
         run: go vet ./...
+
+      # actionlint is pinned and checksum-locked in tools/go.mod and go.sum.
+      # The runner has shellcheck, so run: blocks are checked too.
+      - name: Lint workflows
+        run: |
+          go -C tools build -o "$RUNNER_TEMP/actionlint" github.com/rhysd/actionlint/cmd/actionlint
+          "$RUNNER_TEMP/actionlint"
