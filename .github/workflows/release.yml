@@ -37,6 +37,10 @@ jobs:
     permissions:
       contents: write
       id-token: write # cosign keyless signing
+    env:
+      # Secrets cannot appear in a step's if:, so whether the tap App's are
+      # available is decided here.
+      HAS_TAP_APP: ${{ secrets.HOMEBREW_TAP_APP_ID != '' && secrets.HOMEBREW_TAP_APP_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -52,6 +56,19 @@ jobs:
       - name: Install syft
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
 
+      # The Homebrew tap's GitHub App (the one dtctl uses), scoped to the tap.
+      # Without its secrets, HOMEBREW_TAP_GITHUB_TOKEN must have write access
+      # to dynatrace-oss/homebrew-tap itself.
+      - name: Generate Homebrew tap token
+        id: app-token
+        if: env.HAS_TAP_APP == 'true'
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.HOMEBREW_TAP_APP_ID }}
+          private-key: ${{ secrets.HOMEBREW_TAP_APP_PRIVATE_KEY }}
+          owner: dynatrace-oss
+          repositories: homebrew-tap
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
@@ -59,4 +76,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
