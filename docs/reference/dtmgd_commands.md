@@ -10,6 +10,13 @@ needs, for AI agents and scripts to discover the CLI.
 The catalog is JSON (or YAML with -o yaml) and is never wrapped in an agent
 envelope. --brief lists only the resources of get, describe and query.
 
+Examples:
+```
+  dtmgd commands             # full catalog: paths, aliases, flags, token scopes
+  dtmgd commands --brief     # the resources of get, describe and query
+  dtmgd commands -o yaml     # the catalog as YAML
+```
+
 ```
 dtmgd commands [flags]
 ```

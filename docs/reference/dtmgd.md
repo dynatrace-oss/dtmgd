@@ -21,7 +21,7 @@ API endpoints used:
 Quick start:
 ```
   dtmgd config set-context prod --host https://managed.company.com --env-id abc123 --token-ref prod-token
-  dtmgd config set-credentials prod-token --token <your-api-token>
+  dtmgd config set-credentials prod-token   # prompts for the token
   dtmgd get problems
 ```
 

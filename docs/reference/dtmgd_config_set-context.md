@@ -34,7 +34,7 @@ Examples:
     --env-id abc12345 \
     --token-ref prod-token
 
-  dtmgd config set-credentials prod-token --token <api-token>
+  dtmgd config set-credentials prod-token   # prompts for the token
 ```
 
 ```

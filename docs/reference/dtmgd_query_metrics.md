@@ -11,6 +11,7 @@ Use 'dtmgd get metrics --search <keyword>' to find available metric IDs first.
 Examples:
 ```
   dtmgd query metrics --metric builtin:service.response.time --from now-1h --to now
+  dtmgd query metrics --metric builtin:host.cpu.usage --from now-24h --resolution 1h
   dtmgd query metrics --env ALL_ENVIRONMENTS --metric builtin:host.cpu.usage --from now-1h
 ```
 

@@ -256,7 +256,7 @@ Examples:
     --env-id abc12345 \
     --token-ref prod-token
 
-  dtmgd config set-credentials prod-token --token <api-token>`,
+  dtmgd config set-credentials prod-token   # prompts for the token`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return a.setContext(args[0], opts.host, opts.envID, opts.tokenRef, opts.description)
