@@ -250,7 +250,7 @@ Read-only coverage of the four areas the architecture names. The endpoints below
    - Environment-scoped commands refuse a cluster context, and cluster commands refuse an environment context. Each error says what to use instead, naming the configured contexts of the other kind. Don't match on host (see the next point).
    - **A cluster context carries its own host.** Unauthenticated probes on 2026-10-29 showed this on both of the owner's clusters:
      - The environment contexts use node hosts on port 9999, where `/api/v1.0/onpremise/...` and `/api/cluster/v2/...` return 404.
-     - The Cluster API answers (401 without a token) on the public names `https://demo.dynatrace-managed.com` and `https://latest.managed-dev.dynalabs.io`.
+     - The Cluster API answers (401 without a token) on the clusters' public names (the addresses the Cluster Management Console uses), not on the `:9999` node hosts.
      - So today's `ClusterVersion()` probe of `{host}/api/v1.0/onpremise/cluster` always 404s on these clusters and falls back to the v1 environment endpoint.
    - `--env` fan-out does not apply to cluster commands.
 2. **One client for both API surfaces.** Cluster calls go through the same client factory, proxy, retry and error-trimming as environment calls.
@@ -310,7 +310,7 @@ Read-only coverage of the four areas the architecture names. The endpoints below
   - no release-please
   - scheduled checks open issues, not PRs
   - no new GitHub App or bot token is needed
-- **Live verification.** `~/.config/dtmgd/config` has two environment contexts: `prod` (demo.dynatrace-managed.com) and `stage` (latest.managed-dev.dynalabs.io). The owner will add cluster-scoped contexts with Cluster API tokens.
+- **Live verification.** `~/.config/dtmgd/config` has two environment contexts: `prod` and `stage`, on two of the owner's clusters. The owner will add cluster-scoped contexts with Cluster API tokens.
   - Verification uses read-only calls only.
   - Never print or log token values. When inspecting the config, filter out the `token:` lines.
 

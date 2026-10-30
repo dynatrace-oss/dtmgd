@@ -57,12 +57,15 @@ irm https://raw.githubusercontent.com/dynatrace-oss/dtmgd/main/install.ps1 | iex
 ```
 
 The scripts check the archive against the release's `checksums.txt` before
-installing, and leave an installed dtmgd as it was if anything fails. They
-read these environment variables:
+installing, and leave an installed dtmgd as it was if anything fails. That
+catches a corrupted or incomplete download; it cannot catch a compromised
+release, because `checksums.txt` comes from the same place. For that, verify
+the signature (see [Verifying a download](#verifying-a-download)). The
+scripts read these environment variables:
 
 | Variable | Meaning |
 |---|---|
-| `DTMGD_VERSION` | Version to install, e.g. `0.3.1` (default: the latest release) |
+| `DTMGD_VERSION` | Version to install, e.g. `0.3.1` (default: the latest release; required with `DTMGD_DOWNLOAD_BASE`) |
 | `DTMGD_INSTALL_DIR` | Install directory |
 | `DTMGD_DOWNLOAD_BASE` | A mirror of the release downloads, laid out as `<base>/v<version>/<asset>`, for hosts that cannot reach GitHub |
 | `DTMGD_NO_MODIFY_PATH` | `1` keeps `install.ps1` from changing your user PATH |

@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -339,4 +340,180 @@ func TestInstallPs1RefusesAChecksumMismatch(t *testing.T) {
 		t.Errorf("output does not mention the checksum:\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
 	}
 	assertNotInstalled(t, filepath.Join(dir, "dtmgd.exe"))
+}
+
+// withoutEnv returns env without the named variables.
+func withoutEnv(env []string, names ...string) []string {
+	var out []string
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		if !slices.Contains(names, k) {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+func TestInstallShKeepsGitHubTokenOutOfTheProcessList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install.sh is for Linux and macOS")
+	}
+	realCurl, err := exec.LookPath("curl")
+	if err != nil {
+		t.Skip("curl not found")
+	}
+	// A curl that logs its arguments (what ps would show) and its stdin,
+	// answers the GitHub API itself, and sends GitHub release downloads to the
+	// fake release.
+	fake := t.TempDir()
+	logs := t.TempDir()
+	base := fakeRelease(t, testVersion, releaseOpts{})
+	script := fmt.Sprintf(`#!/bin/sh
+printf '%%s\n' "$*" >> %[1]s/argv
+case "$*" in
+*api.github.com*) cat >> %[1]s/stdin; printf '{"tag_name": "v%[2]s"}\n' ;;
+*)
+	n=$#
+	for a; do
+		case $a in https://github.com/dynatrace-oss/dtmgd/releases/download/*)
+			a=%[4]s${a#https://github.com/dynatrace-oss/dtmgd/releases/download} ;;
+		esac
+		set -- "$@" "$a"
+	done
+	shift "$n"
+	exec %[3]s "$@" ;;
+esac
+`, logs, testVersion, realCurl, base)
+	if err := os.WriteFile(filepath.Join(fake, "curl"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const token = "ghp_not-a-real-token-0123456789"
+	dir := t.TempDir()
+	env := withoutEnv(installEnv(t, base, "", dir), "DTMGD_VERSION", "DTMGD_DOWNLOAD_BASE", "PATH")
+	env = append(env, "PATH="+fake+string(os.PathListSeparator)+os.Getenv("PATH"), "GITHUB_TOKEN="+token)
+	stdout, stderr, code := runScript(t, env, "sh", "install.sh")
+	argv, _ := os.ReadFile(filepath.Join(logs, "argv"))
+	stdin, _ := os.ReadFile(filepath.Join(logs, "stdin"))
+	if strings.Contains(string(argv), token) {
+		t.Errorf("the token is on curl's command line:\n%s", argv)
+	}
+	if !strings.Contains(string(stdin), "Authorization: Bearer "+token) {
+		t.Errorf("the API request did not carry the token; curl's stdin:\n%s", stdin)
+	}
+	if code != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+}
+
+func TestInstallShRequiresAVersionWithAMirror(t *testing.T) {
+	dir := t.TempDir()
+	base := fakeRelease(t, testVersion, releaseOpts{})
+	if runtime.GOOS == "windows" {
+		t.Skip("install.sh is for Linux and macOS")
+	}
+	env := withoutEnv(installEnv(t, base, "", dir), "DTMGD_VERSION")
+	_, stderr, code := runScript(t, env, "sh", "install.sh")
+	if code == 0 || !strings.Contains(stderr, "DTMGD_VERSION") {
+		t.Errorf("exit %d; stderr does not ask for DTMGD_VERSION:\n%s", code, stderr)
+	}
+	assertNotInstalled(t, filepath.Join(dir, "dtmgd"))
+}
+
+func TestInstallShHintsTheQuickStartSetup(t *testing.T) {
+	dir := t.TempDir()
+	base := fakeRelease(t, testVersion, releaseOpts{})
+	stdout, stderr, code := runInstallSh(t, base, testVersion, dir)
+	if code != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", code, stderr)
+	}
+	// Without --token-ref, set-credentials stores a token no context uses,
+	// and the doctor the hint suggests fails.
+	for _, want := range []string{"--token-ref <name>-token", "dtmgd config set-credentials <name>-token", "dtmgd doctor"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("the closing hint lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestInstallShRefusesToReplaceASymlink(t *testing.T) {
+	dir := t.TempDir()
+	// Homebrew links its dtmgd into /usr/local/bin; replacing the link with a
+	// file would break brew upgrade.
+	target := filepath.Join(t.TempDir(), "dtmgd")
+	writeOldBinary(t, target)
+	link := filepath.Join(dir, "dtmgd")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	base := fakeRelease(t, testVersion, releaseOpts{})
+	_, stderr, code := runInstallSh(t, base, testVersion, dir)
+	if code == 0 || !strings.Contains(stderr, "symlink") {
+		t.Errorf("exit %d; stderr does not explain the symlink:\n%s", code, stderr)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the symlink was replaced: %v", err)
+	}
+}
+
+func TestInstallShWarnsWhenAnotherDtmgdComesFirst(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("install.sh is for Linux and macOS")
+	}
+	other := t.TempDir()
+	writeOldBinary(t, filepath.Join(other, "dtmgd"))
+	dir := t.TempDir()
+	base := fakeRelease(t, testVersion, releaseOpts{})
+	env := withoutEnv(installEnv(t, base, testVersion, dir), "PATH")
+	env = append(env, "PATH="+other+string(os.PathListSeparator)+dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	stdout, stderr, code := runScript(t, env, "sh", "install.sh")
+	if code != 0 {
+		t.Fatalf("exit %d\nstderr:\n%s", code, stderr)
+	}
+	if !strings.Contains(stdout+stderr, filepath.Join(other, "dtmgd")) {
+		t.Errorf("no warning names the dtmgd that comes first on PATH:\nstdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+}
+
+func TestInstallPs1FailsWhenTheAssetIsMissing(t *testing.T) {
+	dir := t.TempDir()
+	base := fakeRelease(t, testVersion, releaseOpts{})
+	stdout, stderr, code := runInstallPs1(t, base, "0.0.0-missing", dir)
+	if code == 0 || !strings.Contains(stdout+stderr, "Error:") {
+		t.Errorf("exit %d; no Error: line:\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	assertNotInstalled(t, filepath.Join(dir, "dtmgd.exe"))
+}
+
+func TestInstallPs1KeepsTheOldBinaryWhenTheArchiveIsTruncated(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "dtmgd.exe")
+	writeOldBinary(t, exe)
+	base := fakeRelease(t, testVersion, releaseOpts{beforeChecksum: func(b []byte) []byte { return b[:len(b)/2] }})
+	stdout, stderr, code := runInstallPs1(t, base, testVersion, dir)
+	if code == 0 || !strings.Contains(stdout+stderr, "Error: could not extract") {
+		t.Errorf("exit %d; no extraction error:\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if got, err := os.ReadFile(exe); err != nil || string(got) != "old" {
+		t.Errorf("the old binary was replaced or removed: %q, %v", got, err)
+	}
+}
+
+func TestInstallPs1LeavesTheCallersSessionAlone(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("install.ps1 is for Windows")
+	}
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh not found")
+	}
+	// "irm … | iex" runs the script in the caller's scope.
+	dir := t.TempDir()
+	base := fakeRelease(t, testVersion, releaseOpts{})
+	stdout, stderr, code := runScript(t, installEnv(t, base, testVersion, dir), "pwsh", "-NoProfile", "-NonInteractive", "-Command",
+		`Invoke-Expression (Get-Content -Raw install.ps1); "EAP=$ErrorActionPreference PP=$ProgressPreference"`)
+	if code != 0 {
+		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "EAP=Continue PP=Continue") {
+		t.Errorf("the script changed the caller's preferences:\n%s", stdout)
+	}
 }

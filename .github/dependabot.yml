@@ -9,6 +9,7 @@ updates:
     open-pull-requests-limit: 5
     groups:
       go-modules:
+        patterns: ["*"]
         update-types: [minor, patch]
 
   # CI tooling (govulncheck, actionlint), pinned in its own module. Tool modules

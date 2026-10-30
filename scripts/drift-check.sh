@@ -84,12 +84,13 @@ latest_release() { # $1 = owner/repo; prints the latest release tag
 	if [[ -n ${GITHUB_TOKEN:-} ]]; then auth=(-H "Authorization: Bearer $GITHUB_TOKEN"); fi
 	curl -fsS --max-time 30 "${auth[@]}" "https://api.github.com/repos/$1/releases/latest" | jq -r '.tag_name // empty'
 }
-# check_pins TOOL OWNER/REPO PIN... where each PIN is "file: version".
+# check_pins TOOL OWNER/REPO EXPECTED PIN... where each PIN is "file: version"
+# and EXPECTED is how many pins there must be (one per use of the tool).
 check_pins() {
-	local tool=$1 repo=$2 latest versions
-	shift 2
-	if (($# == 0)); then
-		echo "Could not check $tool: no pinned version found."
+	local tool=$1 repo=$2 expected=$3 latest versions
+	shift 3
+	if (($# != expected)); then
+		echo "Could not check $tool: found $# pinned versions for $expected uses; is a '# keep in step with' comment missing?"
 		raise 2
 		return
 	fi
@@ -118,9 +119,12 @@ mapfile -t golangci_pins < <(
 mapfile -t goreleaser_pins < <(
 	grep -HoE 'version: v[0-9.]+ # keep in step with [a-z. ]+\.yml' .github/workflows/{release,lint,build}.yml | sed -E 's/ # .*//; s/:version: /: /' || true
 )
-check_pins golangci-lint golangci/golangci-lint "${golangci_pins[@]}"
+# One pin per action use, plus the Makefile's GOLANGCI_LINT_VERSION.
+golangci_uses=$(cat .github/workflows/*.yml | grep -c 'uses: golangci/golangci-lint-action@' || true)
+goreleaser_uses=$(cat .github/workflows/*.yml | grep -c 'uses: goreleaser/goreleaser-action@' || true)
+check_pins golangci-lint golangci/golangci-lint "$((golangci_uses + 1))" "${golangci_pins[@]}"
 echo
-check_pins GoReleaser goreleaser/goreleaser "${goreleaser_pins[@]}"
+check_pins GoReleaser goreleaser/goreleaser "$goreleaser_uses" "${goreleaser_pins[@]}"
 
 # --- Known vulnerabilities in code dtmgd calls ---
 echo

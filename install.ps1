@@ -4,11 +4,15 @@
 .DESCRIPTION
     Downloads a dtmgd release from GitHub, checks the archive against the
     release's checksums.txt, and installs dtmgd.exe to %LOCALAPPDATA%\dtmgd,
-    adding that directory to the user PATH. A failed or tampered download
-    leaves an installed dtmgd as it was.
+    adding that directory to the user PATH. A failed, corrupted or incomplete
+    download leaves an installed dtmgd as it was. checksums.txt comes from the
+    same place as the archive, so this does not detect a compromised release
+    or mirror: for that, verify the cosign signature (README, "Verifying a
+    download").
 
     Environment variables:
-      DTMGD_VERSION         Version to install, e.g. 0.3.1 or v0.3.1 (default: the latest release)
+      DTMGD_VERSION         Version to install, e.g. 0.3.1 or v0.3.1 (default: the latest release;
+                            required with DTMGD_DOWNLOAD_BASE)
       DTMGD_INSTALL_DIR     Install directory (default: %LOCALAPPDATA%\dtmgd)
       DTMGD_DOWNLOAD_BASE   Mirror of the release downloads, laid out as <base>/v<version>/<asset>
                             (default: https://github.com/dynatrace-oss/dtmgd/releases/download)
@@ -18,6 +22,9 @@
     irm https://raw.githubusercontent.com/dynatrace-oss/dtmgd/main/install.ps1 | iex
 #>
 
+# The script block keeps every setting and variable below out of the caller's
+# session: "irm | iex" runs a script in the caller's scope.
+& {
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue' # Invoke-WebRequest is much slower with a progress bar
 
@@ -50,11 +57,18 @@ $arch = switch ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitect
 
 if ($env:DTMGD_VERSION) {
     $version = $env:DTMGD_VERSION.TrimStart('v')
+} elseif ($env:DTMGD_DOWNLOAD_BASE) {
+    Fail 'set DTMGD_VERSION with DTMGD_DOWNLOAD_BASE: the latest release is looked up on api.github.com, not on the mirror'
 } else {
     Write-Host 'Finding the latest release...'
+    $api = "https://api.github.com/repos/$repo/releases/latest"
     $headers = @{}
     if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers
+    try {
+        $release = Invoke-RestMethod -Uri $api -Headers $headers
+    } catch {
+        Fail "could not query ${api}: $($_.Exception.Message)"
+    }
     if (-not $release.tag_name) { Fail 'could not find the latest release' }
     $version = $release.tag_name.TrimStart('v')
 }
@@ -86,7 +100,11 @@ try {
     if ($actual -ne $expected) { Fail "checksum mismatch for ${asset}: expected $expected, got $actual" }
 
     $extractDir = Join-Path $tempDir 'x'
-    Expand-Archive -Path (Join-Path $tempDir $asset) -DestinationPath $extractDir -Force
+    try {
+        Expand-Archive -Path (Join-Path $tempDir $asset) -DestinationPath $extractDir -Force | Out-Null
+    } catch {
+        Fail "could not extract dtmgd.exe from ${asset}: $($_.Exception.Message)"
+    }
     $exe = Join-Path $extractDir 'dtmgd.exe'
     if (-not (Test-Path $exe)) { Fail "$asset has no dtmgd.exe" }
 
@@ -123,7 +141,8 @@ Write-Host ''
 & $target version
 Write-Host "Installed to $target"
 Write-Host ''
-Write-Host "Next: create a context and check it (see https://github.com/$repo#quick-start):"
-Write-Host '  dtmgd ctx set <name> --host https://cluster.example.com --env-id <environment-id>'
-Write-Host '  dtmgd config set-credentials <name>'
+Write-Host "Next: create a context, store its token, and check it (see https://github.com/$repo#quick-start):"
+Write-Host '  dtmgd config set-context <name> --host https://cluster.example.com --env-id <environment-id> --token-ref <name>-token'
+Write-Host '  dtmgd config set-credentials <name>-token'
 Write-Host '  dtmgd doctor'
+}
