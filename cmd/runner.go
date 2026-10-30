@@ -219,6 +219,9 @@ func (a *App) renderMultiDelimited(s fetchSpec, results []client.EnvResult, part
 	for _, r := range results {
 		if r.Error != nil {
 			output.PrintHumanError("%s: %v", r.Name, r.Error)
+			if h := explicitHint(r.Error); h != "" {
+				output.PrintHint("%s", h)
+			}
 			continue
 		}
 		f := r.Data.(fetched)

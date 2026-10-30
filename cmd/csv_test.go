@@ -106,3 +106,12 @@ func TestQueryLogCountsCSV(t *testing.T) {
 		t.Errorf("csv has the table placeholder:\n%s", r.Stdout)
 	}
 }
+
+func TestMultiEnvironmentCSVKeepsAFailureHint(t *testing.T) {
+	a := newFakeAPI(t, map[string]route{apiV2 + "/entities": {Body: `{"totalCount":0,"entities":[]}`}})
+	b := newFakeAPI(t, map[string]route{apiV2 + "/entities": {Status: 400, Body: `{"error":{"code":400,"message":"Constraints violated."}}`}})
+	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "entities", "--selector", "type(HOST)", "--mz", "Prod", "--env", "a;b", "-o", "csv")
+	if r.Code == 0 || !strings.Contains(r.Stderr, "case-sensitive") {
+		t.Errorf("exit %d, stderr:\n%s", r.Code, r.Stderr)
+	}
+}
