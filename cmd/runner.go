@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
@@ -115,6 +117,20 @@ func (a *App) runFetch(s fetchSpec) error {
 	return a.renderMulti(s, results)
 }
 
+// hintOnBadRequest gives fetch's HTTP 400 errors hint. The API answers a
+// filter value it does not know with a bare "Constraints violated.", and
+// apiErrorMessage drops its constraintViolations detail.
+func hintOnBadRequest(fetch func(*client.Client, int) (fetched, error), hint string) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, limit int) (fetched, error) {
+		f, err := fetch(c, limit)
+		var apiErr *client.ErrAPI
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest {
+			return f, withHint(err, hint)
+		}
+		return f, err
+	}
+}
+
 // fetchFrom is the per-environment call runFetch gives client.MultiRequest:
 // Fetch with the effective limit, and on success the UI base URL of the
 // environment that answered, so each environment's result links to its own
@@ -205,9 +221,13 @@ func mergeResults(results []client.EnvResult) (map[string]interface{}, error) {
 // context name (envLinks).
 func (a *App) renderMultiAgent(s fetchSpec, results []client.EnvResult, merged map[string]interface{}, partial error) error {
 	ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, Links: envLinks(s, results)}
+	hint := ""
 	for _, r := range results {
 		if r.Error != nil {
 			ctx.Warnings = append(ctx.Warnings, fmt.Sprintf("%s: %v", r.Name, r.Error))
+			if hint == "" {
+				hint = explicitHint(r.Error)
+			}
 			continue
 		}
 		f := r.Data.(fetched)
@@ -222,7 +242,7 @@ func (a *App) renderMultiAgent(s fetchSpec, results []client.EnvResult, merged m
 	if partial == nil {
 		return output.NewAgentPrinter(a.Out, ctx).Print(merged)
 	}
-	if err := output.WriteAgentPartial(a.Out, merged, errorDetail(partial, ""), ctx); err != nil {
+	if err := output.WriteAgentPartial(a.Out, merged, errorDetail(partial, hint), ctx); err != nil {
 		return err
 	}
 	return fmt.Errorf("%w: %w", errReported, partial)
@@ -238,6 +258,9 @@ func (a *App) renderMultiHuman(s fetchSpec, results []client.EnvResult, partial 
 		_, _ = fmt.Fprintf(a.Out, "== %s ==\n", r.Name)
 		if r.Error != nil {
 			output.PrintHumanError("%s: %v", r.Name, r.Error)
+			if h := explicitHint(r.Error); h != "" {
+				output.PrintHint("%s", h)
+			}
 			continue
 		}
 		if err := a.renderHuman(s, r.Data.(fetched)); err != nil {

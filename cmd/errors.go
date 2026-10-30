@@ -284,6 +284,16 @@ func hintFor(err error) string {
 	return client.Diagnose(err)
 }
 
+// explicitHint is the hint a command attached to err with withHint, or ""
+// (unlike hintFor, no generic diagnosis).
+func explicitHint(err error) string {
+	var h *hintError
+	if errors.As(err, &h) {
+		return h.hint
+	}
+	return ""
+}
+
 // errorDetail classifies err for the agent envelope, using dtctl's codes so
 // agents can branch on them the same way for both tools.
 func errorDetail(err error, hint string) *agentmode.ErrorDetail {

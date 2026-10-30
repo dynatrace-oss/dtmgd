@@ -64,10 +64,11 @@ try {
 if (-not $osArch) {
     $osArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 }
+# -in ignores case, so 'Arm64' also matches PROCESSOR_ARCHITECTURE's ARM64.
 $arch = switch ($osArch) {
     { $_ -in 'X64', 'AMD64' } { 'amd64' }
-    { $_ -in 'Arm64', 'ARM64' } { 'arm64' }
-    default { Fail "unsupported architecture: $osArch" }
+    { $_ -in 'Arm64' } { 'arm64' }
+    default { Fail "unsupported architecture: $(if ($osArch) { $osArch } else { 'unknown' })" }
 }
 
 if ($env:DTMGD_VERSION) {

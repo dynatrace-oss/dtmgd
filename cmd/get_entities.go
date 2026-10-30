@@ -128,6 +128,10 @@ Examples:
 			params := map[string]string{
 				"entitySelector": selector,
 			}
+			fetch := pagedFetch("/entities", params, "entities", 100, a.Opts.MaxPages)
+			if opts.mz != "" {
+				fetch = hintOnBadRequest(fetch, `A zone name must match exactly: it is case-sensitive, and each environment has its own zones. Check that the zone exists in this environment, or pass mzId(<id>).`)
+			}
 			if opts.from != "" {
 				params["from"] = opts.from
 			}
@@ -141,11 +145,11 @@ Examples:
 			return a.runFetch(fetchSpec{
 				Verb:     "get",
 				Resource: "entities",
-				Fetch:    pagedFetch("/entities", params, "entities", 100, a.Opts.MaxPages),
+				Fetch:    fetch,
 				Rows:     entityRows,
 				Limit:    opts.limit,
 				List:     true,
-				Empty:    fmt.Sprintf("No entities found for selector: %s", opts.selector),
+				Empty:    fmt.Sprintf("No entities found for selector: %s", selector),
 			})
 		},
 	}

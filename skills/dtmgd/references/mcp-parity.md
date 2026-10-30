@@ -5,7 +5,8 @@ dtmgd covers every tool of the [Dynatrace Managed MCP Server](https://github.com
 `dynatrace_managed_`; the table leaves the prefix out). The two send mostly the
 same requests; the table lists where they differ. "Undocumented" means the parameter is not in the
 endpoint's published API specification. "Checked live" means a filtered and an
-unfiltered call were compared on Dynatrace Managed 1.348 (2026-10-30).
+unfiltered call were compared on Dynatrace Managed 1.348 (2026-10-30); an
+undocumented parameter not marked so has not been verified.
 
 | MCP tool | dtmgd command | Differences |
 |---|---|---|

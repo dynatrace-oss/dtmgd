@@ -58,3 +58,47 @@ func TestGetMetricsEntityIsRefused(t *testing.T) {
 		t.Errorf("stderr does not point at query metrics:\n%s", r.Stderr)
 	}
 }
+
+// A zone or event type the environment does not know is a 400 "Constraints
+// violated." without detail (the API's constraintViolations are not shown);
+// the hint says what to check.
+func TestUnknownZoneOrEventTypeGetsAHint(t *testing.T) {
+	const violated = `{"error":{"code":400,"message":"Constraints violated."}}`
+	cases := []struct {
+		name, path, want string
+		args             []string
+	}{
+		{"zone", apiV2 + "/entities", "case-sensitive", []string{"get", "entities", "--selector", "type(HOST)", "--mz", "Nope"}},
+		{"event type", apiV2 + "/events", "CUSTOM_DEPLOYMENT", []string{"get", "events", "--from", "now-1h", "--type", "nope"}},
+	}
+	for _, tc := range cases {
+		api := newFakeAPI(t, map[string]route{tc.path: {Status: 400, Body: violated}})
+		r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), tc.args...)
+		if r.Code == 0 || !strings.Contains(r.Stderr, tc.want) {
+			t.Errorf("%s: exit %d, stderr does not mention %q:\n%s", tc.name, r.Code, tc.want, r.Stderr)
+		}
+	}
+}
+
+func TestGetEntitiesEmptyNoteNamesTheZone(t *testing.T) {
+	api := newFakeAPI(t, map[string]route{apiV2 + "/entities": {Body: `{"totalCount":0,"entities":[]}`}})
+	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", api}), "get", "entities", "--selector", "type(HOST)", "--mz", "Production")
+	if !strings.Contains(r.Stderr, `type(HOST),mzName("Production")`) {
+		t.Errorf("the empty note hides the zone:\n%s", r.Stderr)
+	}
+}
+
+// With several environments the zone is often missing from some of them; the
+// failed environment keeps its hint, for a person and in the envelope.
+func TestMultiEnvironmentFailureKeepsItsHint(t *testing.T) {
+	a := newFakeAPI(t, map[string]route{apiV2 + "/entities": {Body: `{"totalCount":0,"entities":[]}`}})
+	b := newFakeAPI(t, map[string]route{apiV2 + "/entities": {Status: 400, Body: `{"error":{"code":400,"message":"Constraints violated."}}`}})
+	cfg := withFakeEnvs(t, fakeEnv{"a", a}, fakeEnv{"b", b})
+	args := []string{"get", "entities", "--selector", "type(HOST)", "--mz", "Prod", "--env", "a;b"}
+	if r := runCLI(t, cfg, args...); r.Code == 0 || !strings.Contains(r.Stderr, "case-sensitive") {
+		t.Errorf("human: exit %d, stderr:\n%s", r.Code, r.Stderr)
+	}
+	if r := runCLIWithEnv(t, map[string]string{"CLAUDECODE": "1"}, cfg, args...); r.Code == 0 || !strings.Contains(r.Stdout, "case-sensitive") {
+		t.Errorf("agent: exit %d, stdout:\n%s", r.Code, r.Stdout)
+	}
+}

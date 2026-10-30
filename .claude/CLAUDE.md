@@ -199,7 +199,7 @@ your task.
   - To repeat a check, first find a query that returns records: `stage` had none for `error`, `info`, `warn`, `GET` or `exception`.
 - **When it applies**: Changing `query logs`, or deciding whether `--entity` can be trusted
 - **Date**: 2026-10-29 (verified live 2026-10-30)
-- **Ref**: Phase 3 (2/2) MCP parity; v0.3.2 filter fixes
+- **Ref**: Phase 3 (2/2) MCP parity; filter fixes after v0.3.1
 
 ### Change the keyring only after the config save succeeds
 - **Context**: `config delete-credentials`, `delete-context --delete-credentials` and `config import` (when a `${VAR}` reference replaces a keyring token) deleted the keyring entry first and saved the config afterwards. When the save failed (for example, a read-only config), the token was gone while the config still pointed at it.
@@ -215,11 +215,11 @@ your task.
   - `mzSelector` on `/entities` is **ignored**, even with a real zone (38 of 38 hosts). `mzName("<zone>")` inside `entitySelector` filters (18 of 38); a nonexistent zone name there gets 400 "Constraints violated".
   - `entitySelector` on `/metrics` (the descriptor list) is **ignored**: 17 = 17. The endpoint has no documented entity filter at all.
   - `entitySelector` on `/logs/search` is **honoured** (see the logs entry).
-  - dtmgd v0.3.2 therefore sends `get events --type` as `eventSelector=eventType("…")`, adds `get entities --mz` to `entitySelector` as `mzName("…")` (quote and tilde escaped with `~`; an `mzName(…)`/`mzId(…)` value passes through), and refuses `get metrics --entity` with exit 2, pointing at `query metrics --entity`. `cmd/filters_test.go` pins the parameters sent.
+  - Since the release after v0.3.1, dtmgd sends `get events --type` as `eventSelector=eventType("…")`, adds `get entities --mz` to `entitySelector` as `mzName("…")` (quote and tilde escaped with `~`; an `mzName(…)`/`mzId(…)` value passes through), and refuses `get metrics --entity` with exit 2, pointing at `query metrics --entity`. `cmd/filters_test.go` pins the parameters sent.
   - The MCP server still sends the ignored parameters. It also sends top-level `impactLevel` on `/problems`, and `riskLevel` and `entitySelector` on `/securityProblems`, which dtmgd covers with `problemSelector` / `securityProblemSelector` criteria (reported in dynatrace-oss/dynatrace-managed-mcp#329). dtmgd's `fields=+affectedEntities,+managementZones` on `/problems` is unchecked and harmless: both fields are in the default response.
 - **When it applies**: Adding or debugging a filter flag. Before trusting any undocumented parameter, compare an impossible value with no filter on a live environment, choosing a query and time range that return results.
 - **Date**: 2026-10-29 (checked live 2026-10-30)
-- **Ref**: Phase 3 (2/2) MCP parity; v0.3.2 filter fixes
+- **Ref**: Phase 3 (2/2) MCP parity; filter fixes after v0.3.1
 
 ### A cluster context's host is the cluster's own address, not an environment context's node host
 - **Context**: Phase 4 planned the Cluster API commands on top of the owner's existing environment contexts. Their hosts are node addresses on port 9999 (`https://<node>:9999`), where `/api/cluster/v2/...` and `/api/v1.0/onpremise/...` answer 404. The Cluster API answers on the cluster's public name, the address the Cluster Management Console uses.
