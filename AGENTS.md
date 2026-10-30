@@ -136,8 +136,10 @@ dtctl, and it stays that way.
   `%LOCALAPPDATA%\dtmgd\config` on Windows) may hold live tokens. As a
   safety net, `TestMain` in `cmd`, `pkg/config` and `pkg/skills` runs the
   tests through `testsandbox.Main` (`internal/testsandbox`), which points the
-  home and config directories at a temporary directory and refuses to run if
-  the default config path is still outside it. Add the same `TestMain` to any
+  home and config directories at a temporary directory, unsets
+  `DTMGD_CONFIG` and `DTMGD_CONTEXT`, and refuses to run if the default
+  config path is still outside it or a `.dtmgd.yaml` lies in the working
+  directory or above it (dtmgd would find that one first). Add the same `TestMain` to any
   new package whose tests reach the config or the home directory.
 - **HTTP error cases use 400 or 403,** never 5xx or 429: the client retries
   those, which adds seconds of waiting.

@@ -38,8 +38,8 @@ func TestClusterEnvironments(t *testing.T) {
 // license key. The value itself is never printed, not even on failure.
 func TestLicenseKeyIsMasked(t *testing.T) {
 	r := run(t, "describe", "license", "--context", cluster(t), "-o", "json")
-	if r.Code != 0 {
-		t.Skipf("describe license: %s (DPS-licensed clusters have no classic license)", brief(r))
+	if r.Code != 0 && strings.Contains(r.Err, "classic licensing") {
+		t.Skipf("describe license: %s (a DPS-licensed cluster has no classic license)", brief(r))
 	}
 	body := decode[map[string]any](t, "describe", "license", "--context", cluster(t), "-o", "json")
 	key, ok := body["licenseKey"].(string)

@@ -41,7 +41,8 @@ cluster honours a parameter. `make integration` runs `test/integration`
 (build tag `integration`) against a real Dynatrace Managed cluster: it checks
 that the list commands answer, that `--limit` keeps the next-page key, that
 `--type`, `--mz`, `--status` and `query logs --entity` really filter (an
-impossible value must match nothing or be rejected), the `--env` fan-out,
+impossible value must match nothing or be rejected, and a real one must
+return fewer items than no filter), the `--env` fan-out,
 and, with a cluster context, the Cluster API commands and that
 `describe license` masks the key.
 
@@ -49,8 +50,8 @@ and, with a cluster context, the Cluster API commands and that
    ignores it) and name your config file and contexts. It holds no tokens:
    dtmgd reads those from your config or the OS keyring as usual.
 2. Run `make integration`. Tests whose settings are missing skip, and so do
-   filter checks whose unfiltered result is empty, since they would prove
-   nothing.
+   filter checks that cannot tell a working filter from an ignored one: an
+   empty unfiltered result, or a filter that keeps everything.
 
 The suite only runs `get`, `describe`, `query`, `doctor` and `commands`, and
 never changes the config. A failure shows the exit code and the first line of

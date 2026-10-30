@@ -55,6 +55,7 @@ func run(t testing.TB, args ...string) result {
 var (
 	urlPattern  = regexp.MustCompile(`https?://\S+`)
 	ipv4Pattern = regexp.MustCompile(`\b\d{1,3}(\.\d{1,3}){3}(:\d+)?\b`)
+	ipv6Pattern = regexp.MustCompile(`\[[0-9a-fA-F:.]+\](:\d+)?`)
 
 	hostsOnce sync.Once
 	hosts     []string
@@ -78,8 +79,8 @@ func configHosts() []string {
 }
 
 // brief describes a result for a failure message: the exit code and the
-// first line of stderr, with URLs, the config's host names and IP addresses
-// removed, so none of them reaches a log. A DNS error, for one, repeats the
+// first line of stderr, with URLs, the config's host names and IPv4 and
+// bracketed IPv6 addresses removed, so none of them reaches a log. A DNS error, for one, repeats the
 // host outside the URL.
 func brief(r result) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(r.Err), "\n")
@@ -87,6 +88,7 @@ func brief(r result) string {
 	for _, h := range configHosts() {
 		line = strings.ReplaceAll(line, h, "<host>")
 	}
+	line = ipv6Pattern.ReplaceAllString(line, "<ip>")
 	return "exit " + strconv.Itoa(r.Code) + ": " + ipv4Pattern.ReplaceAllString(line, "<ip>")
 }
 
@@ -110,14 +112,21 @@ func envOr(name, def string) string {
 	return def
 }
 
+// skipWithoutScope skips the test when the token lacks the scope a command
+// needs (exit 5): that is the token's setup, not a dtmgd failure.
+func skipWithoutScope(t testing.TB, r result, args []string) {
+	t.Helper()
+	if r.Code == 5 {
+		t.Skipf("the token lacks a scope for %v (%s)", args[:2], brief(r))
+	}
+}
+
 // decode runs dtmgd and decodes its JSON stdout. A token without the scope
 // the command needs (exit 5) skips the test rather than failing it.
 func decode[T any](t *testing.T, args ...string) T {
 	t.Helper()
 	r := run(t, args...)
-	if r.Code == 5 {
-		t.Skipf("the token lacks a scope for %v (%s)", args[:2], brief(r))
-	}
+	skipWithoutScope(t, r, args)
 	var v T
 	if r.Code != 0 {
 		t.Fatalf("%v: %s", args[:2], brief(r))
@@ -193,5 +202,62 @@ func TestBriefHidesHostsAndAddresses(t *testing.T) {
 	got := brief(result{Code: 1, Err: "Error: Get \"https://cluster.example.com/e/x/api\": dial tcp: lookup cluster.example.com on 192.0.2.1:53: no such host\nHint: more"})
 	if want := `exit 1: Error: Get "<url> dial tcp: lookup <host> on <ip>: no such host`; got != want {
 		t.Errorf("brief = %q\nwant    %q", got, want)
+	}
+}
+
+// narrowed checks that a filter narrowed a result of all items to filtered.
+// An empty result, or a filter that kept everything, proves nothing either
+// way (the cluster may have ignored it), so the test skips; more items than
+// without the filter fails it.
+func narrowed(t testing.TB, what string, filtered, all int) {
+	t.Helper()
+	switch {
+	case all == 0:
+		t.Skipf("%s: nothing to filter, so the filter cannot be checked", what)
+	case filtered > all:
+		t.Errorf("%s: the filter matched %d of %d", what, filtered, all)
+	case filtered == all:
+		t.Skipf("%s: the filter kept all %d, which an ignored filter would too", what, all)
+	}
+}
+
+// outcome records how a check ended, for the harness self-tests.
+type outcome struct {
+	testing.TB
+	skipped, failed bool
+}
+
+func (o *outcome) Helper()                        {}
+func (o *outcome) Skipf(string, ...any)           { o.skipped = true }
+func (o *outcome) Errorf(string, ...any)          { o.failed = true }
+func (o *outcome) Fatalf(string, ...any)          { o.failed = true }
+func (o *outcome) result() (skipped, failed bool) { return o.skipped, o.failed }
+
+// TestNarrowedPassesOnlyWhenTheFilterNarrowed pins Review Focus 5: a check
+// that cannot tell a working filter from an ignored one skips, never passes.
+func TestNarrowedPassesOnlyWhenTheFilterNarrowed(t *testing.T) {
+	for _, c := range []struct {
+		filtered, all   int
+		skipped, failed bool
+	}{
+		{0, 0, true, false},
+		{5, 5, true, false},
+		{6, 5, false, true},
+		{2, 5, false, false},
+		{0, 5, false, false},
+	} {
+		o := &outcome{TB: t}
+		narrowed(o, "x", c.filtered, c.all)
+		if s, f := o.result(); s != c.skipped || f != c.failed {
+			t.Errorf("narrowed(%d of %d): skipped=%v failed=%v, want %v %v", c.filtered, c.all, s, f, c.skipped, c.failed)
+		}
+	}
+}
+
+// TestBriefHidesIPv6Addresses: a dial error names an IPv6 literal in brackets.
+func TestBriefHidesIPv6Addresses(t *testing.T) {
+	got := brief(result{Code: 1, Err: "Error: dial tcp [2001:db8::1]:443: connect: refused"})
+	if want := "exit 1: Error: dial tcp <ip>: connect: refused"; got != want {
+		t.Errorf("brief = %q, want %q", got, want)
 	}
 }

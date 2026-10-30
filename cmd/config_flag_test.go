@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/adrg/xdg"
+
+	"github.com/dynatrace-oss/dtmgd/internal/testsandbox"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 )
 
@@ -38,14 +41,24 @@ func TestConfigFlagHelpNamesEveryDefaultPath(t *testing.T) {
 
 // TestConfigFlagHelpNamesThisOSDefault runs in every CI OS job, so the help
 // cannot drift from where config.DefaultConfigPath really looks.
+//
+// The test sandbox sets XDG_CONFIG_HOME, which would hide the OS default, so
+// the test clears it for itself. The path is only compared, never opened: on
+// Windows it is the real %LOCALAPPDATA% (adrg/xdg asks the OS, not the
+// variable), compared with the value the sandbox recorded.
 func TestConfigFlagHelpNamesThisOSDefault(t *testing.T) {
-	if os.Getenv("XDG_CONFIG_HOME") != "" {
-		t.Skip("XDG_CONFIG_HOME is set")
+	if testsandbox.Original["XDG_CONFIG_HOME"] != "" {
+		t.Skip("XDG_CONFIG_HOME is set in your environment")
 	}
+	// Registered first, so it runs last: after t.Setenv has restored the
+	// sandbox's value.
+	t.Cleanup(xdg.Reload)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	xdg.Reload()
 	path := config.DefaultConfigPath()
 	switch runtime.GOOS {
 	case "windows":
-		path = strings.Replace(path, os.Getenv("LOCALAPPDATA"), "%LOCALAPPDATA%", 1)
+		path = strings.Replace(path, testsandbox.Original["LOCALAPPDATA"], "%LOCALAPPDATA%", 1)
 	default:
 		home, err := os.UserHomeDir()
 		if err != nil {

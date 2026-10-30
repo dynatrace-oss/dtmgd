@@ -103,7 +103,9 @@ func TestEventTypeFilterIsHonoured(t *testing.T) {
 func TestZoneFilterIsHonoured(t *testing.T) {
 	ctx := env(t)
 	noZone := fmt.Sprintf("zz-no-such-zone-%d", time.Now().UnixNano())
-	r := run(t, "get", "entities", "--context", ctx, "--selector", "type(HOST)", "--mz", noZone, "-o", "json")
+	args := []string{"get", "entities", "--context", ctx, "--selector", "type(HOST)", "--mz", noZone, "-o", "json"}
+	r := run(t, args...)
+	skipWithoutScope(t, r, args)
 	if r.Code == 0 || !strings.Contains(r.Err, "400") {
 		t.Errorf("a nonexistent --mz was not rejected by the cluster (%s)", brief(r))
 	}
@@ -114,9 +116,7 @@ func TestZoneFilterIsHonoured(t *testing.T) {
 	}
 	all := total(t, decode[map[string]any](t, "get", "entities", "--context", ctx, "--selector", "type(HOST)", "-o", "json", "--limit", "1"))
 	inZone := total(t, decode[map[string]any](t, "get", "entities", "--context", ctx, "--selector", "type(HOST)", "--mz", zone, "-o", "json", "--limit", "1"))
-	if inZone > all {
-		t.Errorf("--mz matched %d of %d hosts", inZone, all)
-	}
+	narrowed(t, "hosts in DTMGD_IT_MZ", inZone, all)
 }
 
 // TestLogsEntityFilterIsHonoured pins that /logs/search honours its
@@ -135,13 +135,14 @@ func TestLogsEntityFilterIsHonoured(t *testing.T) {
 	}
 }
 
+// TestProblemsStatusFilter needs problems that are not open in the window:
+// if every problem is open, the filter cannot be told from no filter.
 func TestProblemsStatusFilter(t *testing.T) {
-	body := decode[map[string]any](t, "get", "problems", "--context", env(t), "--status", "OPEN", "--from", from(), "-o", "json", "--limit", "50")
-	problems := items(t, body, "problems")
-	if len(problems) == 0 {
-		t.Skipf("no open problems since %s", from())
-	}
-	for _, p := range problems {
+	ctx := env(t)
+	all := decode[map[string]any](t, "get", "problems", "--context", ctx, "--from", from(), "-o", "json", "--limit", "1")
+	open := decode[map[string]any](t, "get", "problems", "--context", ctx, "--status", "OPEN", "--from", from(), "-o", "json", "--limit", "50")
+	narrowed(t, "open problems", total(t, open), total(t, all))
+	for _, p := range items(t, open, "problems") {
 		if s := p.(map[string]any)["status"]; s != "OPEN" {
 			t.Fatalf("--status OPEN returned a problem with status %v", s)
 		}

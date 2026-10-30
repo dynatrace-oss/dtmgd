@@ -50,6 +50,9 @@ func TestSkillsInstallRefusesToOverwriteWithoutForce(t *testing.T) {
 
 func TestSkillsInstallGlobalGoesToTheHomeDirectory(t *testing.T) {
 	_, cfg := inProject(t)
+	// Uninstalled whatever happens: a skill left in the sandbox home would
+	// show up in the other skills tests.
+	t.Cleanup(func() { runCLI(t, cfg, "skills", "uninstall", "--for", "claude") })
 	r := runCLI(t, cfg, "skills", "install", "--for", "claude", "--global")
 	if r.Code != 0 || !strings.Contains(r.Stdout, "(global)") {
 		t.Fatalf("install --global: %s", r)
@@ -59,7 +62,6 @@ func TestSkillsInstallGlobalGoesToTheHomeDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertFile(t, filepath.Join(home, ".claude", "skills", "dtmgd", "SKILL.md"))
-	runCLI(t, cfg, "skills", "uninstall", "--for", "claude")
 }
 
 func TestSkillsInstallUsageErrors(t *testing.T) {

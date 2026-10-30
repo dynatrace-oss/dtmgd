@@ -212,7 +212,8 @@ func runCLI(t *testing.T, cfgPath string, args ...string) cliResult {
 // runCLIWithEnv is runCLI with env set after agent detection is cleared, so a
 // test can opt into an agent environment (for example CLAUDECODE=1).
 // DTMGD_CONTEXT and DTMGD_CONFIG are cleared too: exported in the developer's
-// shell, they would pick another context or config than the test's.
+// shell, they would pick another context or config than the test's. So are
+// NO_COLOR and FORCE_COLOR, which would change plain mode and colors.
 func runCLIWithEnv(t *testing.T, env map[string]string, cfgPath string, args ...string) cliResult {
 	t.Helper()
 	for _, v := range agentmode.EnvVars() {
@@ -220,6 +221,8 @@ func runCLIWithEnv(t *testing.T, env map[string]string, cfgPath string, args ...
 	}
 	t.Setenv("DTMGD_CONTEXT", "")
 	t.Setenv("DTMGD_CONFIG", "")
+	t.Setenv("NO_COLOR", "")
+	t.Setenv("FORCE_COLOR", "")
 	for k, v := range env {
 		t.Setenv(k, v)
 	}
