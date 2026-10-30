@@ -54,7 +54,7 @@ func Diagnose(err error) string {
 	case strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded"):
 		return "Request timed out. The cluster may be slow or unreachable. Check network connectivity."
 	case strings.Contains(msg, "token") && strings.Contains(msg, "not found"):
-		return "Token reference not found. Store it with:\n  dtmgd config set-credentials <token-ref> --token <api-token>"
+		return "Token reference not found. Store it with (you are prompted for the token):\n  dtmgd config set-credentials <token-ref>"
 	case strings.Contains(msg, "no current context"):
 		return "No context configured. Set one up with:\n  dtmgd config set-context <name> --host <url> --env-id <id> --token-ref <ref>\n  or, for the Cluster API: dtmgd config set-context <name> --host <cluster-url> --token-ref <ref>"
 	}
