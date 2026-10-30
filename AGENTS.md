@@ -20,6 +20,7 @@ part of its contract.
 ```bash
 make build        # ./dtmgd (CGO_ENABLED=0)
 make test         # go test -race ./...
+make integration  # live read-only suite against a real cluster (test/integration)
 make lint         # go vet, gofmt check, golangci-lint, actionlint, shellcheck (checks only)
 make fmt          # gofmt -w .
 make docs         # regenerate docs/reference after changing a command
@@ -49,6 +50,8 @@ pkg/output/     printers: table (struct tags), csv and tsv (the same tags), json
 pkg/skills/     `dtmgd skills install`; skills/dtmgd/ holds the embedded skill
 pkg/version/    version, commit, date: ldflags, else the module's build info
 tools/          checksum-locked CI tools (govulncheck, actionlint), a separate module
+internal/testsandbox/  TestMain helper: temp HOME and config directory for test binaries
+test/integration/      live read-only suite against a real cluster (build tag integration)
 ```
 
 Endpoints:
@@ -141,6 +144,12 @@ dtctl, and it stays that way.
 - **Keyring:** `cmd` and `pkg/config` call `keyring.MockInit()` in `TestMain`.
   A test that reaches `SetToken`, `GetToken` or `MigrateTokensToKeyring` in any
   other package needs the same, or it overwrites real credentials.
+- **Live integration suite.** `test/integration` (build tag `integration`,
+  `make integration`) runs the real CLI against a real cluster, configured by
+  the git-ignored `.integrationtests.env`. Add a check there when a behaviour
+  depends on what the cluster does with a parameter, not on dtmgd's code.
+  Its `run` helper refuses anything but read verbs; report failures with
+  `brief(r)`, never stdout. It never runs in CI; `lint` vets it with the tag.
 - **Coverage:** CI fails below 60% (`go tool cover -func` total). That total
   only counts code in named functions, so keep command code in constructors,
   not in closures assigned to package-level variables.

@@ -220,7 +220,7 @@ your task.
   - `entitySelector` on `/logs/search` is **honoured** (see the logs entry).
   - Since the release after v0.3.1, dtmgd sends `get events --type` as `eventSelector=eventType("…")`, adds `get entities --mz` to `entitySelector` as `mzName("…")` (quote and tilde escaped with `~`; an `mzName(…)`/`mzId(…)` value passes through), and refuses `get metrics --entity` with exit 2, pointing at `query metrics --entity`. `cmd/filters_test.go` pins the parameters sent.
   - The MCP server still sends the ignored parameters. It also sends top-level `impactLevel` on `/problems`, and `riskLevel` and `entitySelector` on `/securityProblems`, which dtmgd covers with `problemSelector` / `securityProblemSelector` criteria (reported in dynatrace-oss/dynatrace-managed-mcp#329). dtmgd's `fields=+affectedEntities,+managementZones` on `/problems` is unchecked and harmless: both fields are in the default response.
-- **When it applies**: Adding or debugging a filter flag. Before trusting any undocumented parameter, compare an impossible value with no filter on a live environment, choosing a query and time range that return results.
+- **When it applies**: Adding or debugging a filter flag. Before trusting any undocumented parameter, compare an impossible value with no filter on a live environment, choosing a query and time range that return results; `make integration` (see the live-suite entry) re-runs these checks.
 - **Date**: 2026-10-29 (checked live 2026-10-30)
 - **Ref**: Phase 3 (2/2) MCP parity; filter fixes after v0.3.1
 
@@ -266,3 +266,10 @@ your task.
 - **When it applies**: Reviewing a Dependabot tools PR (don't merge one whose `lint` is red: that job is the only one that builds actionlint), or when `lint` fails while building a tool
 - **Date**: 2026-10-30
 - **Ref**: #60, #63
+
+### The live integration suite checks what fakes cannot
+- **Context**: Three filters (`--type`, `--mz`, `get metrics --entity`) were silently ignored by the cluster for months: every unit test passed, because the fake API answers whatever the route table says. They were found only by a hand-run live check on 2026-10-30. dtctl has `test/integration` for the same reason.
+- **Insight**: `test/integration` (build tag `integration`, `make integration`) runs `cmd.Run` against a real cluster. Settings come from the environment or the git-ignored `.integrationtests.env` (`DTMGD_IT_CONFIG`, `DTMGD_IT_ENV`, optional `DTMGD_IT_ENV2`, `DTMGD_IT_CLUSTER`, `DTMGD_IT_MZ`, `DTMGD_IT_LOG_QUERY`, `DTMGD_IT_FROM`); without `DTMGD_IT_CONFIG` everything skips, so an empty value never reaches the default config path. `run` refuses any verb but `get`, `describe`, `query`, `doctor` and `commands`. `brief(r)` reports the exit code and the first stderr line with URLs, the config's host names and IPv4 addresses removed: a dry run showed a DNS error repeats the host outside the URL. A filter check skips when the unfiltered result is empty, because "nothing matched" proves nothing then. `golangci-lint` lints the tagged files (`run.build-tags` in `.golangci.yml`), and `lint.yml` vets them; CI never runs them. Running it against the owner's clusters needs the owner's go-ahead each time.
+- **When it applies**: Adding a filter flag or any behaviour that depends on how the cluster treats a parameter; re-checking the undocumented-parameter findings after a cluster upgrade
+- **Date**: 2026-10-30
+- **Ref**: coverage and architecture gaps

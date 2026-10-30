@@ -1,5 +1,10 @@
 version: "2"
 
+run:
+  # Lint the live integration suite too (test/integration).
+  build-tags:
+    - integration
+
 linters:
   enable:
     - gosec
