@@ -194,6 +194,7 @@ command needs; a test keeps this list identical to those declarations.
 - Read problems (`problems.read`): problems
 - Read security problems (`securityProblems.read`): security problems
 - Read SLO (`slo.read`): SLOs
+- Read settings (`settings.read`): settings schemas, settings objects and effective values
 - Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`, `doctor`
 <!-- scopes:end -->
 

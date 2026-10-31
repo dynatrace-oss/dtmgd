@@ -16,6 +16,7 @@ Supported resources:
   metric <id>               Metric descriptor details
   slo <id>                  SLO details with evaluation data
   security-problem <id>     Security vulnerability details with CVE info
+  settings-schema <id>      A Settings 2.0 schema: scopes, properties, allowed values
 ```
 
 Cluster resources (need a cluster context: one without env-id):
@@ -68,5 +69,6 @@ dtmgd describe [flags]
 * [dtmgd describe metric](dtmgd_describe_metric.md)	 - Show detailed information about a specific metric descriptor
 * [dtmgd describe problem](dtmgd_describe_problem.md)	 - Show detailed information about a specific problem
 * [dtmgd describe security-problem](dtmgd_describe_security-problem.md)	 - Show detailed information about a security vulnerability
+* [dtmgd describe settings-schema](dtmgd_describe_settings-schema.md)	 - Show a Settings 2.0 schema: scopes, properties and allowed values
 * [dtmgd describe slo](dtmgd_describe_slo.md)	 - Show detailed information about a specific SLO
 

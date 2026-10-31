@@ -24,6 +24,7 @@ Supported resources:
   metric <id>               Metric descriptor details
   slo <id>                  SLO details with evaluation data
   security-problem <id>     Security vulnerability details with CVE info
+  settings-schema <id>      A Settings 2.0 schema: scopes, properties, allowed values
 
 Cluster resources (need a cluster context: one without env-id):
   backup                    The cluster's backup configuration
@@ -46,6 +47,7 @@ Detail commands print a readable summary (or YAML) by default; use -o json for t
 		newDescribeMetricCmd(a),
 		newDescribeProblemCmd(a),
 		newDescribeSecurityProblemCmd(a),
+		newDescribeSettingsSchemaCmd(a),
 		newDescribeSLOCmd(a),
 	)
 	return asGroup(cmd)

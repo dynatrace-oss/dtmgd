@@ -1,0 +1,9 @@
+== exit code: 0
+== stdout
+ SCHEMA-ID                                     NAME                            VERSION 
+ builtin:alerting.profile                      Problem alerting profiles       8.2.1   
+ builtin:anomaly-detection.services            Anomaly detection for services  1.0.12  
+ builtin:deployment.activegate.updates         ActiveGate updates              1.0.4   
+ builtin:deployment.management.update-windows  Update windows                  0.63.3  
+ builtin:deployment.oneagent.updates           OneAgent updates                1.0.4   
+== stderr

@@ -1,0 +1,35 @@
+{
+  "dynatrace": "1",
+  "schemaId": "builtin:deployment.oneagent.updates",
+  "displayName": "OneAgent updates",
+  "description": "Configure how OneAgents update.",
+  "version": "1.0.4",
+  "multiObject": false,
+  "maxObjects": 1,
+  "allowedScopes": ["HOST", "HOST_GROUP", "environment"],
+  "enums": {
+    "UpdateMode": {
+      "displayName": "Update mode",
+      "type": "enum",
+      "items": [
+        {"value": "AUTOMATIC", "displayName": "Automatic at earliest convenience"},
+        {"value": "AUTOMATIC_DURING_MW", "displayName": "Automatic during update window"},
+        {"value": "MANUAL", "displayName": "No automatic updates"}
+      ]
+    }
+  },
+  "types": {
+    "MaintenanceWindow": {
+      "displayName": "Update window",
+      "properties": {
+        "maintenanceWindow": {"displayName": "Update window", "type": "setting", "referencedType": "builtin:deployment.management.update-windows"}
+      }
+    }
+  },
+  "properties": {
+    "targetVersion": {"displayName": "Target version", "type": "text", "default": "latest"},
+    "revision": {"displayName": "Revision", "type": "text"},
+    "updateMode": {"displayName": "Update mode", "type": {"$ref": "#/enums/UpdateMode"}, "default": "AUTOMATIC"},
+    "maintenanceWindows": {"displayName": "Update windows", "type": "set", "items": {"type": {"$ref": "#/types/MaintenanceWindow"}}}
+  }
+}
