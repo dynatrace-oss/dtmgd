@@ -15,6 +15,9 @@ const (
 	ExitAuth       = 3 // HTTP 401
 	ExitNotFound   = 4 // HTTP 404
 	ExitPermission = 5 // HTTP 403
+	// ExitSafetyBlocked is a write the context's safety-level does not allow;
+	// nothing was sent.
+	ExitSafetyBlocked = 6
 )
 
 // ExitCodeForStatus maps an HTTP status to an exit code.
