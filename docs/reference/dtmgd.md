@@ -56,12 +56,16 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 
 ### SEE ALSO
 
+* [dtmgd apply](dtmgd_apply.md)	 - Create or update the Settings 2.0 objects in a file
 * [dtmgd commands](dtmgd_commands.md)	 - Print a machine-readable catalog of dtmgd commands
 * [dtmgd completion](dtmgd_completion.md)	 - Generate shell completion script
 * [dtmgd config](dtmgd_config.md)	 - Manage dtmgd configuration
+* [dtmgd create](dtmgd_create.md)	 - Create resources
 * [dtmgd ctx](dtmgd_ctx.md)	 - Manage contexts (shortcut for config context commands)
+* [dtmgd delete](dtmgd_delete.md)	 - Delete resources
 * [dtmgd describe](dtmgd_describe.md)	 - Show detailed information about a specific resource
 * [dtmgd doctor](dtmgd_doctor.md)	 - Check connectivity, token and cluster version of each context
+* [dtmgd edit](dtmgd_edit.md)	 - Edit resources in an editor
 * [dtmgd get](dtmgd_get.md)	 - List or retrieve resources
 * [dtmgd query](dtmgd_query.md)	 - Query time-series or log data
 * [dtmgd skills](dtmgd_skills.md)	 - Manage AI coding assistant skill files

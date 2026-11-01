@@ -9,11 +9,12 @@ dtmgd ctx set <context-name> [flags]
 ### Options
 
 ```
-      --description string   description
-      --env-id string        environment ID (omit for a cluster context)
-  -h, --help                 help for set
-      --host string          Managed cluster host URL
-      --token-ref string     credential name
+      --description string    description
+      --env-id string         environment ID (omit for a cluster context)
+  -h, --help                  help for set
+      --host string           Managed cluster host URL
+      --safety-level string   what dtmgd may change through this context: readonly (the default), readwrite-mine, readwrite-all or dangerously-unrestricted
+      --token-ref string      credential name
 ```
 
 ### Options inherited from parent commands

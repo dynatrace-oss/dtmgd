@@ -34,6 +34,9 @@ type route struct {
 	Status int
 	File   string
 	Body   string
+	// Drop closes the connection without answering, as a network failure
+	// after the request was sent does.
+	Drop bool
 }
 
 // fakeAPI is an httptest server answering from a route table.
@@ -52,11 +55,12 @@ type fakeAPI struct {
 	queries map[string][]url.Values
 	headers map[string][]http.Header
 	escaped map[string][]string
+	bodies  map[string][]string
 }
 
 func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}, escaped: map[string][]string{}}
+	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}, escaped: map[string][]string{}, bodies: map[string][]string{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
 		q := r.URL.Query()
@@ -65,6 +69,8 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 		f.queries[key] = append(f.queries[key], q)
 		f.headers[key] = append(f.headers[key], r.Header.Clone())
 		f.escaped[key] = append(f.escaped[key], r.URL.EscapedPath())
+		sent, _ := io.ReadAll(r.Body)
+		f.bodies[key] = append(f.bodies[key], string(sent))
 		f.mu.Unlock()
 
 		rt, ok := routes[key]
@@ -77,6 +83,12 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = io.WriteString(w, `{"error":{"code":404,"message":"not found"}}`)
+			return
+		}
+		if rt.Drop {
+			if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+				_ = conn.Close()
+			}
 			return
 		}
 		body := rt.Body
@@ -129,6 +141,13 @@ func (f *fakeAPI) EscapedPaths(key string) []string {
 	return append([]string(nil), f.escaped[key]...)
 }
 
+// Bodies returns the request bodies sent to "METHOD /path", in order.
+func (f *fakeAPI) Bodies(key string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.bodies[key]...)
+}
+
 // fakeEnv names one context and the fake API it points at.
 type fakeEnv struct {
 	Name string
@@ -147,6 +166,20 @@ func withFakeEnvs(t *testing.T, envs ...fakeEnv) string {
 // URLs apart once the harness has normalised every host to http://FAKE.
 func withFakeEnvIDs(t *testing.T, ids map[string]string, envs ...fakeEnv) string {
 	t.Helper()
+	return writeFakeConfig(t, ids, nil, envs...)
+}
+
+// withFakeEnvLevels is withFakeEnvs with each context named in levels given
+// that safety-level (none for the others, which makes them readonly).
+func withFakeEnvLevels(t *testing.T, levels map[string]string, envs ...fakeEnv) string {
+	t.Helper()
+	return writeFakeConfig(t, nil, levels, envs...)
+}
+
+// writeFakeConfig writes the temp config of withFakeEnvIDs and
+// withFakeEnvLevels.
+func writeFakeConfig(t *testing.T, ids, levels map[string]string, envs ...fakeEnv) string {
+	t.Helper()
 	var b strings.Builder
 	fmt.Fprintf(&b, "apiVersion: dtmgd.io/v1\nkind: Config\ncurrent-context: %s\ncontexts:\n", envs[0].Name)
 	for _, e := range envs {
@@ -155,6 +188,9 @@ func withFakeEnvIDs(t *testing.T, ids map[string]string, envs ...fakeEnv) string
 			envID = id
 		}
 		fmt.Fprintf(&b, "  - name: %s\n    context:\n      host: %s\n      env-id: %s\n      token-ref: tok-%s\n", e.Name, e.API.URL, envID, e.Name)
+		if level, ok := levels[e.Name]; ok {
+			fmt.Fprintf(&b, "      safety-level: %s\n", level)
+		}
 	}
 	b.WriteString("tokens:\n")
 	for _, e := range envs {

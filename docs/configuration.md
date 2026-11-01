@@ -63,6 +63,34 @@ that names an existing context is skipped unless you pass `--overwrite`. If any 
 is invalid (a missing `alias`, `apiEndpointUrl` or `environmentId`, a duplicate alias, or
 an alias containing `;`), nothing is written and the command exits 2.
 
+## Write Levels
+
+Each context has a `safety-level`: what dtmgd may change through it.
+
+| Level | Create | Update | Delete |
+|---|---|---|---|
+| `readonly` (the default) | — | — | — |
+| `readwrite-mine` | ✓ | — | — |
+| `readwrite-all` | ✓ | ✓ | ✓ |
+| `dangerously-unrestricted` | ✓ | ✓ | ✓ |
+
+```bash
+dtmgd config set-context stage --safety-level readwrite-all
+dtmgd ctx                                  # the SAFETY-LEVEL column
+```
+
+- A context without the key is `readonly`, so a config written before dtmgd
+  could write stays read-only. An unknown value is an error naming the four
+  levels, never a silent `readonly`.
+- `readwrite-mine` allows creating only: dtmgd cannot tell who owns a settings
+  object. `dangerously-unrestricted` allows nothing more than `readwrite-all`
+  today; it keeps dtctl's set of levels.
+- The level of a local `.dtmgd.yaml` is not capped by the global config.
+- **It is a client-side guard, not a security boundary.** The boundary is the
+  token: a token without `settings.write` cannot write whatever the level
+  says. Agents may raise a level themselves; give them read-only tokens to
+  rule writes out.
+
 ## Token Scopes
 
 An environment context's token is an API token created in that environment.
@@ -149,8 +177,9 @@ section per environment, with a failed environment's error on stderr. Either
 way every environment that answered is printed, and the call still exits
 non-zero if any failed (see [Exit Codes](output.md#exit-codes)).
 
-The `--env` flag works with every `get`, `describe` and `query` command except
-the cluster commands, which run against one cluster context. `ALL_ENVIRONMENTS`
+The `--env` flag works with every `get`, `describe` and `query` command, and
+with `apply` and `create settings` (every context is checked before any is
+written), except the cluster commands, which run against one cluster context. `ALL_ENVIRONMENTS`
 selects environment contexts only, and naming a cluster context in a `;` list
 is an error. `config`,
 `ctx`, `skills`, `doctor` and `commands` never fan out over it. A single

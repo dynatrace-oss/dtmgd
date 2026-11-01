@@ -84,6 +84,7 @@ only; see [Watch Mode](#watch-mode).
 | `3` | Authentication failed (HTTP 401) |
 | `4` | Not found (HTTP 404) |
 | `5` | Permission denied (HTTP 403) |
+| `6` | A write the context's `safety-level` does not allow; nothing was sent |
 
 The codes are the ones `dtctl` uses. A multi-environment (`--env`) call exits
 non-zero if any environment fails: with the shared code when every environment

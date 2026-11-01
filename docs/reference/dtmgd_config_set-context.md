@@ -18,7 +18,7 @@ A context stores three things:
 
 Required API token scopes:
 ```
-  DataExport, entities.read, events.read, logs.read, metrics.read, problems.read, securityProblems.read, settings.read, slo.read
+  DataExport, entities.read, events.read, logs.read, metrics.read, problems.read, securityProblems.read, settings.read, settings.write, slo.read
 ```
 
 Without --env-id the context is a cluster context, for the Cluster
@@ -26,6 +26,11 @@ Management API: get environments, describe environment, get nodes, describe
 cluster, describe license, get license-usage and describe backup.
 Its --host is the cluster's own address, as used by the Cluster Management
 Console, and its token needs the ServiceProviderAPI scope.
+
+--safety-level says what dtmgd may change through the context: readonly (the
+default), readwrite-mine (create only), readwrite-all or
+dangerously-unrestricted. It guards dtmgd's own writes; the real boundary is
+the token's scopes: a token without settings.write cannot write.
 
 Examples:
 ```
@@ -44,11 +49,12 @@ dtmgd config set-context <context-name> [flags]
 ### Options
 
 ```
-      --description string   human-readable description
-      --env-id string        environment ID (omit for a cluster context)
-  -h, --help                 help for set-context
-      --host string          Dynatrace Managed cluster URL (e.g. https://managed.company.com)
-      --token-ref string     credential name (see set-credentials)
+      --description string    human-readable description
+      --env-id string         environment ID (omit for a cluster context)
+  -h, --help                  help for set-context
+      --host string           Dynatrace Managed cluster URL (e.g. https://managed.company.com)
+      --safety-level string   what dtmgd may change through this context: readonly (the default), readwrite-mine, readwrite-all or dangerously-unrestricted
+      --token-ref string      credential name (see set-credentials)
 ```
 
 ### Options inherited from parent commands

@@ -1,0 +1,5 @@
+[
+  {"objectId": "obj-a", "schemaId": "builtin:alerting.profile", "scope": "environment", "value": {"name": "A2"}},
+  {"objectId": "obj-b", "schemaId": "builtin:alerting.profile", "scope": "environment", "value": {"name": "B2"}},
+  {"schemaId": "builtin:test.multi", "scope": "environment", "value": {"name": "C"}}
+]

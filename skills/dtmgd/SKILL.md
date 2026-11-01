@@ -1,11 +1,11 @@
 ---
 name: dtmgd
-description: Query and investigate Dynatrace Managed (self-hosted) environments from the CLI. Use this skill when the user asks about problems, incidents, entities, events, logs, metrics, SLOs, or security vulnerabilities in a Dynatrace Managed cluster — even if they don't mention dtmgd by name. Covers connectivity checks, entity topology, time-series metric queries, log search, every tool of the Dynatrace Managed MCP Server, and the cluster's environments, nodes, license and backup configuration through the Cluster Management API.
+description: Query and investigate Dynatrace Managed (self-hosted) environments from the CLI, and read or change their Settings 2.0 (update windows, OneAgent and ActiveGate auto-update, any schema). Use this skill when the user asks about problems, incidents, entities, events, logs, metrics, SLOs, or security vulnerabilities in a Dynatrace Managed cluster — even if they don't mention dtmgd by name. Covers connectivity checks, entity topology, time-series metric queries, log search, every tool of the Dynatrace Managed MCP Server, and the cluster's environments, nodes, license and backup configuration through the Cluster Management API.
 ---
 
 # Dynatrace Managed CLI — dtmgd
 
-`dtmgd` is a `kubectl`-inspired read-only CLI for **Dynatrace Managed (self-hosted)** clusters.
+`dtmgd` is a `kubectl`-inspired CLI for **Dynatrace Managed (self-hosted)** clusters. It reads; it writes only Settings 2.0 objects, through contexts whose write level allows it.
 It covers every tool of the Dynatrace Managed MCP Server as shell commands; the differences are in [references/mcp-parity.md](references/mcp-parity.md).
 
 ## Contexts — Multiple Environments Are User-Defined
@@ -24,7 +24,7 @@ names configured on this system.
 At the start of any investigation, run these to learn the commands and confirm connectivity:
 
 ```bash
-# Discover what dtmgd can do: the resources of get, describe and query
+# Discover what dtmgd can do: the resources of get, describe, query, create, edit and delete
 dtmgd commands --brief
 
 # Show active context (and all configured environments)
@@ -96,7 +96,7 @@ Formats, every error code, paging, `--watch`, `--columns` and time formats:
 
 `0` success, `1` any other error, `2` usage error (unknown command, resource
 or flag; missing argument or required flag), `3` authentication failed (401),
-`4` not found (404), `5` permission denied (403). A multi-environment
+`4` not found (404), `5` permission denied (403), `6` a write the context's safety-level does not allow (nothing was sent). A multi-environment
 (`--env`) call exits non-zero if any environment fails — the shared code when
 all failed the same way, else `1` — and still prints the environments that
 answered.
@@ -138,7 +138,18 @@ dtmgd get settings --effective --scope HOST-<id> --schema builtin:deployment.one
 dtmgd describe settings <object-id> -o yaml                        # one object
 ```
 
-`get settings` needs `--schema` or `--scope`. Stored objects are only what someone set; `--effective` resolves inheritance and defaults (`ORIGIN` says where the value comes from). Token scope: `settings.read`. Details: [references/settings.md](references/settings.md).
+`get settings` needs `--schema` or `--scope`. Stored objects are only what someone set; `--effective` resolves inheritance and defaults (`ORIGIN` says where the value comes from). Token scope: `settings.read`.
+
+Writing (token scope `settings.write`, and a context whose `safety-level` allows it; every context starts `readonly`):
+
+```bash
+dtmgd apply -f object.yaml --dry-run       # ALWAYS first: shows what would change, GETs only
+dtmgd apply -f object.yaml                 # create or update; an export from describe settings -o yaml applies back
+dtmgd create settings -f value.yaml --schema <id> --scope <scope>
+dtmgd delete settings <object-id> --yes    # --yes is required in agent mode
+```
+
+Exit `6` / `safety_blocked` means the context's level forbids the write; nothing was sent. Details: [references/settings.md](references/settings.md).
 
 ## Gotchas
 

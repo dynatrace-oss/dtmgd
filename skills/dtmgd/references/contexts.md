@@ -74,9 +74,10 @@ keyed by context name, even when only one context is selected; a failed environm
 table prints a `== <name> ==` section per environment. Every environment that
 answered is printed, and the exit code is non-zero if any failed.
 
-Works with every `get`, `describe` and `query` command except the cluster
-commands (see [cluster-api.md](cluster-api.md)), which run
-against one cluster context. `ALL_ENVIRONMENTS` selects environment contexts
+Works with every `get`, `describe` and `query` command, and with `apply` and
+`create settings` (every context is checked before any is written), except the
+cluster commands (see [cluster-api.md](cluster-api.md)), which run against one
+cluster context. `ALL_ENVIRONMENTS` selects environment contexts
 only. `config`, `ctx`, `skills`,
 `doctor` and `commands` never fan out over `--env`; a single `--env` name acts
 like `-c` where they show the current context. Use `dtmgd ctx` first to

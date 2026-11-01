@@ -22,8 +22,10 @@ type DoctorRow struct {
 	Host    string `json:"host" yaml:"host" table:"HOST"`
 	EnvID   string `json:"envId" yaml:"envId" table:"ENV-ID"`
 	Status  string `json:"status" yaml:"status" table:"STATUS,status"`
-	Version string `json:"version" yaml:"version" table:"VERSION"`
-	Detail  string `json:"detail" yaml:"detail" table:"DETAIL"`
+	// SafetyLevel is what dtmgd may change through the context.
+	SafetyLevel string `json:"safetyLevel" yaml:"safetyLevel" table:"SAFETY-LEVEL"`
+	Version     string `json:"version" yaml:"version" table:"VERSION"`
+	Detail      string `json:"detail" yaml:"detail" table:"DETAIL"`
 }
 
 // The values of DoctorRow.Status.
@@ -158,7 +160,7 @@ func (a *App) printDoctor(rows []DoctorRow, failed []string) error {
 // resolves, its token is stored, and the cluster reports its version. The
 // first check that fails decides the row.
 func (a *App) checkContext(cfg *config.Config, nc config.NamedContext) DoctorRow {
-	row := DoctorRow{Context: nc.Name, Scope: contextScope(nc.Context), Host: nc.Context.Host, EnvID: nc.Context.EnvID}
+	row := DoctorRow{Context: nc.Name, Scope: contextScope(nc.Context), Host: nc.Context.Host, EnvID: nc.Context.EnvID, SafetyLevel: listedLevel(nc.Context)}
 	fail := func(err error) DoctorRow {
 		row.Status, row.Detail = doctorFail, failDetail(err)
 		return row

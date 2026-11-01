@@ -53,6 +53,9 @@ type Context struct {
 	Description   string `json:"description,omitempty" yaml:"description,omitempty"`
 	HTTPProxyURL  string `json:"http-proxy,omitempty" yaml:"http-proxy,omitempty"`
 	HTTPSProxyURL string `json:"https-proxy,omitempty" yaml:"https-proxy,omitempty"`
+	// SafetyLevel is what dtmgd may change through this context (see
+	// ParseSafetyLevel); empty is readonly.
+	SafetyLevel string `json:"safety-level,omitempty" yaml:"safety-level,omitempty"`
 }
 
 // IsCluster reports whether c is a cluster context: one with no env-id, for

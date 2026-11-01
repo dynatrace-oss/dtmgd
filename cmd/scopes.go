@@ -23,6 +23,7 @@ const (
 	scopeSecurityProblemsRead = "securityProblems.read"
 	scopeDataExport           = "DataExport"
 	scopeSettingsRead         = "settings.read"
+	scopeSettingsWrite        = "settings.write"
 
 	// scopeServiceProviderAPI is the Cluster API's scope, held by a cluster
 	// context's token (one created in the Cluster Management Console).

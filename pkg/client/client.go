@@ -195,11 +195,26 @@ func (c *Client) clients() []*resty.Client {
 // exceeded while awaiting headers", a read timeout): the cluster got the
 // request and is still working on it, and a retry would run it again.
 func isRetryable(r *resty.Response, err error) bool {
+	// A write may already have reached the server once the request was
+	// sent, and sending it again could create a second object. Writes retry
+	// only when the request cannot have been sent (a connect or TLS
+	// handshake timeout) or the server refused it unprocessed (429).
+	if r != nil && r.Request != nil && isWrite(r.Request.Method) {
+		if err != nil {
+			return connectTimeout(err)
+		}
+		return r.StatusCode() == http.StatusTooManyRequests
+	}
 	if err != nil {
 		return connectTimeout(err) || errors.Is(err, syscall.ECONNRESET) || errors.Is(err, io.ErrUnexpectedEOF)
 	}
 	sc := r.StatusCode()
 	return sc == 429 || sc >= 500
+}
+
+// isWrite reports whether method changes something on the server.
+func isWrite(method string) bool {
+	return method != "" && method != http.MethodGet && method != http.MethodHead
 }
 
 // connectTimeout reports whether err is a timeout before the request was
@@ -367,6 +382,46 @@ func (c *Client) GetV2WithValues(path string, params url.Values, result interfac
 	req := c.http.R().SetResult(result)
 	req.SetQueryParamsFromValues(params)
 	resp, err := req.Get("/v2" + path)
+	if err != nil {
+		return c.requestError("request", err)
+	}
+	if resp.IsError() {
+		return APIError(resp.StatusCode(), resp.String())
+	}
+	return nil
+}
+
+// PostV2 sends body as JSON in a POST to the v2 environment API and decodes
+// the answer into result (nil to ignore it). A non-2xx answer is an ErrAPI
+// carrying the whole body, so a caller can read per-item results from it.
+// A POST is never retried once it may have been sent (see isRetryable).
+func (c *Client) PostV2(path string, params map[string]string, body, result interface{}) error {
+	return c.writeV2(http.MethodPost, path, params, body, result)
+}
+
+// PutV2 is PostV2 with PUT.
+func (c *Client) PutV2(path string, params map[string]string, body, result interface{}) error {
+	return c.writeV2(http.MethodPut, path, params, body, result)
+}
+
+// DeleteV2 sends a DELETE to the v2 environment API.
+func (c *Client) DeleteV2(path string, params map[string]string) error {
+	return c.writeV2(http.MethodDelete, path, params, nil, nil)
+}
+
+// writeV2 sends one write to the v2 environment API.
+func (c *Client) writeV2(method, path string, params map[string]string, body, result interface{}) error {
+	if c.ClusterScoped() {
+		return ErrClusterScoped
+	}
+	req := c.http.R().SetQueryParams(params)
+	if body != nil {
+		req.SetHeader("Content-Type", "application/json").SetBody(body)
+	}
+	if result != nil {
+		req.SetResult(result)
+	}
+	resp, err := req.Execute(method, "/v2"+path)
 	if err != nil {
 		return c.requestError("request", err)
 	}

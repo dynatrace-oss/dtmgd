@@ -1,6 +1,6 @@
 # dtmgd — Dynatrace Managed CLI
 
-`dtmgd` is a `kubectl`-inspired read-only CLI for **Dynatrace Managed** (self-hosted) environments, modeled after [`dtctl`](https://github.com/dynatrace-oss/dtctl).
+`dtmgd` is a `kubectl`-inspired CLI for **Dynatrace Managed** (self-hosted) environments, modeled after [`dtctl`](https://github.com/dynatrace-oss/dtctl). It reads everything it covers, and writes Settings 2.0 objects where a context's write level allows it; every context is `readonly` until you raise it.
 
 It gives you terminal access to problems, entities, events, logs, metrics, SLOs, and security vulnerabilities via the Dynatrace Managed classic API — covering every tool of the [Dynatrace Managed MCP Server](https://github.com/dynatrace-oss/dynatrace-managed-mcp); the differences are listed in [MCP server parity](#dynatrace-managed-mcp-server-parity).
 
@@ -186,7 +186,7 @@ declares the scopes it uses, and a permission error names the ones the failed
 command needs; a test keeps this list identical to those declarations.
 
 <!-- scopes:start -->
-- Access problem and event feed, metrics, and topology (`DataExport`): `doctor`
+- Access problem and event feed, metrics, and topology (`DataExport`): `doctor`, and the cluster-version check of `--validate-only` on settings writes
 - Read entities (`entities.read`): entities, entity types and relations; name lookups in `query metrics` and `query log-counts`
 - Read events (`events.read`): events
 - Read logs (`logs.read`): `query logs`, `query log-counts`
@@ -195,6 +195,7 @@ command needs; a test keeps this list identical to those declarations.
 - Read security problems (`securityProblems.read`): security problems
 - Read SLO (`slo.read`): SLOs
 - Read settings (`settings.read`): settings schemas, settings objects and effective values
+- Write settings (`settings.write`): `apply`, `create settings`, `edit setting`, `delete settings`, on a context whose safety-level allows it
 - Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`, `doctor`
 <!-- scopes:end -->
 
@@ -211,6 +212,10 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 | `get` | `problems`, `entities`, `entity-types`, `events`, `metrics`, `slos`, `security-problems`, `settings-schemas`, `settings`; cluster contexts: `environments`, `nodes`, `license-usage` |
 | `describe` | `problem`, `entity`, `entity-type`, `entity-relations`, `event`, `metric`, `slo`, `security-problem`, `settings-schema`, `settings`; cluster contexts: `environment`, `cluster`, `license`, `backup` |
 | `query` | `metrics`, `logs`, `log-counts` |
+| `apply` | `-f <file>`: creates or updates the Settings 2.0 objects in a file (`--dry-run`, `--validate-only`) |
+| `delete` | `settings <object-id>` (`--yes`, `--dry-run`; refuses update windows still in use) |
+| `edit` | `setting <object-id>`: opens a value in an editor, for people (`--validate-only`) |
+| `create` | `settings` (`--dry-run`, `--validate-only`; needs a context whose safety-level allows writes) |
 | `doctor` | checks every context: connectivity, token, cluster version |
 | `config`, `ctx` | contexts and credentials ([configuration](docs/configuration.md)) |
 | `skills` | installs the dtmgd skill for an AI agent ([agent mode](docs/agent-mode.md)) |
@@ -220,8 +225,10 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 others are intentional extensions, the same ones dtctl has: `query` reads
 time series and logs, which are not resources; `doctor`, `commands`,
 `skills`, `config`/`ctx`, `version` and `completion` manage the tool itself.
-`create`, `edit`, `delete` and `apply` are absent on purpose: dtmgd is
-read-only.
+`apply`, `create`, `edit` and `delete` write Settings 2.0 objects, as in dtctl.
+They need a context whose `safety-level` allows the write (every context
+starts `readonly`; see [write levels](docs/configuration.md#write-levels)) and a
+token with `settings.write`, and `--dry-run` shows any change first.
 
 ```bash
 dtmgd get problems --status OPEN --from now-24h
@@ -230,6 +237,7 @@ dtmgd query metrics --metric builtin:service.response.time --from now-1h
 dtmgd get problems --env ALL_ENVIRONMENTS     # every environment context, in parallel
 dtmgd get settings --schema builtin:deployment.management.update-windows   # Settings 2.0 objects
 dtmgd get settings --effective --scope HOST-0000000000000001 --schema builtin:deployment.oneagent.updates
+dtmgd apply -f window.yaml --dry-run          # then without --dry-run, on a context allowed to write
 dtmgd get nodes --context prod-cluster        # a cluster context
 ```
 

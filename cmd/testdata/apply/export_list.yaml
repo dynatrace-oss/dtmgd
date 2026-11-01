@@ -1,0 +1,19 @@
+items:
+  - objectId: obj-alerting-1
+    schemaId: builtin:alerting.profile
+    scope: environment
+    summary: Default
+    updateToken: tok-1
+    schemaVersion: 8.2.1
+    value:
+      name: Default renamed
+  - objectId: obj-alerting-2
+    schemaId: builtin:alerting.profile
+    scope: environment
+    summary: Payments on-call
+    updateToken: tok-2
+    value:
+      name: Payments renamed
+totalCount: 2
+pageSize: 500
+nextPageKey: AQAAAB

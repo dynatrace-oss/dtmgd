@@ -41,6 +41,13 @@ const DefaultConcurrency = 10
 //
 // The apiCall function receives a Client and should perform the request.
 func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, o Options, apiCall func(c *Client) (interface{}, error)) ([]EnvResult, error) {
+	return MultiRequestNamed(cfg, envSpec, maxConcurrency, o, func(_ string, c *Client) (interface{}, error) { return apiCall(c) })
+}
+
+// MultiRequestNamed is MultiRequest whose apiCall also gets the context's
+// name, for calls that carry per-context state, such as the writes planned
+// for each context.
+func MultiRequestNamed(cfg *config.Config, envSpec string, maxConcurrency int, o Options, apiCall func(name string, c *Client) (interface{}, error)) ([]EnvResult, error) {
 	contexts, err := resolveContexts(cfg, envSpec)
 	if err != nil {
 		return nil, err
@@ -80,7 +87,7 @@ func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, o Opti
 				return
 			}
 
-			data, callErr := apiCall(c)
+			data, callErr := apiCall(nc.Name, c)
 			r.Data = data
 			r.Error = callErr
 			results[idx] = r
@@ -89,6 +96,12 @@ func MultiRequest(cfg *config.Config, envSpec string, maxConcurrency int, o Opti
 
 	wg.Wait()
 	return results, nil
+}
+
+// ResolveContexts returns the contexts envSpec selects (see MultiRequest), in
+// the order it names them, so a caller can check them before any request.
+func ResolveContexts(cfg *config.Config, envSpec string) ([]config.NamedContext, error) {
+	return resolveContexts(cfg, envSpec)
 }
 
 // resolveContexts returns the contexts envSpec selects (see MultiRequest), in

@@ -14,9 +14,13 @@ import (
 
 // Flag names shared between the `ctx set` and `config set-context` commands.
 const (
-	flagEnvID    = "env-id"
-	flagTokenRef = "token-ref"
+	flagEnvID       = "env-id"
+	flagTokenRef    = "token-ref"
+	flagSafetyLevel = "safety-level"
 )
+
+// safetyLevelUsage is the --safety-level flag's help on set-context and ctx set.
+const safetyLevelUsage = "what dtmgd may change through this context: readonly (the default), readwrite-mine, readwrite-all or dangerously-unrestricted"
 
 // ContextListItem is a context listing's row. Its json and yaml keys are the
 // config file's; the table marks the current context with "*", the data
@@ -29,6 +33,7 @@ type ContextListItem struct {
 	Host        string `json:"host" yaml:"host" table:"HOST"`
 	EnvID       string `json:"env-id,omitempty" yaml:"env-id,omitempty" table:"ENV-ID"`
 	TokenRef    string `json:"token-ref" yaml:"token-ref" table:"TOKEN-REF"`
+	SafetyLevel string `json:"safety-level" yaml:"safety-level" table:"SAFETY-LEVEL"`
 	Description string `json:"description,omitempty" yaml:"description,omitempty" table:"DESCRIPTION,wide"`
 }
 
@@ -101,20 +106,21 @@ func (a *App) printCurrentContext() error {
 
 func newCtxSetCmd(a *App) *cobra.Command {
 	var opts struct {
-		host, envID, tokenRef, description string
+		host, envID, tokenRef, description, safetyLevel string
 	}
 	cmd := &cobra.Command{
 		Use:   "set <context-name>",
 		Short: "Create or update a context",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.setContext(args[0], opts.host, opts.envID, opts.tokenRef, opts.description)
+			return a.setContext(args[0], opts.host, opts.envID, opts.tokenRef, opts.description, opts.safetyLevel)
 		},
 	}
 	cmd.Flags().StringVar(&opts.host, "host", "", "Managed cluster host URL")
 	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID (omit for a cluster context)")
 	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "description")
+	cmd.Flags().StringVar(&opts.safetyLevel, flagSafetyLevel, "", safetyLevelUsage)
 	return cmd
 }
 
@@ -184,11 +190,21 @@ func (a *App) listContexts() error {
 			Host:        nc.Context.Host,
 			EnvID:       nc.Context.EnvID,
 			TokenRef:    nc.Context.TokenRef,
+			SafetyLevel: listedLevel(nc.Context),
 			Description: nc.Context.Description,
 		})
 	}
 
 	return a.printer("").PrintList(items)
+}
+
+// listedLevel is c's write level as listings show it: the effective level,
+// or the value as written when it is not a valid one.
+func listedLevel(c config.Context) string {
+	if l, err := c.Level(); err == nil {
+		return string(l)
+	}
+	return c.SafetyLevel
 }
 
 // contextScope names c's kind, as the SCOPE columns show it.
@@ -224,6 +240,23 @@ func (a *App) useContext(name string) error {
 	return nil
 }
 
+// warnRepointedLevel warns when set-context points a context that may
+// write at another host or environment: its level stays, and now applies
+// to the new target.
+func warnRepointedLevel(cfg *config.Config, name, host, envID string) {
+	existing, err := cfg.GetContext(name)
+	if err != nil {
+		return
+	}
+	level, err := existing.Context.Level()
+	if err != nil || level == config.SafetyReadOnly {
+		return
+	}
+	if (host != "" && host != existing.Context.Host) || (envID != "" && envID != existing.Context.EnvID) {
+		output.PrintWarning("Context %q keeps safety-level %s, which now applies to its new host or environment. Lower it with --safety-level readonly if that is not intended.", name, level)
+	}
+}
+
 // warnClobberedContextRefs warns before a set-context call replaces a ${VAR}
 // reference with a literal value. The user gets no other signal that the
 // indirection is gone, and only the matched references are echoed — never the
@@ -252,9 +285,14 @@ func warnClobberedContextRefs(cfg *config.Config, name, host, envID, tokenRef st
 	}
 }
 
-func (a *App) setContext(name, host, envID, tokenRef, description string) error {
+func (a *App) setContext(name, host, envID, tokenRef, description, safetyLevel string) error {
 	if strings.Contains(name, ";") {
 		return &UsageError{Err: fmt.Errorf("context name %q contains ';', which --env uses to separate names; choose another name", name)}
+	}
+	// A typo must not reach the file: check the level before loading.
+	level, err := config.ParseSafetyLevel(safetyLevel)
+	if err != nil {
+		return &UsageError{Err: err}
 	}
 	cfg, err := a.loadConfigForUpdate()
 	if err != nil {
@@ -262,19 +300,22 @@ func (a *App) setContext(name, host, envID, tokenRef, description string) error 
 	}
 
 	// A new context needs a host. Without an env-id it is a cluster context.
-	isUpdate := false
-	for _, nc := range cfg.Contexts {
-		if nc.Name == name {
-			isUpdate = true
-			break
-		}
-	}
+	_, missing := cfg.GetContext(name)
+	isUpdate := missing == nil
 	if !isUpdate && host == "" {
 		return fmt.Errorf("--host is required for new contexts")
 	}
 	warnClobberedContextRefs(cfg, name, host, envID, tokenRef)
+	if safetyLevel == "" {
+		warnRepointedLevel(cfg, name, host, envID)
+	}
 
 	cfg.SetContext(name, host, envID, tokenRef, description)
+	if safetyLevel != "" {
+		if err := cfg.SetSafetyLevel(name, level); err != nil {
+			return err
+		}
+	}
 
 	if cfg.CurrentContext == "" || len(cfg.Contexts) == 1 {
 		cfg.CurrentContext = name

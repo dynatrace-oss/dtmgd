@@ -23,7 +23,7 @@ const (
 
 // doctorRowJSON decodes one doctor row.
 type doctorRowJSON struct {
-	Context, Scope, Host, EnvID, Status, Version, Detail string
+	Context, Scope, Host, EnvID, Status, Version, Detail, SafetyLevel string
 }
 
 // versionAPI is a fake cluster whose node list reports version v. The real

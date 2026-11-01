@@ -9,18 +9,19 @@ the code are kept in the knowledge base in
 ## What dtmgd is
 
 A `kubectl`-style CLI (`dtmgd <verb> <resource> [flags]`) for **Dynatrace
-Managed** (self-hosted) clusters, written in Go with Cobra. It is
-**read-only**: it never creates, changes or deletes anything on a cluster, and
-that holds for the Cluster Management API too. Primary users are AI agents
-driving it through the bundled skill, so output, limits and exit codes are
-part of its contract.
+Managed** (self-hosted) clusters, written in Go with Cobra. It **reads by
+default**: the only writes are Settings 2.0 objects (`apply`, `create`,
+`edit`, `delete`), and only through a context whose `safety-level` allows
+them. Every context starts `readonly`. The Cluster Management API is still
+read-only. Primary users are AI agents driving it through the bundled skill,
+so output, limits and exit codes are part of its contract.
 
 ## Build, test, lint
 
 ```bash
 make build        # ./dtmgd (CGO_ENABLED=0)
 make test         # go test -race ./...
-make integration  # live read-only suite against a real cluster (test/integration)
+make integration  # live suite against a real cluster (test/integration); writes only with DTMGD_IT_WRITE_ENV
 make lint         # go vet, gofmt check, golangci-lint, actionlint, shellcheck (checks only)
 make fmt          # gofmt -w .
 make docs         # regenerate docs/reference after changing a command
@@ -41,6 +42,7 @@ cmd/            Cobra commands, one file per command (get_*.go, describe_*.go, q
   cluster.go    runClusterFetch, clusterCommand: the same for Cluster Management API commands
   contextkind.go  refuses a command run against the wrong kind of context (exit 2)
   errors.go     error reporting, hints (withHint), exit codes
+  writes.go     runWrites and writeSpec: plan → check levels → write → report, for every write command
   scopes.go     withScopes: the token scopes each command declares
   commands.go   the `dtmgd commands` catalog
 pkg/client/     HTTP client (resty): GetV2, GetV1, GetCluster, GetV2Paged, GetClusterPaged,
@@ -51,7 +53,7 @@ pkg/skills/     `dtmgd skills install`; skills/dtmgd/ holds the embedded skill
 pkg/version/    version, commit, date: ldflags, else the module's build info
 tools/          checksum-locked CI tools (govulncheck, actionlint), a separate module
 internal/testsandbox/  TestMain helper: temp HOME and config directory for test binaries
-test/integration/      live read-only suite against a real cluster (build tag integration)
+test/integration/      live suite against a real cluster (build tag integration); writes only to DTMGD_IT_WRITE_ENV
 ```
 
 Endpoints:
@@ -100,6 +102,26 @@ dtctl, and it stays that way.
    `a.watchOrRun`.
 5. Test it end to end (see Testing), then run `make docs`: the reference in
    `docs/reference/` is generated, and a test fails while it is stale.
+
+### Adding a write command
+
+Write commands go through **`a.runWrites(writeSpec{…})`** (`cmd/writes.go`),
+never their own requests:
+
+- `Plan` resolves, with GETs only, what the command would write in one
+  context (`[]plannedWrite`, each with its `config.Operation`). The runner
+  plans every selected context, then checks every context's `safety-level`
+  (and, for `--validate-only`, the 1.288 version floor) before writing to
+  any; a `readonly` context is refused before any request. `--dry-run` stops
+  after the plan.
+- Write with `executeWrite` (one request per object; the client never
+  retries a write once it may have been sent) and let `renderWriteReport`
+  print the `writeReport`. Failed objects make the command fail after every
+  result is printed.
+- Mark the command with `withWrites(cmd)`: it declares `settings.read` and
+  `settings.write` and sets `"mutating": true` in the catalog.
+- Deletes confirm (`Confirm`; `--yes` is required in agent mode). A blocked
+  write is a `SafetyError`: exit 6, agent code `safety_blocked`.
 
 ## Conventions
 
@@ -190,9 +212,12 @@ dtctl, and it stays that way.
 
 - **Never print, log or commit a token.** When you show a config file, filter
   out its `token:` lines. Use tokens only through dtmgd itself.
-- **Calls to a real cluster are read-only GETs**, and only when the maintainer
-  asks for them. Filter their output (`jq`) so license keys, emails, IPs and
-  storage paths stay out of the transcript.
+- **Calls to a real cluster need the maintainer's go-ahead.** Reads may go to
+  any context they name. **Writes go only to `stage`** (and `stage-cluster`
+  once cluster writes exist), only through the live suite's temporary config
+  copy, and only to objects the run created (`dtmgd-it-…`); existing objects
+  get `--dry-run` and `--validate-only` only. Filter output (`jq`) so
+  license keys, emails, IPs and storage paths stay out of the transcript.
 - **No real host names or environment IDs in repository files.** New examples
   use `example.com` hosts (`https://cluster.example.com`) and synthetic IDs;
   older ones use `managed.company.com`, so don't add more of those.

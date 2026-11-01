@@ -16,8 +16,9 @@ import (
 // `dtmgd commands` output.
 const catalogSchemaVersion = 1
 
-// catalogVerbs are the verb-noun verbs whose resources --brief lists.
-var catalogVerbs = []string{"get", "describe", "query"}
+// catalogVerbs are the verb-noun verbs whose resources --brief lists, the
+// write verbs included, so an agent sees what it can change.
+var catalogVerbs = []string{"get", "describe", "query", "create", "edit", "delete"}
 
 // groupAnnotation marks a command that only groups subcommands: run alone,
 // it reports a missing subcommand or prints its help. The catalog lists the
@@ -59,8 +60,11 @@ type catalogCommand struct {
 	RequiredScopes []string `json:"required_scopes,omitempty" yaml:"required_scopes,omitempty"`
 	// ClusterScoped marks a command that needs a cluster context (no
 	// env-id) rather than an environment context.
-	ClusterScoped bool                   `json:"cluster_scoped,omitempty" yaml:"cluster_scoped,omitempty"`
-	Flags         map[string]catalogFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
+	ClusterScoped bool `json:"cluster_scoped,omitempty" yaml:"cluster_scoped,omitempty"`
+	// Mutating marks a command that writes: its context's safety-level must
+	// allow the write.
+	Mutating bool                   `json:"mutating,omitempty" yaml:"mutating,omitempty"`
+	Flags    map[string]catalogFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
 // catalogFlag describes one flag. Default is the flag's default as cobra
@@ -82,11 +86,11 @@ needs, for AI agents and scripts to discover the CLI.
 The catalog is JSON (or YAML with -o yaml) and is never wrapped in an agent
 envelope. Global flags (--context, --env, -o and the rest) are listed once,
 under global_flags; each command lists only its own flags. --brief lists only
-the resources of get, describe and query.
+the resources of get, describe, query, create, edit and delete.
 
 Examples:
   dtmgd commands             # full catalog: paths, aliases, flags, token scopes
-  dtmgd commands --brief     # the resources of get, describe and query
+  dtmgd commands --brief     # the resources of each verb
   dtmgd commands -o yaml     # the catalog as YAML`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -182,6 +186,7 @@ func describeCommand(cmd *cobra.Command) catalogCommand {
 		Short:          cmd.Short,
 		RequiredScopes: requiredScopes(cmd),
 		ClusterScoped:  isClusterCommand(cmd),
+		Mutating:       isMutating(cmd),
 	}
 	visitOwnFlags(cmd, func(f *pflag.Flag) {
 		if e.Flags == nil {
