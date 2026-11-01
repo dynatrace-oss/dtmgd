@@ -208,8 +208,8 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 
 | Verb | Resources |
 |---|---|
-| `get` | `problems`, `entities`, `entity-types`, `events`, `metrics`, `slos`, `security-problems`; cluster contexts: `environments`, `nodes`, `license-usage` |
-| `describe` | `problem`, `entity`, `entity-type`, `entity-relations`, `event`, `metric`, `slo`, `security-problem`; cluster contexts: `environment`, `cluster`, `license`, `backup` |
+| `get` | `problems`, `entities`, `entity-types`, `events`, `metrics`, `slos`, `security-problems`, `settings-schemas`, `settings`; cluster contexts: `environments`, `nodes`, `license-usage` |
+| `describe` | `problem`, `entity`, `entity-type`, `entity-relations`, `event`, `metric`, `slo`, `security-problem`, `settings-schema`, `settings`; cluster contexts: `environment`, `cluster`, `license`, `backup` |
 | `query` | `metrics`, `logs`, `log-counts` |
 | `doctor` | checks every context: connectivity, token, cluster version |
 | `config`, `ctx` | contexts and credentials ([configuration](docs/configuration.md)) |
@@ -228,6 +228,8 @@ dtmgd get problems --status OPEN --from now-24h
 dtmgd describe problem <problem-id> -o json
 dtmgd query metrics --metric builtin:service.response.time --from now-1h
 dtmgd get problems --env ALL_ENVIRONMENTS     # every environment context, in parallel
+dtmgd get settings --schema builtin:deployment.management.update-windows   # Settings 2.0 objects
+dtmgd get settings --effective --scope HOST-0000000000000001 --schema builtin:deployment.oneagent.updates
 dtmgd get nodes --context prod-cluster        # a cluster context
 ```
 

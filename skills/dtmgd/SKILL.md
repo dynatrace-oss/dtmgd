@@ -128,6 +128,18 @@ dtmgd query metrics \
 dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 ```
 
+## Settings 2.0
+
+```bash
+dtmgd get settings-schemas --search deployment                     # find a schema ID
+dtmgd describe settings-schema builtin:deployment.oneagent.updates # scopes, fields, allowed values
+dtmgd get settings --schema builtin:deployment.management.update-windows   # stored objects
+dtmgd get settings --effective --scope HOST-<id> --schema builtin:deployment.oneagent.updates   # what applies to a host
+dtmgd describe settings <object-id> -o yaml                        # one object
+```
+
+`get settings` needs `--schema` or `--scope`. Stored objects are only what someone set; `--effective` resolves inheritance and defaults (`ORIGIN` says where the value comes from). Token scope: `settings.read`. Details: [references/settings.md](references/settings.md).
+
 ## Gotchas
 
 - `describe problem` requires the **UUID** (`PROBLEM-ID` column), not the display ID (`P-XXXXX`).
@@ -158,5 +170,8 @@ Read the one that matches the task:
   importing an MCP server config, multi-environment (`--env`) queries.
 - [references/cluster-api.md](references/cluster-api.md): a cluster's
   environments, nodes, license, license usage and backup (cluster contexts).
+- [references/settings.md](references/settings.md): Settings 2.0 — finding a
+  schema, stored objects versus effective values, scopes and inheritance, and
+  the update-window, OneAgent update and ActiveGate update settings.
 - [references/mcp-parity.md](references/mcp-parity.md): which dtmgd command
   matches each Dynatrace Managed MCP Server tool, and how they differ.
