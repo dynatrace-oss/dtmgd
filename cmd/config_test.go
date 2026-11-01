@@ -179,7 +179,7 @@ func TestSetContextOnPlaceholderConfigSucceeds(t *testing.T) {
 	t.Setenv("DT_ENV_ID", "abc12345")
 	t.Setenv("DT_API_TOKEN", "dt0c01.LIVESECRET")
 
-	if err := a.setContext("newenv", "https://new.example.com", "xyz99999", "prod-token", ""); err != nil {
+	if err := a.setContext("newenv", "https://new.example.com", "xyz99999", "prod-token", "", ""); err != nil {
 		t.Fatalf("setContext() error = %v", err)
 	}
 

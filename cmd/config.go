@@ -226,7 +226,7 @@ func newConfigUseContextCmd(a *App) *cobra.Command {
 // a context.
 func newConfigSetContextCmd(a *App) *cobra.Command {
 	var opts struct {
-		host, envID, tokenRef, description string
+		host, envID, tokenRef, description, safetyLevel string
 	}
 	cmd := &cobra.Command{
 		Use:   "set-context <context-name>",
@@ -250,6 +250,11 @@ cluster, describe license, get license-usage and describe backup.
 Its --host is the cluster's own address, as used by the Cluster Management
 Console, and its token needs the ServiceProviderAPI scope.
 
+--safety-level says what dtmgd may change through the context: readonly (the
+default), readwrite-mine (create only), readwrite-all or
+dangerously-unrestricted. It guards dtmgd's own writes; the real boundary is
+the token's scopes: a token without settings.write cannot write.
+
 Examples:
   dtmgd config set-context prod \
     --host https://managed.company.com \
@@ -259,13 +264,14 @@ Examples:
   dtmgd config set-credentials prod-token   # prompts for the token`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.setContext(args[0], opts.host, opts.envID, opts.tokenRef, opts.description)
+			return a.setContext(args[0], opts.host, opts.envID, opts.tokenRef, opts.description, opts.safetyLevel)
 		},
 	}
 	cmd.Flags().StringVar(&opts.host, "host", "", "Dynatrace Managed cluster URL (e.g. https://managed.company.com)")
 	cmd.Flags().StringVar(&opts.envID, flagEnvID, "", "environment ID (omit for a cluster context)")
 	cmd.Flags().StringVar(&opts.tokenRef, flagTokenRef, "", "credential name (see set-credentials)")
 	cmd.Flags().StringVar(&opts.description, "description", "", "human-readable description")
+	cmd.Flags().StringVar(&opts.safetyLevel, flagSafetyLevel, "", safetyLevelUsage)
 	return cmd
 }
 

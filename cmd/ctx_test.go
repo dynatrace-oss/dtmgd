@@ -44,7 +44,7 @@ func TestSetContextWarnsOnClobberedPlaceholder(t *testing.T) {
 	a := newTestApp(path)
 
 	stderr := captureStderr(t, func() {
-		if err := a.setContext("prod", "https://new.example.com", "xyz99999", "", ""); err != nil {
+		if err := a.setContext("prod", "https://new.example.com", "xyz99999", "", "", ""); err != nil {
 			t.Fatalf("setContext() error = %v", err)
 		}
 	})
@@ -88,7 +88,7 @@ tokens:
 	a := newTestApp(withTempConfig(t, mixed))
 
 	stderr := captureStderr(t, func() {
-		if err := a.setContext("prod", "", "", "newref", ""); err != nil {
+		if err := a.setContext("prod", "", "", "newref", "", ""); err != nil {
 			t.Fatalf("setContext() error = %v", err)
 		}
 	})
@@ -107,7 +107,7 @@ func TestSetContextNewContextIsSilent(t *testing.T) {
 	a := newTestApp(withTempConfig(t, placeholderConfig))
 
 	stderr := captureStderr(t, func() {
-		if err := a.setContext("brandnew", "https://b.example.com", "b1", "", ""); err != nil {
+		if err := a.setContext("brandnew", "https://b.example.com", "b1", "", "", ""); err != nil {
 			t.Fatalf("setContext() error = %v", err)
 		}
 	})
@@ -125,7 +125,7 @@ func TestSetContextRefusesToOverwriteUnparseableConfig(t *testing.T) {
 	path := withTempConfig(t, bad)
 	a := newTestApp(path)
 
-	err := a.setContext("new", "https://new.example.com", "env1", "tok", "")
+	err := a.setContext("new", "https://new.example.com", "env1", "tok", "", "")
 	if err == nil || !strings.Contains(err.Error(), "failed to parse config file") {
 		t.Fatalf("want parse error, got %v", err)
 	}
@@ -150,7 +150,7 @@ func TestSetContextRefusesUnreadableConfig(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
 	a := newTestApp(path)
 
-	if err := a.setContext("new", "https://new.example.com", "env1", "tok", ""); err == nil {
+	if err := a.setContext("new", "https://new.example.com", "env1", "tok", "", ""); err == nil {
 		t.Fatal("want an error for an unreadable config")
 	}
 	_ = os.Chmod(path, 0o600)
@@ -166,7 +166,7 @@ func TestSetContextCreatesMissingConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "new.yaml")
 	a := newTestApp(path)
 
-	if err := a.setContext("prod", "https://h.example.com", "env1", "tok", ""); err != nil {
+	if err := a.setContext("prod", "https://h.example.com", "env1", "tok", "", ""); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(path)
