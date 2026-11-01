@@ -48,6 +48,11 @@ type writeResult struct {
 	// the one that would be written.
 	Current map[string]interface{} `json:"current,omitempty" yaml:"current,omitempty"`
 	Value   map[string]interface{} `json:"value,omitempty" yaml:"value,omitempty"`
+	// Position is the move within an ordered schema, when one was asked for.
+	Position *positionChange `json:"position,omitempty" yaml:"position,omitempty"`
+	// Note explains a result that is not what it seems, such as a
+	// validation that left out the position.
+	Note string `json:"note,omitempty" yaml:"note,omitempty"`
 }
 
 // writeError is why one object's write failed, in the API's own terms.
@@ -69,6 +74,9 @@ type writeReport struct {
 	DryRun       bool          `json:"dryRun" yaml:"dryRun"`
 	ValidateOnly bool          `json:"validateOnly" yaml:"validateOnly"`
 	Results      []writeResult `json:"results" yaml:"results"`
+	// Warnings are problems that did not stop the plan, as
+	// "<context>: <warning>".
+	Warnings []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
 }
 
 // plannedWrite is one object's write as the GET-only plan resolved it.
@@ -77,6 +85,19 @@ type plannedWrite struct {
 	Action                                                      string
 	ObjectID, SchemaID, Scope, ExternalID, UpdateToken, Summary string
 	Value, Current                                              map[string]interface{}
+	// ReportValue is what a dry-run report shows as value: Value with its
+	// secrets masked by guardSecrets.
+	ReportValue map[string]interface{}
+	// InsertAfter and InsertBefore place the object in an ordered schema;
+	// "" means first (after) or last (before), nil sends nothing.
+	InsertAfter, InsertBefore *string
+	// Position is the move the report shows.
+	Position *positionChange
+	// anchorFrom is the 1-based plan index of a create in this file whose
+	// objectId fills the anchor when the write executes (0: none);
+	// anchorBefore says it fills InsertBefore rather than InsertAfter.
+	anchorFrom   int
+	anchorBefore bool
 	// Existing are the objects the plan listed for a create: a POST that
 	// answers with one of them overwrote it, and is reported as an update.
 	Existing map[string]bool
@@ -85,6 +106,9 @@ type plannedWrite struct {
 	// the action and error. Such a write validates its own way, so the
 	// validateOnly version gate does not apply to it.
 	Exec func(c *client.Client, validateOnly bool) writeResult
+	// Warnings are problems that did not stop the plan (a check that
+	// skipped something); the report lists them.
+	Warnings []string
 }
 
 // writeSpec describes one write command for runWrites.
@@ -174,7 +198,7 @@ func (a *App) runWrites(s writeSpec) error {
 	if err := s.checkPlans(names, plans, levels); err != nil {
 		return err
 	}
-	rep := writeReport{DryRun: s.DryRun, ValidateOnly: s.ValidateOnly, Results: []writeResult{}}
+	rep := writeReport{DryRun: s.DryRun, ValidateOnly: s.ValidateOnly, Results: []writeResult{}, Warnings: planWarnings(names, plans)}
 	if cancelled, err := s.confirm(names, plans); err != nil {
 		return err
 	} else if cancelled {
@@ -187,6 +211,19 @@ func (a *App) runWrites(s writeSpec) error {
 		return err
 	}
 	return a.renderWriteReport(s, rep)
+}
+
+// planWarnings collects every context's plan warnings, in context order.
+func planWarnings(names []string, plans map[string]contextPlan) []string {
+	var out []string
+	for _, name := range names {
+		for _, wr := range plans[name].writes {
+			for _, msg := range wr.Warnings {
+				out = append(out, name+": "+msg)
+			}
+		}
+	}
+	return out
 }
 
 // clusterHints are the hints of s's errors on a cluster context: a
@@ -303,6 +340,9 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 		if p.writes, err = s.Plan(name, c); err != nil {
 			return nil, err
 		}
+		if err = guardSecrets(c, p.writes, s.DryRun); err != nil {
+			return nil, err
+		}
 		if s.ValidateOnly && hasWrites(p.writes) {
 			p.version, p.versionErr = c.ClusterVersion()
 		}
@@ -326,9 +366,42 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 	case len(failed) == 1 && len(results) == 1:
 		return nil, nil, failed[0].Error
 	case len(failed) > 0:
-		return nil, nil, fmt.Errorf("nothing was written anywhere: %w", &client.PartialFailureError{Failed: failed, Total: len(results)})
+		return nil, nil, planFailure(failed, len(results))
 	}
 	return names, plans, nil
+}
+
+// planFailure is the error of a run where several contexts failed to plan: a
+// usage error with their common hint when every failure is one, otherwise a
+// partial failure.
+func planFailure(failed []client.EnvResult, total int) error {
+	err := fmt.Errorf("nothing was written anywhere: %w", &client.PartialFailureError{Failed: failed, Total: total})
+	if allUsageErrors(failed) {
+		return withHint(&UsageError{Err: err}, commonHint(failed))
+	}
+	return err
+}
+
+// allUsageErrors reports whether every failed context failed with a UsageError.
+func allUsageErrors(failed []client.EnvResult) bool {
+	for _, r := range failed {
+		var u *UsageError
+		if !errors.As(r.Error, &u) {
+			return false
+		}
+	}
+	return len(failed) > 0
+}
+
+// commonHint is the hint every failure carries, or "" when they differ.
+func commonHint(failed []client.EnvResult) string {
+	h := explicitHint(failed[0].Error)
+	for _, r := range failed[1:] {
+		if explicitHint(r.Error) != h {
+			return ""
+		}
+	}
+	return h
 }
 
 // refuseReadonly blocks a write run through a readonly context before any
@@ -423,7 +496,7 @@ func plannedResults(names []string, plans map[string]contextPlan) []writeResult 
 	for _, name := range names {
 		for _, w := range plans[name].writes {
 			r := w.result(name)
-			r.Action, r.Current, r.Value = w.Action, w.Current, w.Value
+			r.Action, r.Current, r.Value = w.Action, w.Current, w.ReportValue
 			results = append(results, r)
 		}
 	}
@@ -432,7 +505,7 @@ func plannedResults(names []string, plans map[string]contextPlan) []writeResult 
 
 // result is w's report entry, without its outcome.
 func (w plannedWrite) result(context string) writeResult {
-	return writeResult{Context: context, ObjectID: w.ObjectID, SchemaID: w.SchemaID, Scope: w.Scope, Summary: w.Summary}
+	return writeResult{Context: context, ObjectID: w.ObjectID, SchemaID: w.SchemaID, Scope: w.Scope, Summary: w.Summary, Position: w.Position}
 }
 
 // executeWrites sends every context's planned writes, one request per
@@ -440,13 +513,7 @@ func (w plannedWrite) result(context string) writeResult {
 // object its own outcome.
 func (a *App) executeWrites(cfg *config.Config, s writeSpec, names []string, plans map[string]contextPlan) ([]writeResult, error) {
 	results, err := client.MultiRequestNamed(cfg, a.envSpec(), a.Opts.Concurrency, a.clientOptions(), func(name string, c *client.Client) (interface{}, error) {
-		var out []writeResult
-		for _, w := range plans[name].writes {
-			r := executeWrite(c, w, s.ValidateOnly)
-			r.Context = name
-			out = append(out, r)
-		}
-		return out, nil
+		return executeContext(c, name, plans[name].writes, s.ValidateOnly), nil
 	})
 	if err != nil {
 		return nil, err
@@ -464,6 +531,55 @@ func (a *App) executeWrites(cfg *config.Config, s writeSpec, names []string, pla
 		all = append(all, byName[name]...)
 	}
 	return all, nil
+}
+
+// executeContext sends one context's writes in plan order, filling each
+// position anchor created earlier in the file with that write's objectId.
+func executeContext(c *client.Client, name string, writes []plannedWrite, validateOnly bool) []writeResult {
+	out := make([]writeResult, 0, len(writes))
+	ids := make([]string, len(writes)+1) // objectId by 1-based plan index
+	for i, w := range writes {
+		note, blocked := resolveAnchor(&w, ids, validateOnly)
+		var r writeResult
+		if blocked {
+			r = w.result("")
+			r.Action, r.Error = actionFailed, &writeError{Message: "its position anchor was not written"}
+		} else {
+			r = executeWrite(c, w, validateOnly)
+			r.Note = note
+			if r.Error == nil {
+				ids[i+1] = r.ObjectID
+			}
+		}
+		r.Context = name
+		out = append(out, r)
+	}
+	return out
+}
+
+// resolveAnchor fills w's position anchor from an earlier write of the
+// file. Under validateOnly nothing was written, so the position is left
+// out and a note says so. blocked is true when the anchor's write failed.
+// w points at the loop's copy of the write; plans are not reused, so
+// changing it is intended.
+func resolveAnchor(w *plannedWrite, ids []string, validateOnly bool) (note string, blocked bool) {
+	if w.anchorFrom == 0 {
+		return "", false
+	}
+	if validateOnly {
+		w.InsertAfter, w.InsertBefore = nil, nil
+		return "validated without its position: its anchor is created by this file", false
+	}
+	id := ids[w.anchorFrom]
+	if id == "" {
+		return "", true
+	}
+	if w.anchorBefore {
+		w.InsertBefore = &id
+	} else {
+		w.InsertAfter = &id
+	}
+	return "", false
 }
 
 // failAll reports every write of a context that could not be reached.
@@ -506,6 +622,7 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 		if w.ExternalID != "" {
 			obj["externalId"] = w.ExternalID
 		}
+		w.addPlacement(obj)
 		var items []settingsWriteItem
 		err = settingsPost(c, settingsObjectsPath, params, []interface{}{obj}, &items)
 		if len(items) > 0 {
@@ -516,6 +633,7 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 		if w.UpdateToken != "" {
 			body["updateToken"] = w.UpdateToken
 		}
+		w.addPlacement(body)
 		err = settingsPut(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), params, body, &item)
 	case actionDelete:
 		err = settingsDelete(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), deleteParams(w.UpdateToken))
@@ -606,7 +724,7 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 	failErr := writeFailures(rep)
 	hint := writeHint(rep)
 	if a.agentMode() {
-		ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource}
+		ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, Warnings: rep.Warnings}
 		if failErr == nil {
 			return output.NewAgentPrinter(a.Out, ctx).Print(rep)
 		}
@@ -615,11 +733,15 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 		}
 		return fmt.Errorf("%w: %w", errReported, failErr)
 	}
+	for _, msg := range rep.Warnings {
+		output.PrintWarning("%s", msg)
+	}
 	if len(rep.Results) > 0 || a.dataFormat() {
 		if err := a.printWriteReport(rep); err != nil {
 			return err
 		}
 	}
+	a.printWriteNotes(rep)
 	if rep.DryRun && !a.dataFormat() {
 		output.PrintInfo("Dry run: nothing was changed. -o yaml shows each object's current and new value.")
 	}
@@ -649,15 +771,33 @@ func (a *App) printWriteReport(rep writeReport) error {
 	if !a.isMultiEnv() {
 		rows := make([]writeRow, 0, len(rep.Results))
 		for _, r := range rep.Results {
-			rows = append(rows, writeRow{Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: r.Summary})
+			rows = append(rows, writeRow{Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: unescapeMarkdown(r.Summary)})
 		}
 		return p.PrintList(rows)
 	}
 	rows := make([]writeContextRow, 0, len(rep.Results))
 	for _, r := range rep.Results {
-		rows = append(rows, writeContextRow{Context: r.Context, Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: r.Summary})
+		rows = append(rows, writeContextRow{Context: r.Context, Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: unescapeMarkdown(r.Summary)})
 	}
 	return p.PrintList(rows)
+}
+
+// printWriteNotes prints each result's note on stderr for a person: the
+// table has no column for it. json, yaml and agent output carry it.
+func (a *App) printWriteNotes(rep writeReport) {
+	if a.dataFormat() {
+		return
+	}
+	for _, r := range rep.Results {
+		if r.Note == "" {
+			continue
+		}
+		target := r.ObjectID
+		if target == "" {
+			target = r.Scope
+		}
+		output.PrintInfo("%s %s %s: %s", r.Context, r.SchemaID, target, r.Note)
+	}
 }
 
 // printWriteFailures names every failed object on stderr, with the rules

@@ -144,7 +144,7 @@ func hintOnNotFound(fetch func(*client.Client, int) (fetched, error), hint strin
 	return func(c *client.Client, limit int) (fetched, error) {
 		f, err := fetch(c, limit)
 		var apiErr *client.ErrAPI
-		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound && explicitHint(err) == "" {
 			return f, withHint(err, hint)
 		}
 		return f, err

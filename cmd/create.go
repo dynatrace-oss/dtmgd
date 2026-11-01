@@ -54,6 +54,7 @@ dtmgd config set-context --help) and a token with settings.write.`,
 func newCreateSettingsCmd(a *App) *cobra.Command {
 	var opts struct {
 		file, schema, scope  string
+		position             string
 		dryRun, validateOnly bool
 	}
 	cmd := &cobra.Command{
@@ -67,6 +68,10 @@ apply.
 
 For a schema that holds one object per scope, create refuses when the scope
 already has one.
+
+In an ordered schema a new object goes last, or where --position says: first,
+last, after:<ref> or before:<ref>, where <ref> is the objectId or externalId
+of an object at the same scope.
 
 --dry-run shows what would be created, with GETs only, at any write level.
 --validate-only asks the cluster to check the value without saving it
@@ -82,6 +87,10 @@ Examples:
 			if err != nil {
 				return err
 			}
+			pos, err := parsePosition(opts.position)
+			if err != nil {
+				return &UsageError{Err: err}
+			}
 			return a.runWrites(writeSpec{
 				ClusterToo:   true,
 				Verb:         "create",
@@ -90,7 +99,7 @@ Examples:
 				ValidateOnly: opts.validateOnly,
 				MultiEnv:     true,
 				Plan: func(_ string, c *client.Client) ([]plannedWrite, error) {
-					return planCreate(c, opts.schema, opts.scope, value)
+					return planCreate(c, opts.schema, opts.scope, value, pos)
 				},
 			})
 		},
@@ -98,6 +107,7 @@ Examples:
 	cmd.Flags().StringVarP(&opts.file, "filename", "f", "", "file holding the value, YAML or JSON (- for stdin)")
 	cmd.Flags().StringVar(&opts.schema, "schema", "", "schema ID of the new object")
 	cmd.Flags().StringVar(&opts.scope, "scope", "", `scope of the new object: "environment" or an entity ID`)
+	cmd.Flags().StringVar(&opts.position, "position", "", "place the object in an ordered schema: first, last, after:<ref> or before:<ref>")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "show what would be created, sending GETs only")
 	cmd.Flags().BoolVar(&opts.validateOnly, "validate-only", false, "have the cluster validate the value without saving it")
 	_ = cmd.MarkFlagRequired("filename")
@@ -172,8 +182,13 @@ func jsonRoundTrip(v, out interface{}) error {
 
 // settingsSchemaShape is the part of a schema definition writes need.
 type settingsSchemaShape struct {
-	MultiObject bool   `json:"multiObject"`
-	KeyProperty string `json:"keyProperty"`
+	MultiObject bool                      `json:"multiObject"`
+	KeyProperty string                    `json:"keyProperty"`
+	Ordered     bool                      `json:"ordered"`
+	Properties  map[string]schemaProperty `json:"properties"`
+	Types       map[string]struct {
+		Properties map[string]schemaProperty `json:"properties"`
+	} `json:"types"`
 }
 
 // schemaShape reads schemaID's definition.
@@ -190,13 +205,16 @@ func schemaShape(c *client.Client, schemaID string) (settingsSchemaShape, error)
 // planCreate plans create settings: one create, refused when the POST would
 // overwrite an object instead: the scope's object of a one-per-scope
 // schema, or the object with the same key property.
-func planCreate(c *client.Client, schemaID, scope string, value map[string]interface{}) ([]plannedWrite, error) {
+func planCreate(c *client.Client, schemaID, scope string, value map[string]interface{}, pos settingsPosition) ([]plannedWrite, error) {
 	shape, err := schemaShape(c, schemaID)
 	if err != nil {
 		return nil, err
 	}
+	if err := requireOrdered(schemaID, shape, pos); err != nil {
+		return nil, err
+	}
 	w := plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: schemaID, Scope: scope, Value: value}
-	if shape.MultiObject && shape.KeyProperty == "" {
+	if shape.MultiObject && shape.KeyProperty == "" && pos.Kind == "" {
 		return []plannedWrite{w}, nil
 	}
 	listed, err := listSettings(c, schemaID, scope, "objectId,externalId,value")
@@ -208,6 +226,13 @@ func planCreate(c *client.Client, schemaID, scope string, value map[string]inter
 			"Use apply to change it: dtmgd describe settings "+m.ObjectID+" -o yaml > object.yaml, edit the value, then dtmgd apply -f object.yaml")
 	}
 	w.Existing = listedIDs(listed)
+	if pos.Kind != "" {
+		pl, err := placeObject(orderOf(listed), "", pos)
+		if err != nil {
+			return nil, err
+		}
+		w.setPlacement(pl)
+	}
 	return []plannedWrite{w}, nil
 }
 

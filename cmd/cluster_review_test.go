@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 	"testing"
 )
@@ -132,6 +133,7 @@ func TestClusterWindowCheckSkipsOddEntries(t *testing.T) {
 	routes[agGlobal] = route{Body: `{"globalSetting":"ENABLED","updateWindows":{"windows":[]}}`}
 	routes[clusterObjPrefix+"uw-c1"] = route{Body: `{"objectId":"uw-c1","schemaId":"builtin:deployment.management.update-windows","scope":"cluster","value":{}}`}
 	routes[clusterDelPrefix+"uw-c1"] = route{Body: ""}
+	maps.Copy(routes, schemaCatalog(clusterSchemaPrefix, map[string]string{schemaUpdateWindows: "{}"}))
 	api, _, cfg := clusterSettingsFake(t, "readwrite-all", routes)
 	if r := runCLI(t, cfg, "delete", "settings", "uw-c1", "--yes"); r.Code != 0 || api.Hits(clusterDelPrefix+"uw-c1") != 1 {
 		t.Errorf("%s", r)

@@ -210,3 +210,20 @@ func TestNoWindowLookupForGenericTables(t *testing.T) {
 		t.Errorf("%d queries: %s", len(api.Queries(objectsPath)), r)
 	}
 }
+
+func TestUnescapeMarkdown(t *testing.T) {
+	cases := map[string]string{
+		`dtmgd\-it\-team`:  "dtmgd-it-team",
+		`a\.b\_c\*`:        "a.b_c*",
+		`\\`:               `\`,
+		`C:\Program Files`: `C:\Program Files`,
+		`trailing\`:        `trailing\`,
+		`caf\é`:            `caf\é`,
+		"":                 "",
+	}
+	for in, want := range cases {
+		if got := unescapeMarkdown(in); got != want {
+			t.Errorf("unescapeMarkdown(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -12,7 +12,10 @@ stored at, or "default").
 A list needs --schema or --scope, as the API does. --schema takes one or more
 schema IDs (repeat it or separate them with commas); --scope takes
 "environment" or an entity ID such as HOST-…, HOST_GROUP-… or
-ENVIRONMENT_ACTIVE_GATE-…. Find schema IDs with get settings-schemas.
+ENVIRONMENT_ACTIVE_GATE-…, and on a cluster context "cluster",
+"environment-default" or another scope the schema lists. Find schema IDs
+with get settings-schemas, and a schema's scopes with describe
+settings-schema. An ordered schema's objects are listed in their order.
 
 json and yaml print the API's own objects, with objectId, schemaId, scope,
 externalId, summary, updateToken, schemaVersion and value; effective values

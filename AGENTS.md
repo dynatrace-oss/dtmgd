@@ -45,6 +45,9 @@ cmd/            Cobra commands, one file per command (get_*.go, describe_*.go, q
   errors.go     error reporting, hints (withHint), exit codes
   writes.go     runWrites and writeSpec: plan → check levels → write → report, for every write command
   settings_api.go  every Settings 2.0 call: the environment API or the Cluster API, by the client
+  settings_secrets.go   guardSecrets: secrets out of write reports, the cluster's mask out of creates
+  settings_position.go  position in ordered schemas: first, last, after:<ref>, before:<ref>
+  settings_refs.go      checkUnreferenced: the delete check over every schema's references
   scopes.go     withScopes: the token scopes each command declares
   commands.go   the `dtmgd commands` catalog
 pkg/client/     HTTP client (resty): GetV2, GetV1, GetCluster, GetV2Paged, GetClusterPaged,
@@ -120,6 +123,18 @@ never their own requests:
   retries a write once it may have been sent) and let `renderWriteReport`
   print the `writeReport`. Failed objects make the command fail after every
   result is printed.
+- Every plan goes through `guardSecrets` (`cmd/settings_secrets.go`),
+  which the runner calls: it refuses a create whose secret property holds
+  the cluster's mask (`***` + 16 hex + `***`; the cluster would store the
+  mask as the secret), and for a dry run puts `<secret>` in the reported
+  `value` and `current`. It finds secrets through the schema, so a settings
+  write must carry its `SchemaID` and `Value`; a write with `Exec` (not a
+  settings object) is reported as it is. Never print a planned value
+  outside `renderWriteReport`.
+- A delete of a settings object calls `checkUnreferenced`
+  (`cmd/settings_refs.go`) in its `Plan`: it reads every schema definition
+  and refuses while another settings object references the object. Put the
+  warnings it returns (schemas it skipped) in `plannedWrite.Warnings`.
 - Mark the command with `withWrites(cmd)`: it declares `settings.read` and
   `settings.write` and sets `"mutating": true` in the catalog.
 - Deletes confirm (`Confirm`; `--yes` is required in agent mode). A blocked

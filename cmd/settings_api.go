@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
@@ -145,4 +147,132 @@ func (a *App) runSettingsFetch(s fetchSpec) error {
 		return a.runClusterFetch(s)
 	}
 	return a.runFetch(s)
+}
+
+// settingsPageCap is the largest page the settings listings ask for.
+const settingsPageCap = 500
+
+// clusterScopeFallback wraps a settings listing made without schemaIds. The
+// cluster cannot list by scope alone: it fails with 404 "No schema with
+// schemaId <first schema>", and a schemaIds-less effectiveValues fails the
+// same way. On that error, on a cluster only, the fallback lists every
+// schema (8 at a time) and merges the results in schema ID order; a schema
+// that cannot answer at the scope (cannotAnswerAtScope) is skipped, any other
+// error fails. Total stays -1 when a schema had more than it returned.
+func clusterScopeFallback(fetch func(*client.Client, int) (fetched, error), path string, params map[string]string, maxPages int) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, limit int) (fetched, error) {
+		f, err := fetch(c, limit)
+		var apiErr *client.ErrAPI
+		if err == nil || !c.ClusterScoped() || !errors.As(err, &apiErr) || apiErr.StatusCode != 404 ||
+			!strings.HasPrefix(apiErr.Message(), "No schema with schemaId") {
+			return f, err
+		}
+		var list struct {
+			Items []struct {
+				SchemaID string `json:"schemaId"`
+			} `json:"items"`
+		}
+		if err := settingsGet(c, settingsSchemasPath, nil, &list); err != nil {
+			return fetched{}, err
+		}
+		ids := make([]string, 0, len(list.Items))
+		for _, it := range list.Items {
+			ids = append(ids, it.SchemaID)
+		}
+		sort.Strings(ids)
+		// --limit is applied after merging: a small --limit still asks every
+		// schema (8 at a time). The merged order is by schema ID, so a
+		// per-schema stop could not know where the global cut falls.
+		return mergeSchemaListings(c, ids, limit, scopeOf(params), func(id string) func(*client.Client, int) (fetched, error) {
+			p := make(map[string]string, len(params)+1)
+			for k, v := range params {
+				p[k] = v
+			}
+			p["schemaIds"] = id
+			return settingsPagedFetch(path, p, "items", settingsPageCap, maxPages)
+		})
+	}
+}
+
+// cannotAnswerAtScope reports whether a per-schema answer means "this schema
+// cannot answer at this scope": a 404, or the 400 "Not allowed to query
+// scope …" of a schema whose allowed scopes are others (seen on effective
+// values, for example realm-only schemas).
+func cannotAnswerAtScope(err error) bool {
+	var apiErr *client.ErrAPI
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == 404 ||
+		(apiErr.StatusCode == 400 && strings.HasPrefix(apiErr.Message(), "Not allowed to query scope"))
+}
+
+// mergeSchemaListings runs the listing of each schema ID, 8 at a time, and
+// concatenates the items in ID order.
+func mergeSchemaListings(c *client.Client, ids []string, limit int, scope string, listingOf func(string) func(*client.Client, int) (fetched, error)) (fetched, error) {
+	results := make([]fetched, len(ids))
+	errs := make([]error, len(ids))
+	sem := make(chan struct{}, definitionWorkers)
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[i], errs[i] = listingOf(id)(c, limit)
+		}()
+	}
+	wg.Wait()
+	items, more, answered, firstSkipped, err := collectListings(results, errs)
+	if err != nil {
+		return fetched{}, err
+	}
+	// A valid scope has at least one schema answering 200, even with no items.
+	if answered == 0 && firstSkipped != nil {
+		return fetched{}, withHint(firstSkipped, fmt.Sprintf("No settings schema of this cluster can be read at scope %s. Cluster scopes are cluster, environment-default, realm and metric; check the scopes with dtmgd describe settings-schema <schema-id>.", scope))
+	}
+	body := map[string]interface{}{"items": items}
+	total := -1
+	if !more {
+		total = len(items)
+		body["totalCount"] = total
+	}
+	if limit > 0 && len(items) > limit {
+		items, more = items[:limit], true
+		body["items"] = items
+	}
+	return fetched{Body: body, Total: total, HasMore: more, Count: len(items)}, nil
+}
+
+// scopeOf names the scope a settings listing asks for, for messages.
+func scopeOf(params map[string]string) string {
+	if s := params["scope"]; s != "" {
+		return s
+	}
+	return params["scopes"]
+}
+
+// collectListings concatenates the per-schema answers in order. A schema
+// that cannot answer at the scope is skipped (the first such error is
+// returned for reporting); any other error fails.
+func collectListings(results []fetched, errs []error) (items []interface{}, more bool, answered int, firstSkipped, err error) {
+	items = []interface{}{}
+	for i := range results {
+		if errs[i] != nil {
+			if !cannotAnswerAtScope(errs[i]) {
+				return nil, false, 0, nil, errs[i]
+			}
+			if firstSkipped == nil {
+				firstSkipped = errs[i]
+			}
+			continue
+		}
+		answered++
+		body, _ := results[i].Body.(map[string]interface{})
+		list, _ := body["items"].([]interface{})
+		items = append(items, list...)
+		more = more || results[i].HasMore
+	}
+	return items, more, answered, firstSkipped, nil
 }

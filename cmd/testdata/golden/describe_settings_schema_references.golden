@@ -1,0 +1,16 @@
+== exit code: 0
+== stdout
+Schema:       builtin:example.references
+Name:         Reference example
+Version:      1.0.0
+Scopes:       environment
+Objects:      up to 10 per scope
+Maturity:     EARLY_ADOPTER
+Key property: name
+Description:  Has references.
+
+ PROPERTY  TYPE                                        DEFAULT  VALUES 
+ name      text                                        —               
+ profile   setting → builtin:alerting.profile          —               
+ zones     list of setting → builtin:management-zones  —               
+== stderr

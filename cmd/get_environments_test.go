@@ -174,7 +174,7 @@ func TestClusterCommand403NamesScope(t *testing.T) {
 // TestClusterCommand404Hint pins the hint for a cluster context pointing at
 // a host with no Cluster API, such as a node on port 9999.
 func TestClusterCommand404Hint(t *testing.T) {
-	cfg, _, _ := clusterFake(t, "c", map[string]route{})
+	cfg, _, _ := clusterFake(t, "c", map[string]route{"*": wrongHost404})
 	r := runCLI(t, cfg, "get", "environments")
 	if r.Code != 4 {
 		t.Errorf("code = %d, want 4", r.Code)
@@ -269,7 +269,7 @@ func TestSetContextScopesExcludeClusterScope(t *testing.T) {
 // commands with a 404 hint of their own: a wrong host (every cluster call
 // 404s) is still named, beside the command's own reading of the 404.
 func TestClusterCommand404HintNamesHostEverywhere(t *testing.T) {
-	cfg, _, _ := clusterFake(t, "c", map[string]route{})
+	cfg, _, _ := clusterFake(t, "c", map[string]route{"*": wrongHost404})
 	for _, args := range [][]string{{"describe", "license"}, {"get", "license-usage"}, {"describe", "environment", "env-1"}} {
 		r := runCLI(t, cfg, args...)
 		if r.Code != 4 || !strings.Contains(r.Stderr, `context "c"'s host`) || !strings.Contains(r.Stderr, "port 9999") {

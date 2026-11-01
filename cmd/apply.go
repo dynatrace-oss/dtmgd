@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"reflect"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -23,6 +24,9 @@ type applyObject struct {
 	Scope       string                 `json:"scope"`
 	Value       map[string]interface{} `json:"value"`
 	UpdateToken string                 `json:"updateToken"`
+	// Position places the object in an ordered schema: first, last,
+	// after:<ref> or before:<ref>.
+	Position string `json:"position"`
 }
 
 func newApplyCmd(a *App) *cobra.Command {
@@ -35,9 +39,10 @@ func newApplyCmd(a *App) *cobra.Command {
 		Short: "Create or update the Settings 2.0 objects in a file",
 		Long: `Create or update the Settings 2.0 objects in a file: YAML or JSON (- for
 stdin), holding one {objectId?, externalId?, schemaId, scope, value,
-updateToken?} object, an array of them, or a list as get settings -o yaml
-prints it, in one or several "---" documents. An exported object applies back
-as it is, an agent-mode export (the envelope) included.
+updateToken?, position?} object, an array of them, or a list as
+get settings -o yaml prints it, in one or several "---" documents. An
+exported object applies back as it is, an agent-mode export (the envelope)
+included.
 
 For each object apply first finds out whether it exists, with GETs only:
   - with objectId: that object, which must have the file's schemaId and
@@ -52,6 +57,15 @@ catches changes since the export) or from the GET; one whose value is the
 same is left unchanged. Anything else is created. Give objects of
 multi-object schemas an externalId to make repeated applies update them
 instead of creating duplicates.
+
+In an ordered schema a new object goes last and an updated one keeps its
+place, unless the object's position key says: first, last, after:<ref> or
+before:<ref>, where <ref> is the objectId or externalId of an object at the
+same scope, or the externalId of an object created earlier in the file.
+
+A secret property holding the cluster's mask, as exports do, keeps the
+stored secret on an update, but cannot create an object. Reports show
+secrets as <secret>.
 
 --dry-run shows the planned changes, with GETs only, at any write level.
 --validate-only asks the cluster to check every change without saving it
@@ -152,7 +166,8 @@ func (o applyObject) check() error {
 	case o.Value == nil:
 		return errors.New("no value")
 	}
-	return nil
+	_, err := parsePosition(o.Position)
+	return err
 }
 
 // applyPlanner plans one context's apply, caching schema definitions and
@@ -161,16 +176,22 @@ type applyPlanner struct {
 	c      *client.Client
 	shapes map[string]settingsSchemaShape
 	listed map[string][]settingsObject
+	// order is each scope's objects in server order, for placing objects;
+	// separate from listed, which the lookups use.
+	order map[string][]orderEntry
+	// cur is the 1-based plan index of the object being planned.
+	cur int
 }
 
 // planApply resolves what apply would do with each object in one context.
 // An object whose state cannot be read fails the whole plan, so nothing is
 // written on a guess.
 func planApply(c *client.Client, objs []applyObject) ([]plannedWrite, error) {
-	p := &applyPlanner{c: c, shapes: map[string]settingsSchemaShape{}, listed: map[string][]settingsObject{}}
+	p := &applyPlanner{c: c, shapes: map[string]settingsSchemaShape{}, listed: map[string][]settingsObject{}, order: map[string][]orderEntry{}}
 	writes := make([]plannedWrite, 0, len(objs))
 	targets := map[string]int{}
 	for i, o := range objs {
+		p.cur = i + 1
 		w, err := p.plan(o)
 		if err != nil {
 			return nil, err
@@ -183,7 +204,54 @@ func planApply(c *client.Client, objs []applyObject) ([]plannedWrite, error) {
 		}
 		writes = append(writes, w)
 	}
+	p.finalPlaces(writes)
 	return writes, nil
+}
+
+// finalPlaces sets each positioned write's reported New place from the
+// virtual order after the whole file: a create is found by its plan index,
+// an existing object by its objectId. Current of an existing object is its
+// place in the server's listing before the run (the planning-time Current,
+// kept for the unchanged check, follows earlier writes of the file), and
+// what the requests carry stays as resolved at planning time.
+func (p *applyPlanner) finalPlaces(writes []plannedWrite) {
+	for i, w := range writes {
+		if w.Position == nil {
+			continue
+		}
+		p.setFinalPlace(i, w)
+	}
+}
+
+// setFinalPlace sets New of write i, and Current of an existing object.
+func (p *applyPlanner) setFinalPlace(i int, w plannedWrite) {
+	for j, e := range p.order[orderKey(w.SchemaID, w.Scope)] {
+		if (w.ObjectID == "" && e.Planned == i+1) || (w.ObjectID != "" && e.ObjectID == w.ObjectID) {
+			w.Position.New = j + 1
+			break
+		}
+	}
+	if w.ObjectID != "" {
+		if c := p.listedPlace(w.SchemaID, w.ObjectID); c > 0 {
+			w.Position.Current = c
+		}
+	}
+}
+
+// listedPlace is the 1-based place of objectID in the listing the server
+// gave for schemaID, before any write of the run; 0 when it was not listed.
+func (p *applyPlanner) listedPlace(schemaID, objectID string) int {
+	for key, l := range p.listed {
+		if !strings.HasPrefix(key, schemaID+"\x00") {
+			continue
+		}
+		for i, o := range l {
+			if o.ObjectID == objectID {
+				return i + 1
+			}
+		}
+	}
+	return 0
 }
 
 // target names the object w writes, so two writes to one object are found
@@ -231,7 +299,11 @@ func (p *applyPlanner) plan(o applyObject) (plannedWrite, error) {
 	if err := sameObject(o, cur); err != nil {
 		return plannedWrite{}, err
 	}
-	return updateOrUnchanged(o, cur), nil
+	pl, err := p.placeExisting(o, cur)
+	if err != nil {
+		return plannedWrite{}, err
+	}
+	return updateOrUnchanged(o, cur, pl), nil
 }
 
 // sameObject refuses a file object whose objectId names an object of
@@ -271,9 +343,101 @@ func (p *applyPlanner) planByLookup(o applyObject) (plannedWrite, error) {
 	}
 	if match := findMatch(shape, o, listed); match != nil {
 		o.UpdateToken = ""
-		return updateOrUnchanged(o, *match), nil
+		pl, err := p.placeExisting(o, *match)
+		if err != nil {
+			return plannedWrite{}, err
+		}
+		return updateOrUnchanged(o, *match, pl), nil
 	}
-	return plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: o.SchemaID, Scope: o.Scope, ExternalID: o.ExternalID, Value: o.Value, Existing: listedIDs(listed)}, nil
+	w := plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: o.SchemaID, Scope: o.Scope, ExternalID: o.ExternalID, Value: o.Value, Existing: listedIDs(listed)}
+	if err := p.placeNew(&w, shape, o); err != nil {
+		return plannedWrite{}, err
+	}
+	return w, nil
+}
+
+// position is o's parsed position (check has validated it).
+func (o applyObject) position() settingsPosition {
+	pos, _ := parsePosition(o.Position)
+	return pos
+}
+
+// placeNew places a create in its scope's order and records it there, so
+// a later object can name it. The report and the request carry a position
+// only when o asks for one.
+func (p *applyPlanner) placeNew(w *plannedWrite, shape settingsSchemaShape, o applyObject) error {
+	pos := o.position()
+	if err := requireOrdered(o.SchemaID, shape, pos); err != nil || !shape.Ordered {
+		return err
+	}
+	// Every create in an ordered schema is recorded in the scope's order,
+	// positioned or not, because a later object may name it as an anchor.
+	// The listing is cached per schema and scope (p.list), so this costs
+	// one read per scope.
+	order, err := p.scopeOrder(o.SchemaID, o.Scope)
+	if err != nil {
+		return err
+	}
+	pl, err := placeObject(order, "", pos)
+	if err != nil {
+		return err
+	}
+	if pos.Kind != "" {
+		w.setPlacement(pl)
+	}
+	p.order[orderKey(o.SchemaID, o.Scope)] = moveEntry(order, "", pl.New, orderEntry{ExternalID: o.ExternalID, Planned: p.cur})
+	return nil
+}
+
+// placeExisting places an existing object cur, or returns nil when o asks
+// for no position. A move is recorded in the scope's order.
+func (p *applyPlanner) placeExisting(o applyObject, cur settingsObject) (*placement, error) {
+	pos := o.position()
+	if pos.Kind == "" {
+		return nil, nil
+	}
+	shape, err := p.shape(o.SchemaID)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrdered(o.SchemaID, shape, pos); err != nil {
+		return nil, err
+	}
+	scope := cur.Scope
+	if scope == "" {
+		scope = o.Scope
+	}
+	order, err := p.scopeOrder(o.SchemaID, scope)
+	if err != nil {
+		return nil, err
+	}
+	pl, err := placeObject(order, cur.ObjectID, pos)
+	if err != nil {
+		return &pl, err
+	}
+	if i := findEntry(order, cur.ObjectID); i >= 0 {
+		p.order[orderKey(o.SchemaID, scope)] = moveEntry(order, cur.ObjectID, pl.New, order[i])
+	}
+	return &pl, nil
+}
+
+// orderKey names a scope's order; the environment's two scope names are one.
+func orderKey(schemaID, scope string) string {
+	return schemaID + "\x00" + canonicalScope(scope)
+}
+
+// scopeOrder is the order of schemaID's objects at scope, built once.
+func (p *applyPlanner) scopeOrder(schemaID, scope string) ([]orderEntry, error) {
+	key := orderKey(schemaID, scope)
+	if o, ok := p.order[key]; ok {
+		return o, nil
+	}
+	listed, err := p.list(schemaID, scope)
+	if err != nil {
+		return nil, err
+	}
+	p.order[key] = orderOf(listed)
+	return p.order[key], nil
 }
 
 // findMatch is the listed object o would overwrite, or nil, in the order
@@ -333,8 +497,9 @@ func (p *applyPlanner) list(schemaID, scope string) ([]settingsObject, error) {
 }
 
 // updateOrUnchanged plans writing o over cur: an update with o's
-// updateToken (or cur's), or nothing when the values are the same.
-func updateOrUnchanged(o applyObject, cur settingsObject) plannedWrite {
+// updateToken (or cur's), or nothing when the values are the same and pl,
+// when there is one, leaves the object where it is.
+func updateOrUnchanged(o applyObject, cur settingsObject, pl *placement) plannedWrite {
 	w := plannedWrite{
 		Op: config.OpUpdate, Action: actionUpdate,
 		ObjectID: cur.ObjectID, SchemaID: o.SchemaID, Scope: cur.Scope, Summary: cur.Summary,
@@ -346,8 +511,12 @@ func updateOrUnchanged(o applyObject, cur settingsObject) plannedWrite {
 	if w.UpdateToken == "" {
 		w.UpdateToken = cur.UpdateToken
 	}
-	if reflect.DeepEqual(o.Value, cur.Value) {
+	if reflect.DeepEqual(o.Value, cur.Value) && (pl == nil || pl.New == pl.Current) {
 		w.Op, w.Action = "", actionUnchanged
+		return w
+	}
+	if pl != nil {
+		w.setPlacement(*pl)
 	}
 	return w
 }

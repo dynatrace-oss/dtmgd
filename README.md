@@ -212,11 +212,11 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 | `get` | `problems`, `entities`, `entity-types`, `events`, `metrics`, `slos`, `security-problems`, `settings-schemas`, `settings`; cluster contexts: `environments`, `nodes`, `license-usage`, `activegate-updates` |
 | `describe` | `problem`, `entity`, `entity-type`, `entity-relations`, `event`, `metric`, `slo`, `security-problem`, `settings-schema`, `settings`; cluster contexts: `environment`, `cluster`, `license`, `backup`, `activegate-updates` |
 | `query` | `metrics`, `logs`, `log-counts` |
-| `apply` | `-f <file>`: creates or updates the Settings 2.0 objects in a file (`--dry-run`, `--validate-only`) |
-| `delete` | `settings <object-id>` (`--yes`, `--dry-run`; refuses update windows still in use) |
+| `apply` | `-f <file>`: creates or updates the Settings 2.0 objects in a file, of any schema (`--dry-run`, `--validate-only`; an object's `position` places it in an ordered list, like `create settings --position`) |
+| `delete` | `settings <object-id>` (`--yes`, `--dry-run`; refuses an object that other settings still reference) |
 | `edit` | `setting <object-id>`, and `activegate-updates [id]` on cluster contexts: opens it in an editor, for people (`--validate-only`) |
 | `update` | `activegate-updates [id] -f <file>`: the cluster ActiveGates' auto-update, cluster contexts (`--dry-run`, `--validate-only`) |
-| `create` | `settings` (`--dry-run`, `--validate-only`; needs a context whose safety-level allows writes) |
+| `create` | `settings` (`--position`, `--dry-run`, `--validate-only`; needs a context whose safety-level allows writes) |
 | `doctor` | checks every context: connectivity, token, cluster version |
 | `config`, `ctx` | contexts and credentials ([configuration](docs/configuration.md)) |
 | `skills` | installs the dtmgd skill for an AI agent ([agent mode](docs/agent-mode.md)) |
@@ -226,19 +226,24 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 others are intentional extensions, the same ones dtctl has: `query` reads
 time series and logs, which are not resources; `doctor`, `commands`,
 `skills`, `config`/`ctx`, `version` and `completion` manage the tool itself.
-`apply`, `create`, `edit` and `delete` write Settings 2.0 objects, as in dtctl.
-They need a context whose `safety-level` allows the write (every context
-starts `readonly`; see [write levels](docs/configuration.md#write-levels)) and a
-token with `settings.write`, and `--dry-run` shows any change first.
+`apply`, `create`, `edit` and `delete` write Settings 2.0 objects of any
+schema, as in dtctl: alerting profiles, problem notifications,
+process-availability rules, update windows, and the rest of the schemas
+`get settings-schemas` lists. They need a context whose `safety-level` allows
+the write (every context starts `readonly`; see
+[write levels](docs/configuration.md#write-levels)) and a token with
+`settings.write`, and `--dry-run` shows any change first. Secrets never
+appear in their output.
 
 ```bash
 dtmgd get problems --status OPEN --from now-24h
 dtmgd describe problem <problem-id> -o json
 dtmgd query metrics --metric builtin:service.response.time --from now-1h
 dtmgd get problems --env ALL_ENVIRONMENTS     # every environment context, in parallel
-dtmgd get settings --schema builtin:deployment.management.update-windows   # Settings 2.0 objects
+dtmgd get settings-schemas --search alerting  # find a Settings 2.0 schema
+dtmgd get settings --schema builtin:alerting.profile   # its objects
 dtmgd get settings --effective --scope HOST-0000000000000001 --schema builtin:deployment.oneagent.updates
-dtmgd apply -f window.yaml --dry-run          # then without --dry-run, on a context allowed to write
+dtmgd apply -f notification.yaml --dry-run    # then without --dry-run, on a context allowed to write
 dtmgd get nodes --context prod-cluster        # a cluster context
 ```
 

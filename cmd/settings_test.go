@@ -198,3 +198,16 @@ func TestSettingsSchemaAliases(t *testing.T) {
 		}
 	}
 }
+
+func TestDescribeSettingsHumanUnescapesTheSummary(t *testing.T) {
+	_, cfg := settingsFake(t, map[string]route{
+		objectsPath + "/obj-esc-1": {Body: `{"objectId":"obj-esc-1","schemaId":"builtin:alerting.profile","scope":"environment","summary":"dtmgd\\-it\\-profile","value":{"name":"x"}}`},
+	})
+	r := runCLI(t, cfg, "describe", "settings", "obj-esc-1")
+	if r.Code != 0 || !strings.Contains(r.Stdout, "Summary:         dtmgd-it-profile") {
+		t.Errorf("%s", r)
+	}
+	if j := runCLI(t, cfg, "describe", "settings", "obj-esc-1", "-o", "json"); !strings.Contains(j.Stdout, `dtmgd\\-it\\-profile`) {
+		t.Errorf("json must stay the API's own text: %s", j)
+	}
+}

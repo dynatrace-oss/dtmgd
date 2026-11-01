@@ -140,7 +140,7 @@ func singleSchema(objs []settingsObject) (string, bool) {
 func genericRows(objs []settingsObject) (interface{}, int, error) {
 	rows := make([]genericSettingsRow, 0, len(objs))
 	for _, o := range objs {
-		rows = append(rows, genericSettingsRow{ObjectID: o.ObjectID, Scope: o.Scope, Summary: o.Summary})
+		rows = append(rows, genericSettingsRow{ObjectID: o.ObjectID, Scope: o.Scope, Summary: unescapeMarkdown(o.Summary)})
 	}
 	return rows, len(rows), nil
 }
@@ -148,7 +148,7 @@ func genericRows(objs []settingsObject) (interface{}, int, error) {
 func genericMultiSchemaRows(objs []settingsObject) (interface{}, int, error) {
 	rows := make([]genericMultiSchemaRow, 0, len(objs))
 	for _, o := range objs {
-		rows = append(rows, genericMultiSchemaRow{Schema: o.SchemaID, ObjectID: o.ObjectID, Scope: o.Scope, Summary: o.Summary})
+		rows = append(rows, genericMultiSchemaRow{Schema: o.SchemaID, ObjectID: o.ObjectID, Scope: o.Scope, Summary: unescapeMarkdown(o.Summary)})
 	}
 	return rows, len(rows), nil
 }
@@ -298,7 +298,7 @@ func (v settingsView) effectiveRows(objs []settingsObject, schema string, single
 	}
 	rows := make([]genericEffectiveRow, 0, len(objs))
 	for _, o := range objs {
-		rows = append(rows, genericEffectiveRow{Schema: o.SchemaID, Origin: originCell(o), Summary: o.Summary})
+		rows = append(rows, genericEffectiveRow{Schema: o.SchemaID, Origin: originCell(o), Summary: unescapeMarkdown(o.Summary)})
 	}
 	return rows, len(rows), nil
 }
@@ -537,4 +537,26 @@ func decodeItems(body map[string]interface{}, out interface{}) error {
 		return err
 	}
 	return json.Unmarshal(data, out)
+}
+
+// unescapeMarkdown drops the backslash the cluster puts before punctuation in
+// a summary (it writes them as markdown): `dtmgd\-it` reads dtmgd-it. A
+// backslash before anything else (a Windows path) is kept. For tables and
+// prompts only; json and yaml keep the API's text.
+func unescapeMarkdown(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) && isASCIIPunct(s[i+1]) {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
+func isASCIIPunct(c byte) bool {
+	return strings.IndexByte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", c) >= 0
 }

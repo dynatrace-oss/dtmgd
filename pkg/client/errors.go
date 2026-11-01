@@ -27,6 +27,10 @@ func (e *ErrAPI) Error() string {
 	return fmt.Sprintf("API error %d", e.StatusCode)
 }
 
+// Message is the API's own error message (see apiErrorMessage), or "" when
+// the body has none: a host that is not a Dynatrace API answers that way.
+func (e *ErrAPI) Message() string { return apiErrorMessage(e.Body) }
+
 // apiErrorMessage extracts the human-readable message from a Dynatrace API
 // error envelope, and nothing else.
 //

@@ -73,7 +73,10 @@ stored at, or "default").
 A list needs --schema or --scope, as the API does. --schema takes one or more
 schema IDs (repeat it or separate them with commas); --scope takes
 "environment" or an entity ID such as HOST-…, HOST_GROUP-… or
-ENVIRONMENT_ACTIVE_GATE-…. Find schema IDs with get settings-schemas.
+ENVIRONMENT_ACTIVE_GATE-…, and on a cluster context "cluster",
+"environment-default" or another scope the schema lists. Find schema IDs
+with get settings-schemas, and a schema's scopes with describe
+settings-schema. An ordered schema's objects are listed in their order.
 
 json and yaml print the API's own objects, with objectId, schemaId, scope,
 externalId, summary, updateToken, schemaVersion and value; effective values
@@ -129,11 +132,21 @@ func settingsFetch(opts getSettingsOptions, args []string, maxPages int) (fetch 
 		if opts.scope == "" {
 			return nil, false, &UsageError{Err: fmt.Errorf(`--effective needs --scope: "environment" or the entity ID whose values to resolve`)}
 		}
-		return hintOnNotFound(settingsPagedFetch(settingsEffectivePath, effectiveParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
+		return listing(settingsEffectivePath, effectiveParams(opts), opts, maxPages), true, nil
 	case len(opts.schemas) == 0 && opts.scope == "":
 		return nil, false, &UsageError{Err: fmt.Errorf("give --schema or --scope (the API needs one), or an object ID")}
 	}
-	return hintOnNotFound(settingsPagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
+	return listing(settingsObjectsPath, settingsParams(opts), opts, maxPages), true, nil
+}
+
+// listing is a settings listing at path. Without --schema it falls back, on
+// a cluster, to one request per schema (see clusterScopeFallback).
+func listing(path string, params map[string]string, opts getSettingsOptions, maxPages int) func(*client.Client, int) (fetched, error) {
+	fetch := settingsPagedFetch(path, params, "items", settingsPageCap, maxPages)
+	if len(opts.schemas) == 0 {
+		fetch = clusterScopeFallback(fetch, path, params, maxPages)
+	}
+	return hintOnNotFound(fetch, hintSettingsNotFound)
 }
 
 // withWindowNames adds to fetch the lookup of update window names that the

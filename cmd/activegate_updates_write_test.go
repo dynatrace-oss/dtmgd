@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
+	"maps"
 	"strings"
 	"testing"
 )
@@ -127,6 +128,7 @@ func clusterWindowFake(t *testing.T, globalFile string) (*fakeAPI, string) {
 	routes := agRoutes(globalFile)
 	routes[clusterObjPrefix+"uw-c1"] = route{Body: `{"objectId":"uw-c1","schemaId":"builtin:deployment.management.update-windows","scope":"cluster","updateToken":"t","value":{"name":"Cluster window"}}`}
 	routes[clusterDelPrefix+"uw-c1"] = route{Body: ""}
+	maps.Copy(routes, schemaCatalog(clusterSchemaPrefix, map[string]string{schemaUpdateWindows: "{}"}))
 	api, _, cfg := clusterSettingsFake(t, "readwrite-all", routes)
 	return api, cfg
 }

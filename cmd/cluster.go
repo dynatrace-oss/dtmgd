@@ -93,14 +93,22 @@ func clusterHint(err error, ctxName string, s fetchSpec) error {
 		return withHint(err, hintClusterAuth)
 	case 403:
 		// A hint the command gave the error names the missing scope better.
-		if s.Forbidden != "" && explicitHint(err) == "" {
+		if s.Forbidden != "" && explicitHint(err) == "" && !client.IsNotApplicable(err) {
 			return withHint(err, s.Forbidden)
 		}
 	case 404:
-		noAPI := fmt.Sprintf(hintNoClusterAPI, ctxName)
 		if s.NotFound == "" {
 			s.NotFound = explicitHint(err)
 		}
+		// A 404 carrying the API's own message came from a Cluster API, so
+		// the host is right; a wrong host answers with no message at all.
+		if m := apiErr.Message(); m != "" && m != "HTTP 404 Not Found" {
+			if s.NotFound != "" {
+				return withHint(err, s.NotFound)
+			}
+			return err
+		}
+		noAPI := fmt.Sprintf(hintNoClusterAPI, ctxName)
 		if s.NotFound != "" {
 			// A command's own reading of a 404 cannot rule out a wrong
 			// host, which makes every cluster call 404.

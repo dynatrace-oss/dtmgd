@@ -32,6 +32,9 @@ func Diagnose(err error) string {
 	}
 	var apiErr *ErrAPI
 	if errors.As(err, &apiErr) {
+		if IsNotApplicable(apiErr) {
+			return hintNotApplicable
+		}
 		return diagnoseStatus(apiErr.StatusCode)
 	}
 
@@ -59,6 +62,20 @@ func Diagnose(err error) string {
 		return "No context configured. Set one up with:\n  dtmgd config set-context <name> --host <url> --env-id <id> --token-ref <ref>\n  or, for the Cluster API: dtmgd config set-context <name> --host <cluster-url> --token-ref <ref>"
 	}
 	return ""
+}
+
+// hintNotApplicable is the hint for a 403 that is no permission problem.
+const hintNotApplicable = "The cluster says this setting does not apply to this scope (its reason is above). Check the scopes with dtmgd describe settings-schema <schema-id>, or read the setting at another scope."
+
+// IsNotApplicable reports whether err is the cluster's 403 "Setting not
+// applicable": the setting does not exist for that entity (host anomaly
+// detection on a PaaS host, say). The token is fine, so no scope hint fits.
+func IsNotApplicable(err error) bool {
+	var apiErr *ErrAPI
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 403 {
+		return false
+	}
+	return strings.HasPrefix(apiErr.Message(), "Setting not applicable")
 }
 
 // diagnoseFailures is the hint for a multi-environment failure: the failed
