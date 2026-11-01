@@ -193,7 +193,26 @@ func planApply(c *client.Client, objs []applyObject) ([]plannedWrite, error) {
 		}
 		writes = append(writes, w)
 	}
+	p.finalPlaces(writes)
 	return writes, nil
+}
+
+// finalPlaces sets each positioned write's reported New place from the
+// virtual order after the whole file: a create is found by its plan index,
+// an existing object by its objectId. Current stays the place before the
+// run, and what the requests carry stays as resolved at planning time.
+func (p *applyPlanner) finalPlaces(writes []plannedWrite) {
+	for i, w := range writes {
+		if w.Position == nil {
+			continue
+		}
+		for j, e := range p.order[orderKey(w.SchemaID, w.Scope)] {
+			if (w.ObjectID == "" && e.Planned == i+1) || (w.ObjectID != "" && e.ObjectID == w.ObjectID) {
+				w.Position.New = j + 1
+				break
+			}
+		}
+	}
 }
 
 // target names the object w writes, so two writes to one object are found
@@ -312,6 +331,10 @@ func (p *applyPlanner) placeNew(w *plannedWrite, shape settingsSchemaShape, o ap
 	if err := requireOrdered(o.SchemaID, shape, pos); err != nil || !shape.Ordered {
 		return err
 	}
+	// Every create in an ordered schema is recorded in the scope's order,
+	// positioned or not, because a later object may name it as an anchor.
+	// The listing is cached per schema and scope (p.list), so this costs
+	// one read per scope.
 	order, err := p.scopeOrder(o.SchemaID, o.Scope)
 	if err != nil {
 		return err

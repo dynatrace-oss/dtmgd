@@ -508,6 +508,8 @@ func executeContext(c *client.Client, name string, writes []plannedWrite, valida
 // resolveAnchor fills w's position anchor from an earlier write of the
 // file. Under validateOnly nothing was written, so the position is left
 // out and a note says so. blocked is true when the anchor's write failed.
+// w points at the loop's copy of the write; plans are not reused, so
+// changing it is intended.
 func resolveAnchor(w *plannedWrite, ids []string, validateOnly bool) (note string, blocked bool) {
 	if w.anchorFrom == 0 {
 		return "", false

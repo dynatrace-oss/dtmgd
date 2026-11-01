@@ -321,6 +321,13 @@ func TestPositionAnchorEarlierInFile(t *testing.T) {
 	if err := json.Unmarshal([]byte(bodies[1]), &items); err != nil {
 		t.Fatal(err)
 	}
+	var first []map[string]interface{}
+	if err := json.Unmarshal([]byte(bodies[0]), &first); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := first[0]["insertAfter"]; !ok || v != "" {
+		t.Errorf("first body %v, want insertAfter \"\"", first[0])
+	}
 	if items[0]["insertAfter"] != "new-a" {
 		t.Errorf("second body %v, want insertAfter new-a", items[0])
 	}
@@ -357,5 +364,96 @@ func TestPositionAnchorUnderValidateOnly(t *testing.T) {
 	}
 	if want := "validated without its position: its anchor is created by this file"; rep.Results[1].Note != want || rep.Results[0].Note != "" {
 		t.Errorf("notes %q, %q", rep.Results[0].Note, rep.Results[1].Note)
+	}
+}
+
+func createDoc(ext, pos string) string {
+	return "externalId: " + ext + "\nschemaId: " + orderedSchema + "\nscope: environment\nposition: " + pos + "\nvalue: {name: " + ext + "}\n"
+}
+
+func postItem(t *testing.T, body string) map[string]interface{} {
+	t.Helper()
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &items); err != nil || len(items) != 1 {
+		t.Fatalf("body %s: %v", body, err)
+	}
+	return items[0]
+}
+
+func TestPositionFinalPlacesAfterTheWholeFile(t *testing.T) {
+	_, cfg := applyFake(t, "readwrite-all", orderedRoutes())
+	_, rep := orderedApply(t, cfg, createDoc("a", "first")+"---\n"+createDoc("b", "first"), "--dry-run")
+	if len(rep.Results) != 2 || rep.Results[0].Position.New != 2 || rep.Results[1].Position.New != 1 {
+		t.Errorf("positions %+v %+v, want A new 2, B new 1", rep.Results[0].Position, rep.Results[1].Position)
+	}
+}
+
+func TestPositionBeforeAPlannedCreate(t *testing.T) {
+	api, cfg := applyFake(t, "readwrite-all", anchorRoutes(`[{"code":200,"objectId":"new-a"}]`, `[{"code":200,"objectId":"new-b"}]`, `[{"code":200,"objectId":"new-c"}]`))
+	doc := createDoc("a", "before:x2") + "---\n" + createDoc("b", "first") + "---\n" + createDoc("c", "before:x2")
+	r, rep := orderedApply(t, cfg, doc)
+	if r.Code != 0 || actions(rep) != "created,created,created" {
+		t.Fatalf("%s", r)
+	}
+	bodies := api.Bodies(postObjects)
+	// c goes before x2, whose predecessor is a (planned): insertAfter new-a.
+	if got := postItem(t, bodies[2])["insertAfter"]; got != "new-a" {
+		t.Errorf("c: insertAfter %v, want new-a", got)
+	}
+	// b first, then d before b (b is at place 1): insertAfter "".
+	api, cfg = applyFake(t, "readwrite-all", anchorRoutes(`[{"code":200,"objectId":"new-b"}]`, `[{"code":200,"objectId":"new-d"}]`))
+	orderedApply(t, cfg, createDoc("b", "first")+"---\n"+createDoc("d", "before:b"))
+	if v, ok := postItem(t, api.Bodies(postObjects)[1])["insertAfter"]; !ok || v != "" {
+		t.Errorf("d: insertAfter %v (present %v), want \"\"", v, ok)
+	}
+}
+
+func TestPositionUpdateAnchoredOnACreate(t *testing.T) {
+	routes := orderedRoutes()
+	routes[postObjects] = route{Body: `[{"code":200,"objectId":"new-a"}]`}
+	api, cfg := applyFake(t, "readwrite-all", routes)
+	doc := createDoc("a", "last") + "---\nobjectId: o1\nschemaId: " + orderedSchema + "\nscope: environment\nposition: before:a\nvalue: {name: one}\n"
+	r, rep := orderedApply(t, cfg, doc)
+	if r.Code != 0 || actions(rep) != "created,updated" {
+		t.Fatalf("%s", r)
+	}
+	if b := putBody(t, api, "o1"); b["insertBefore"] != "new-a" || b["insertAfter"] != nil {
+		t.Errorf("PUT %v, want insertBefore new-a", b)
+	}
+}
+
+func TestPositionChainStopsAtTheFailedLink(t *testing.T) {
+	routes := orderedRoutes()
+	routes[postObjects] = route{Seq: []string{
+		`[{"code":200,"objectId":"new-a"}]`,
+		`[{"code":400,"error":{"code":400,"message":"bad value"}}]`,
+	}}
+	api, cfg := applyFake(t, "readwrite-all", routes)
+	doc := createDoc("a", "first") + "---\n" + createDoc("b", "after:a") + "---\n" + createDoc("c", "after:b")
+	_, rep := orderedApply(t, cfg, doc)
+	if actions(rep) != "created,failed,failed" || rep.Results[2].Error == nil || rep.Results[2].Error.Message != "its position anchor was not written" {
+		t.Fatalf("results %s", actions(rep))
+	}
+	if api.Hits(postObjects) != 2 {
+		t.Errorf("%d POSTs, want 2", api.Hits(postObjects))
+	}
+}
+
+func TestPositionAnchorsAreResolvedPerContext(t *testing.T) {
+	mk := func(a, b string) *fakeAPI {
+		routes := orderedRoutes()
+		routes[postObjects] = route{Seq: []string{`[{"code":200,"objectId":"` + a + `"}]`, `[{"code":200,"objectId":"` + b + `"}]`}}
+		return newFakeAPI(t, routes)
+	}
+	one, two := mk("one-a", "one-b"), mk("two-a", "two-b")
+	cfg := withFakeEnvLevels(t, map[string]string{"a": "readwrite-all", "b": "readwrite-all"}, fakeEnv{"a", one}, fakeEnv{"b", two})
+	r := runCLI(t, cfg, "apply", "-f", tempFile(t, anchorFile), "--env", "a;b")
+	if r.Code != 0 {
+		t.Fatalf("%s", r)
+	}
+	for api, want := range map[*fakeAPI]string{one: "one-a", two: "two-a"} {
+		if got := postItem(t, api.Bodies(postObjects)[1])["insertAfter"]; got != want {
+			t.Errorf("second POST insertAfter %v, want %s", got, want)
+		}
 	}
 }

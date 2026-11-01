@@ -37,7 +37,7 @@ type route struct {
 	// Drop closes the connection without answering, as a network failure
 	// after the request was sent does.
 	Drop bool
-	// Seq, when set, replaces Body: bodies served in order, the last one
+	// Seq, when set, replaces Body (but File takes precedence over Seq): bodies served in order, the last one
 	// repeating, so one route can answer two requests differently.
 	Seq []string
 }
