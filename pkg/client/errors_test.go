@@ -104,3 +104,12 @@ func TestErrAPICapsMessageByCharacters(t *testing.T) {
 		t.Errorf("kept %d characters, want %d", n, maxAPIMessageLen)
 	}
 }
+
+func TestErrAPIMessage(t *testing.T) {
+	if got := (&ErrAPI{StatusCode: 404, Body: `{"error":{"message":"No schema"}}`}).Message(); got != "No schema" {
+		t.Errorf("got %q", got)
+	}
+	if got := (&ErrAPI{StatusCode: 404, Body: `{"code":404}`}).Message(); got != "" {
+		t.Errorf("got %q", got)
+	}
+}

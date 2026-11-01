@@ -42,6 +42,11 @@ type route struct {
 	Seq []string
 }
 
+// wrongHost404 is what a host without a Cluster API answers for any path
+// (a node on port 9999): a 404 whose JSON body has no error envelope. Use it
+// as the "*" route.
+var wrongHost404 = route{Status: 404, Body: `{"code":404}`}
+
 // fakeAPI is an httptest server answering from a route table.
 //
 // Routes are keyed "METHOD /path" and match regardless of the query string.
@@ -82,6 +87,10 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 			rt, ok = routes[key+" nextPageKey="+npk]
 		} else if bySchema, found := routes[key+" schemaIds="+q.Get("schemaIds")]; found && q.Has("schemaIds") {
 			rt, ok = bySchema, true
+		}
+		if !ok {
+			// "*" answers a request that matches no other key.
+			rt, ok = routes["*"]
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if !ok {

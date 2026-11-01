@@ -129,11 +129,21 @@ func settingsFetch(opts getSettingsOptions, args []string, maxPages int) (fetch 
 		if opts.scope == "" {
 			return nil, false, &UsageError{Err: fmt.Errorf(`--effective needs --scope: "environment" or the entity ID whose values to resolve`)}
 		}
-		return hintOnNotFound(settingsPagedFetch(settingsEffectivePath, effectiveParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
+		return listing(settingsEffectivePath, effectiveParams(opts), opts, maxPages), true, nil
 	case len(opts.schemas) == 0 && opts.scope == "":
 		return nil, false, &UsageError{Err: fmt.Errorf("give --schema or --scope (the API needs one), or an object ID")}
 	}
-	return hintOnNotFound(settingsPagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
+	return listing(settingsObjectsPath, settingsParams(opts), opts, maxPages), true, nil
+}
+
+// listing is a settings listing at path. Without --schema it falls back, on
+// a cluster, to one request per schema (see clusterScopeFallback).
+func listing(path string, params map[string]string, opts getSettingsOptions, maxPages int) func(*client.Client, int) (fetched, error) {
+	fetch := settingsPagedFetch(path, params, "items", settingsPageCap, maxPages)
+	if len(opts.schemas) == 0 {
+		fetch = clusterScopeFallback(fetch, path, params, maxPages)
+	}
+	return hintOnNotFound(fetch, hintSettingsNotFound)
 }
 
 // withWindowNames adds to fetch the lookup of update window names that the

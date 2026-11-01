@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -159,6 +160,84 @@ func TestClusterDeleteRefusesAReferencedObject(t *testing.T) {
 	api, _, cfg := clusterSettingsFake(t, "readwrite-all", routes)
 	r := runCLI(t, cfg, "delete", "settings", "obj-x", "--yes")
 	if r.Code != 1 || !strings.Contains(r.Stderr, "user-1") || api.Hits(clusterObjects) != 1 || api.Hits(clusterDelPrefix+"obj-x") != 0 {
+		t.Errorf("%s", r)
+	}
+}
+
+const noSchemaScopeOnly = `{"error":{"code":404,"message":"No schema with schemaId builtin:accounting.ddu.limit"}}`
+
+// clusterFallbackRoutes is a cluster that cannot list by scope alone: three
+// schemas (listed b, a, c), where a and b hold objects and c is a schema
+// whose scope the cluster does not serve.
+func clusterFallbackRoutes(path string) map[string]route {
+	routes := schemaCatalog(clusterSchemaPrefix, map[string]string{"builtin:b": "{}", "builtin:a": "{}", "builtin:c": "{}"})
+	routes["GET "+path] = route{Status: 404, Body: noSchemaScopeOnly}
+	routes["GET "+path+" schemaIds=builtin:a"] = route{Body: `{"items":[{"objectId":"a1"},{"objectId":"a2"}],"totalCount":2}`}
+	routes["GET "+path+" schemaIds=builtin:b"] = route{Body: `{"items":[{"objectId":"b1"}],"totalCount":1}`}
+	routes["GET "+path+" schemaIds=builtin:c"] = route{Status: 404, Body: `{"error":{"code":404,"message":"No schema with topic identifier 'x'"}}`}
+	return routes
+}
+
+func wantObjectIDs(t *testing.T, r cliResult, want ...string) {
+	t.Helper()
+	var got struct {
+		Items      []struct{ ObjectID string }
+		TotalCount int
+	}
+	if err := json.Unmarshal([]byte(r.Stdout), &got); err != nil || r.Code != 0 {
+		t.Fatalf("%v\n%s", err, r)
+	}
+	var ids []string
+	for _, it := range got.Items {
+		ids = append(ids, it.ObjectID)
+	}
+	if strings.Join(ids, ",") != strings.Join(want, ",") {
+		t.Errorf("ids = %v, want %v", ids, want)
+	}
+}
+
+func TestClusterScopeFallbackMergesSchemas(t *testing.T) {
+	_, _, cfg := clusterSettingsFake(t, "", clusterFallbackRoutes("/api/cluster/v2/settings/objects"))
+	r := runCLI(t, cfg, "get", "settings", "--scope", "cluster", "-o", "json")
+	wantObjectIDs(t, r, "a1", "a2", "b1")
+	if !strings.Contains(r.Stdout, `"totalCount": 3`) {
+		t.Errorf("totalCount not 3:\n%s", r.Stdout)
+	}
+}
+
+func TestClusterScopeFallbackForEffectiveValues(t *testing.T) {
+	api, _, cfg := clusterSettingsFake(t, "", clusterFallbackRoutes("/api/cluster/v2/settings/effectiveValues"))
+	r := runCLI(t, cfg, "get", "settings", "--effective", "--scope", "cluster", "-o", "json")
+	wantObjectIDs(t, r, "a1", "a2", "b1")
+	if q := api.Queries(clusterEffective); len(q) < 2 || q[1].Get("scope") != "cluster" {
+		t.Errorf("queries = %v", q)
+	}
+}
+
+func TestClusterScopeFallbackTruncationIsNotSilent(t *testing.T) {
+	_, _, cfg := clusterSettingsFake(t, "", clusterFallbackRoutes("/api/cluster/v2/settings/objects"))
+	r := runCLI(t, cfg, "get", "settings", "--scope", "cluster", "--limit", "1")
+	if r.Code != 0 || strings.Contains(r.Stdout, "a2") || strings.Contains(r.Stdout, "b1") {
+		t.Errorf("%s", r)
+	}
+	wantStderr(t, r, "Use --limit or narrower filters")
+}
+
+func TestEnvironmentScopeListingHasNoFallback(t *testing.T) {
+	env := newFakeAPI(t, map[string]route{"GET /e/env-a/api/v2/settings/objects": {Status: 404, Body: noSchemaScopeOnly}})
+	api := newFakeAPI(t, nil)
+	cfg := withFakeCluster(t, "", api, env)
+	r := runCLI(t, cfg, "--context", "a", "get", "settings", "--scope", "environment")
+	if r.Code != 4 || env.Hits("GET /e/env-a/api/v2/settings/schemas") != 0 {
+		t.Errorf("%s", r)
+	}
+}
+
+func TestClusterSettings404WithMessageHasNoHostHint(t *testing.T) {
+	_, _, cfg := clusterSettingsFake(t, "", map[string]route{clusterObjPrefix + "bad": {Status: 404, Body: `{"error":{"code":404,"message":"Settings objectId 'bad' not found"}}`}})
+	r := runCLI(t, cfg, "describe", "settings", "bad")
+	wantStderr(t, r, hintObjectNotFound)
+	if r.Code != 4 || strings.Contains(r.Stderr, "port 9999") {
 		t.Errorf("%s", r)
 	}
 }

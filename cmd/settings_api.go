@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
+	"sync"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
@@ -145,4 +147,89 @@ func (a *App) runSettingsFetch(s fetchSpec) error {
 		return a.runClusterFetch(s)
 	}
 	return a.runFetch(s)
+}
+
+// settingsPageCap is the largest page the settings listings ask for.
+const settingsPageCap = 500
+
+// clusterScopeFallback wraps a settings listing made without schemaIds. The
+// cluster cannot list by scope alone: it fails with 404 "No schema with
+// schemaId <first schema>", and a schemaIds-less effectiveValues fails the
+// same way. On that error, on a cluster only, the fallback lists every
+// schema (8 at a time) and merges the results in schema ID order; a schema
+// that answers 404 (one that does not serve the scope) is skipped, any other
+// error fails. Total stays -1 when a schema had more than it returned.
+func clusterScopeFallback(fetch func(*client.Client, int) (fetched, error), path string, params map[string]string, maxPages int) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, limit int) (fetched, error) {
+		f, err := fetch(c, limit)
+		var apiErr *client.ErrAPI
+		if err == nil || !c.ClusterScoped() || !errors.As(err, &apiErr) || apiErr.StatusCode != 404 ||
+			!strings.HasPrefix(apiErr.Message(), "No schema with schemaId") {
+			return f, err
+		}
+		var list struct {
+			Items []struct {
+				SchemaID string `json:"schemaId"`
+			} `json:"items"`
+		}
+		if err := settingsGet(c, settingsSchemasPath, nil, &list); err != nil {
+			return fetched{}, err
+		}
+		ids := make([]string, 0, len(list.Items))
+		for _, it := range list.Items {
+			ids = append(ids, it.SchemaID)
+		}
+		sort.Strings(ids)
+		return mergeSchemaListings(c, ids, limit, func(id string) func(*client.Client, int) (fetched, error) {
+			p := make(map[string]string, len(params)+1)
+			for k, v := range params {
+				p[k] = v
+			}
+			p["schemaIds"] = id
+			return settingsPagedFetch(path, p, "items", settingsPageCap, maxPages)
+		})
+	}
+}
+
+// mergeSchemaListings runs the listing of each schema ID, 8 at a time, and
+// concatenates the items in ID order.
+func mergeSchemaListings(c *client.Client, ids []string, limit int, listingOf func(string) func(*client.Client, int) (fetched, error)) (fetched, error) {
+	results := make([]fetched, len(ids))
+	errs := make([]error, len(ids))
+	sem := make(chan struct{}, definitionWorkers)
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			results[i], errs[i] = listingOf(id)(c, limit)
+		}()
+	}
+	wg.Wait()
+	items := []interface{}{}
+	more := false
+	for i := range ids {
+		if errs[i] != nil {
+			if isNotFound(errs[i]) {
+				continue
+			}
+			return fetched{}, errs[i]
+		}
+		body, _ := results[i].Body.(map[string]interface{})
+		list, _ := body["items"].([]interface{})
+		items = append(items, list...)
+		more = more || results[i].HasMore
+	}
+	if limit > 0 && len(items) > limit {
+		items, more = items[:limit], true
+	}
+	body := map[string]interface{}{"items": items}
+	total := -1
+	if !more {
+		total = len(items)
+		body["totalCount"] = total
+	}
+	return fetched{Body: body, Total: total, HasMore: more, Count: len(items)}, nil
 }
