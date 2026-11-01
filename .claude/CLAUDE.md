@@ -289,3 +289,18 @@ your task.
 - **When it applies**: Changing the settings commands, or adding Settings 2.0 writes (phase 2) or cluster settings (phase 3)
 - **Date**: 2026-11-01
 - **Ref**: Settings 2.0 phase 1 (docs/superpowers/plans/2026-10-31-settings-read-environments.md)
+
+### Settings 2.0 writes: write levels, the runner, and what the server does to writes
+- **Context**: Phase 2 of Settings 2.0 added `apply`, `create settings`, `edit setting` and `delete settings`, gated by a per-context `safety-level` (dtctl's names; default `readonly`), from the cluster server source at 1.352.
+- **Insight**:
+  - Every write goes through `a.runWrites` (`cmd/writes.go`): plan every context with GETs only, check every context's level (or, for `--validate-only`, the version floor) before writing to any, then write one request per object. A `readonly` context is refused before any request; `readwrite-mine` (create only) can only be judged after the plan, because apply's action comes from GETs.
+  - **`validateOnly` on PUT exists only since Managed 1.288**; an older cluster ignores the unknown parameter and saves. dtmgd reads the version first and refuses below 1.288 or when it cannot read it (`DataExport` on an environment token). One floor covers creates too.
+  - Conflict protection is the `updateToken` (PUT body, DELETE query); a stale one gets **409**. Managed ignores `If-Match`, which dtctl sends.
+  - A POST batch is not atomic (valid items are saved when others fail), so dtmgd sends one object per request. A POST can overwrite: for a one-per-scope schema, a matching `externalId`, or a schema key property, so apply always looks before it writes and reports the resolved action.
+  - The client never retries a POST, PUT or DELETE after it may have been sent (5xx, connection reset, unexpected EOF); only connect/TLS timeouts and 429 (`isRetryable`).
+  - Deleting an update window is not blocked by references on the server, so `delete settings` lists both update schemas at every scope and refuses while one names the window.
+  - In tests, `withFakeEnvLevels` writes a config with levels, `fakeAPI.Bodies(key)` shows request bodies, and `runInteractive` drives `(*App).run()` as a person at a terminal (`App.interactive`, `App.stdin`). Tests that build an `App` themselves must clear `agentmode.EnvVars()`: the developer's own agent session would otherwise turn agent mode on.
+  - The live write suite never touches the maintainer's config: it saves a temporary copy with only the write context raised to `readwrite-all` (`DTMGD_IT_WRITE_ENV`).
+- **When it applies**: Adding or changing a write command, or reading why a write was refused
+- **Date**: 2026-11-01
+- **Ref**: Settings 2.0 phase 2 (docs/superpowers/plans/2026-11-01-settings-write-environments.md)

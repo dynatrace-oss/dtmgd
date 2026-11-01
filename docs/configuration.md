@@ -177,8 +177,9 @@ section per environment, with a failed environment's error on stderr. Either
 way every environment that answered is printed, and the call still exits
 non-zero if any failed (see [Exit Codes](output.md#exit-codes)).
 
-The `--env` flag works with every `get`, `describe` and `query` command except
-the cluster commands, which run against one cluster context. `ALL_ENVIRONMENTS`
+The `--env` flag works with every `get`, `describe` and `query` command, and
+with `apply` and `create settings` (every context is checked before any is
+written), except the cluster commands, which run against one cluster context. `ALL_ENVIRONMENTS`
 selects environment contexts only, and naming a cluster context in a `;` list
 is an error. `config`,
 `ctx`, `skills`, `doctor` and `commands` never fan out over it. A single

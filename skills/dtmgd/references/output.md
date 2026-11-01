@@ -66,7 +66,8 @@ Errors are also wrapped, with a classified code and next steps:
 `{"ok": false, "result": null, "error": {"code": "permission_denied", "message": "...", "status_code": 403, "suggestions": ["..."]}}`.
 Codes: `auth_required`, `permission_denied`, `not_found`, `bad_request`,
 `rate_limited`, `server_error`, `config_error`, `timeout`, `partial_failure`,
-`validation_error` and `unknown_command` (usage errors), `error`.
+`validation_error` and `unknown_command` (usage errors), `safety_blocked`
+(a write the context's safety-level does not allow; exit 6), `error`.
 
 Force with `-A`/`--agent`, disable with `--no-agent`.
 
