@@ -37,6 +37,16 @@ archives:
         dst: references
         strip_parent: true
       - completions/*
+      # What README links to, at the same paths, so the archive reads
+      # offline (TestReleaseArchiveLinksResolve checks every link).
+      - docs/*.md
+      - docs/reference/*.md
+      - src: skills/dtmgd/SKILL.md
+        dst: skills/dtmgd
+        strip_parent: true
+      - src: skills/dtmgd/references/*
+        dst: skills/dtmgd/references
+        strip_parent: true
     format_overrides:
       - goos: windows
         formats: [zip]

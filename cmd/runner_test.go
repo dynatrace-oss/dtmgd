@@ -265,7 +265,7 @@ func TestMultiEnvAgentPartialFailure(t *testing.T) {
 		"    \"code\": \"partial_failure\",\n" +
 		"    \"message\": \"1 of 3 environments failed: b: API error 403: Token is missing required scope\",\n" +
 		"    \"suggestions\": [\n" +
-		"      \"Permission denied. Your API token may be missing required scopes.\"\n" +
+		"      \"Permission denied. Your API token may be missing required scopes.\\n  This command needs the token scope(s): problems.read.\"\n" +
 		"    ]\n" +
 		"  },\n" +
 		"  \"context\": {\n" +

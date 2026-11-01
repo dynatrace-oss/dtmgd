@@ -295,7 +295,7 @@ func (a *App) printCommonHint(cmd *cobra.Command, err error) {
 			return
 		}
 	}
-	if hint := strings.TrimPrefix(scopedHint(cmd, partial), "\n  "); hint != "" {
+	if hint := scopedHint(cmd, partial); hint != "" {
 		output.PrintHint("%s", hint)
 	}
 }
@@ -304,10 +304,15 @@ func (a *App) printCommonHint(cmd *cobra.Command, err error) {
 // added when err is a missing permission.
 func scopedHint(cmd *cobra.Command, err error) string {
 	hint := hintFor(err)
-	if scopes := requiredScopes(cmd); len(scopes) > 0 && isPermissionDenied(err) {
-		hint += "\n  This command needs the token scope(s): " + strings.Join(scopes, ", ") + "."
+	scopes := requiredScopes(cmd)
+	if len(scopes) == 0 || !isPermissionDenied(err) {
+		return hint
 	}
-	return hint
+	line := "This command needs the token scope(s): " + strings.Join(scopes, ", ") + "."
+	if hint == "" {
+		return line
+	}
+	return hint + "\n  " + line
 }
 
 // hintError is an error with its own hint, which replaces the one

@@ -897,6 +897,10 @@ func writeHint(rep writeReport) string {
 	return forbiddenWriteHint(rep)
 }
 
+// hintWriteNotApplicable is the hint for writes the cluster refused because
+// the setting does not apply at their scope.
+const hintWriteNotApplicable = "The cluster says this setting does not apply to this scope (its reason is above): write it at a scope the schema allows (dtmgd describe settings-schema <schema-id> lists them)."
+
 // hintWriteForbidden is the hint for writes the cluster refused with 403.
 const hintWriteForbidden = "Permission denied: writing settings needs settings.write and settings.read on the token (a cluster token needs them besides ServiceProviderAPI)."
 
@@ -921,7 +925,7 @@ func forbiddenWriteHint(rep writeReport) string {
 	case failed == 0:
 		return ""
 	case notApplicable == failed:
-		return client.HintNotApplicable
+		return hintWriteNotApplicable
 	}
 	return hintWriteForbidden
 }
