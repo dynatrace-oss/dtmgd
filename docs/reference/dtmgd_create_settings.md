@@ -12,6 +12,10 @@ apply.
 For a schema that holds one object per scope, create refuses when the scope
 already has one.
 
+In an ordered schema a new object goes last, or where --position says: first,
+last, after:&lt;ref> or before:&lt;ref>, where &lt;ref> is the objectId or externalId
+of an object at the same scope.
+
 --dry-run shows what would be created, with GETs only, at any write level.
 --validate-only asks the cluster to check the value without saving it
 (Dynatrace Managed 1.288 or later).
@@ -33,6 +37,7 @@ dtmgd create settings -f <value-file> --schema <schema-id> --scope <scope> [flag
       --dry-run           show what would be created, sending GETs only
   -f, --filename string   file holding the value, YAML or JSON (- for stdin)
   -h, --help              help for settings
+      --position string   place the object in an ordered schema: first, last, after:<ref> or before:<ref>
       --schema string     schema ID of the new object
       --scope string      scope of the new object: "environment" or an entity ID
       --validate-only     have the cluster validate the value without saving it

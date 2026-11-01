@@ -48,6 +48,8 @@ type writeResult struct {
 	// the one that would be written.
 	Current map[string]interface{} `json:"current,omitempty" yaml:"current,omitempty"`
 	Value   map[string]interface{} `json:"value,omitempty" yaml:"value,omitempty"`
+	// Position is the move within an ordered schema, when one was asked for.
+	Position *positionChange `json:"position,omitempty" yaml:"position,omitempty"`
 }
 
 // writeError is why one object's write failed, in the API's own terms.
@@ -80,6 +82,11 @@ type plannedWrite struct {
 	// ReportValue is what a dry-run report shows as value: Value with its
 	// secrets masked by guardSecrets.
 	ReportValue map[string]interface{}
+	// InsertAfter and InsertBefore place the object in an ordered schema;
+	// "" means first (after) or last (before), nil sends nothing.
+	InsertAfter, InsertBefore *string
+	// Position is the move the report shows.
+	Position *positionChange
 	// Existing are the objects the plan listed for a create: a POST that
 	// answers with one of them overwrote it, and is reported as an update.
 	Existing map[string]bool
@@ -438,7 +445,7 @@ func plannedResults(names []string, plans map[string]contextPlan) []writeResult 
 
 // result is w's report entry, without its outcome.
 func (w plannedWrite) result(context string) writeResult {
-	return writeResult{Context: context, ObjectID: w.ObjectID, SchemaID: w.SchemaID, Scope: w.Scope, Summary: w.Summary}
+	return writeResult{Context: context, ObjectID: w.ObjectID, SchemaID: w.SchemaID, Scope: w.Scope, Summary: w.Summary, Position: w.Position}
 }
 
 // executeWrites sends every context's planned writes, one request per
@@ -512,6 +519,7 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 		if w.ExternalID != "" {
 			obj["externalId"] = w.ExternalID
 		}
+		w.addPlacement(obj)
 		var items []settingsWriteItem
 		err = settingsPost(c, settingsObjectsPath, params, []interface{}{obj}, &items)
 		if len(items) > 0 {
@@ -522,6 +530,7 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 		if w.UpdateToken != "" {
 			body["updateToken"] = w.UpdateToken
 		}
+		w.addPlacement(body)
 		err = settingsPut(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), params, body, &item)
 	case actionDelete:
 		err = settingsDelete(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), deleteParams(w.UpdateToken))
