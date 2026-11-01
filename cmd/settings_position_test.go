@@ -367,6 +367,20 @@ func TestPositionAnchorUnderValidateOnly(t *testing.T) {
 	}
 }
 
+// TestPositionAnchorNoteShownToPeople: the table has no note column, so a
+// person gets the note on stderr, once, for the object it belongs to.
+func TestPositionAnchorNoteShownToPeople(t *testing.T) {
+	_, cfg := applyFake(t, "readwrite-all", anchorRoutes(`[{"code":200}]`))
+	r := runCLI(t, cfg, "apply", "-f", tempFile(t, anchorFile), "--validate-only")
+	const note = "validated without its position: its anchor is created by this file"
+	if r.Code != 0 || strings.Count(r.Stderr, note) != 1 || !strings.Contains(r.Stderr, orderedSchema) {
+		t.Errorf("want the note once on stderr, naming the schema:\n%s", r)
+	}
+	if strings.Contains(r.Stdout, note) {
+		t.Errorf("the note is on stdout, which is data only:\n%s", r)
+	}
+}
+
 func createDoc(ext, pos string) string {
 	return "externalId: " + ext + "\nschemaId: " + orderedSchema + "\nscope: environment\nposition: " + pos + "\nvalue: {name: " + ext + "}\n"
 }

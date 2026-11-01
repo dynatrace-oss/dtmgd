@@ -708,6 +708,7 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 			return err
 		}
 	}
+	a.printWriteNotes(rep)
 	if rep.DryRun && !a.dataFormat() {
 		output.PrintInfo("Dry run: nothing was changed. -o yaml shows each object's current and new value.")
 	}
@@ -746,6 +747,24 @@ func (a *App) printWriteReport(rep writeReport) error {
 		rows = append(rows, writeContextRow{Context: r.Context, Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: unescapeMarkdown(r.Summary)})
 	}
 	return p.PrintList(rows)
+}
+
+// printWriteNotes prints each result's note on stderr for a person: the
+// table has no column for it. json, yaml and agent output carry it.
+func (a *App) printWriteNotes(rep writeReport) {
+	if a.dataFormat() {
+		return
+	}
+	for _, r := range rep.Results {
+		if r.Note == "" {
+			continue
+		}
+		target := r.ObjectID
+		if target == "" {
+			target = r.Scope
+		}
+		output.PrintInfo("%s %s %s: %s", r.Context, r.SchemaID, target, r.Note)
+	}
 }
 
 // printWriteFailures names every failed object on stderr, with the rules

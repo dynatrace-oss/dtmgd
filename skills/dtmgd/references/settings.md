@@ -296,12 +296,14 @@ order. `get settings --schema <id> --scope <scope>` lists them in it
   - If that object's write failed, this one fails with "its position anchor
     was not written" and is not sent.
   - Under `--validate-only` nothing is created, so this object is validated
-    without its position, and its result carries a `note` saying so.
+    without its position, and its result carries a `note` saying so (on
+    stderr in human output).
 - An update whose value and place are unchanged is `unchanged`. A different
   place makes it `update`, even with the same value: a move.
-- The dry run shows `position: {current: N, new: M}` (1-based places after
-  the whole file is applied; no `current` for a create) in json, yaml and
-  the agent envelope. Tables don't show it.
+- The dry run shows `position: {current: N, new: M}` in json, yaml and the
+  agent envelope; tables don't show it. Both are 1-based places: `current`
+  is the place now, `new` the place after the whole file is applied. A
+  create has no `current`.
 - `position` on a schema that is not ordered exits 2. An anchor that names
   no object fails the plan, with a hint to list the objects.
 - An exported listing (`get settings --schema <id> --scope <scope> -o yaml`)
@@ -328,9 +330,9 @@ order. `get settings --schema <id> --scope <scope>` lists them in it
   summary) and the total. Change or delete those settings first. There is
   no override, and `--dry-run` shows the refusal too.
 - To find them, a delete reads every schema's definition, which takes a few
-  seconds (5–10 s on a large environment). A schema whose definition the
-  cluster cannot serve is skipped, with a warning (on stderr; in agent mode
-  in `context.warnings`). Any other failure stops the delete.
+  seconds (5–10 s on a large environment). Only a definition that answers
+  404 is skipped, with a warning (on stderr; in agent mode in
+  `context.warnings`). Any other failure stops the delete.
 - **Settings only:** dashboards, user-group permissions and other
   configuration outside Settings 2.0 can use an object too, and are not
   checked. Before deleting a management zone, say so to the user.
@@ -341,7 +343,7 @@ order. `get settings --schema <id> --scope <scope>` lists them in it
 
 - A property of type `secret` (in `describe settings-schema`) holds a
   password, token or header value. A read returns a mask instead: `***` and
-  16 hex characters and `***`, such as `***3f9ff26c722fbb93***`. The mask is
+  16 lowercase hex characters and `***`, such as `***3f9ff26c722fbb93***`. The mask is
   salted: the same secret stored twice gets two different masks.
 - **dtmgd never prints a secret.** Write reports show `<secret>` in `value`
   and `current`, in every format and in the agent envelope. The request

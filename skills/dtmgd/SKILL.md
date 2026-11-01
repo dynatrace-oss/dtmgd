@@ -149,7 +149,7 @@ dtmgd apply -f window.yaml                                  #    the write
 - Ask the user before writing a schema whose `Maturity` is `IN_DEVELOPMENT` or `EARLY_ADOPTER`.
 - Ordered schemas evaluate their list in order. Place an object with `position:` `first`, `last`, `after:<ref>` or `before:<ref>` in the file, or `create settings --position`.
 - A reference (`setting → <schema>`) holds an `objectId`. `delete settings <object-id> --yes` (`--yes` is required in agent mode) refuses an object that other settings use.
-- Secrets print as `<secret>`. An export's mask keeps the secret on update but cannot create an object (exit 2): put the real value in the file.
+- Reads show a secret as the cluster's mask (`***…***`), write reports as `<secret>`. The mask keeps the secret on update but cannot create an object (exit 2): put the real value in the file.
 - Cluster contexts use the scopes `cluster`, `environment-default` and a few more; the cluster ActiveGates' auto-update is `get`/`update activegate-updates` there.
 
 Details and worked examples (an alerting profile with a webhook notification, a rule put first): [references/settings.md](references/settings.md).
