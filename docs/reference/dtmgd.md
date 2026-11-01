@@ -6,10 +6,13 @@ Dynatrace Managed CLI
 
 dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
 
-It provides read access to problems, entities, events, logs, metrics, SLOs,
-and security vulnerabilities via the Dynatrace Managed classic API, and to a
-cluster's environments, nodes, license and backup configuration via the
-Cluster Management API.
+It reads problems, entities, events, logs, metrics, SLOs, security
+vulnerabilities and Settings 2.0 via the Dynatrace Managed classic API, and a
+cluster's environments, nodes, license, backup configuration, settings and
+ActiveGate auto-update via the Cluster Management API. It writes Settings 2.0
+objects (apply, create, edit, delete) and cluster ActiveGate auto-update
+(update, edit) only through a context whose safety-level allows it; every
+context starts readonly.
 
 API endpoints used:
 ```

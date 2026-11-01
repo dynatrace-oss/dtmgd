@@ -80,5 +80,6 @@ cluster commands (see [cluster-api.md](cluster-api.md)), which run against one
 cluster context. `ALL_ENVIRONMENTS` selects environment contexts
 only. `config`, `ctx`, `skills`,
 `doctor` and `commands` never fan out over `--env`; a single `--env` name acts
-like `-c` where they show the current context. Use `dtmgd ctx` first to
+like `-c` where they show the current context. `-c`/`--context` and `--env`
+cannot be combined (exit 2): give one of them. Use `dtmgd ctx` first to
 discover which context names are available.

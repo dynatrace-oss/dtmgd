@@ -77,6 +77,7 @@ Each context has a `safety-level`: what dtmgd may change through it.
 ```bash
 dtmgd config set-context stage --safety-level readwrite-all
 dtmgd ctx                                  # the SAFETY-LEVEL column
+dtmgd config view                          # safety-level of every context, readonly included
 ```
 
 - A context without the key is `readonly`, so a config written before dtmgd
@@ -159,7 +160,9 @@ Query one, several, or all configured environments in a single command.
 Requests fan out in parallel and results are merged.
 
 Context names (`prod`, `staging` below) are just user-defined aliases —
-substitute whatever names you used when configuring your contexts.
+substitute whatever names you used when configuring your contexts. `--env`
+and `--context` both choose contexts, so they cannot be combined: a command
+given both exits 2.
 
 ```bash
 # Query all configured environments

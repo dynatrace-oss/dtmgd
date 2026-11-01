@@ -115,6 +115,11 @@ func newRootCmd(a *App) *cobra.Command {
 			}
 			// Normalised, so every format check below sees "yaml" for yml.
 			a.Opts.Output = string(f)
+			// Both choose the contexts a command runs against; letting one
+			// silently win ran commands somewhere the user did not mean.
+			if a.Opts.Context != "" && a.Opts.Env != "" {
+				return &UsageError{Err: errors.New("--context and --env both choose contexts; give one: --context <name> for one context, --env <name;name> or ALL_ENVIRONMENTS for several")}
+			}
 			if n := a.agentNotice(); n != "" {
 				output.PrintInfo("%s", n)
 			}
@@ -122,10 +127,13 @@ func newRootCmd(a *App) *cobra.Command {
 		},
 		Long: `dtmgd is a kubectl-inspired CLI for Dynatrace Managed (self-hosted) clusters.
 
-It provides read access to problems, entities, events, logs, metrics, SLOs,
-and security vulnerabilities via the Dynatrace Managed classic API, and to a
-cluster's environments, nodes, license and backup configuration via the
-Cluster Management API.
+It reads problems, entities, events, logs, metrics, SLOs, security
+vulnerabilities and Settings 2.0 via the Dynatrace Managed classic API, and a
+cluster's environments, nodes, license, backup configuration, settings and
+ActiveGate auto-update via the Cluster Management API. It writes Settings 2.0
+objects (apply, create, edit, delete) and cluster ActiveGate auto-update
+(update, edit) only through a context whose safety-level allows it; every
+context starts readonly.
 
 API endpoints used:
   Environment API:  {host}/e/{env-id}/api/v2/  (environment contexts)
@@ -269,8 +277,9 @@ func (a *App) loadConfig() (*config.Config, error) {
 		return nil, err
 	}
 
-	// Context precedence: --env naming one context, then --context, then
-	// DTMGD_CONTEXT, then the file's current-context.
+	// Context precedence: --env naming one context or --context (never
+	// both: the pre-run refuses that), then DTMGD_CONTEXT, then the file's
+	// current-context.
 	if ctx := os.Getenv("DTMGD_CONTEXT"); ctx != "" {
 		cfg.CurrentContext = ctx
 	}
