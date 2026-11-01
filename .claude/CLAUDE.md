@@ -211,18 +211,24 @@ your task.
 - **Date**: 2026-10-29
 - **Ref**: Phase 3 (2/2) MCP parity (#53); v0.2.1
 
-### Undocumented filter parameters: three are ignored by the cluster, one is honoured
+### Undocumented filter parameters: six are ignored by the cluster, one is honoured
 - **Context**: The Phase 3 parity review found parameters that the Dynatrace Managed MCP server (2.0.0) and dtmgd send but `env2temp.json` does not document. On 2026-10-30 each was checked live on `prod` and `stage` (Dynatrace Managed 1.348). The check uses a value that cannot match anything: a filter that is honoured returns nothing (or a 400), and an ignored one returns the unfiltered count.
 - **Insight**:
   - `eventType` on `/events` is **ignored**: 864 events with and without `eventType=ZZ_NOT_A_TYPE`. `eventSelector=eventType("PROCESS_RESTART")` filters (305 of 864), and an unknown type there gets 400 "Constraints violated".
   - `mzSelector` on `/entities` is **ignored**, even with a real zone (38 of 38 hosts). `mzName("<zone>")` inside `entitySelector` filters (18 of 38); a nonexistent zone name there gets 400 "Constraints violated".
   - `entitySelector` on `/metrics` (the descriptor list) is **ignored**: 17 = 17. The endpoint has no documented entity filter at all.
   - `entitySelector` on `/logs/search` is **honoured** (see the logs entry).
-  - Since the release after v0.3.1, dtmgd sends `get events --type` as `eventSelector=eventType("…")`, adds `get entities --mz` to `entitySelector` as `mzName("…")` (quote and tilde escaped with `~`; an `mzName(…)`/`mzId(…)` value passes through), and refuses `get metrics --entity` with exit 2, pointing at `query metrics --entity`. `cmd/filters_test.go` pins the parameters sent.
-  - The MCP server still sends the ignored parameters. It also sends top-level `impactLevel` on `/problems`, and `riskLevel` and `entitySelector` on `/securityProblems`, which dtmgd covers with `problemSelector` / `securityProblemSelector` criteria (reported in dynatrace-oss/dynatrace-managed-mcp#329). dtmgd's `fields=+affectedEntities,+managementZones` on `/problems` is unchecked and harmless: both fields are in the default response.
-- **When it applies**: Adding or debugging a filter flag. Before trusting any undocumented parameter, compare an impossible value with no filter on a live environment, choosing a query and time range that return results; `make integration` (see the live-suite entry) re-runs these checks.
-- **Date**: 2026-10-29 (checked live 2026-10-30)
-- **Ref**: Phase 3 (2/2) MCP parity; filter fixes after v0.3.1
+  - Since v0.4.0, dtmgd sends `get events --type` as `eventSelector=eventType("…")`, adds `get entities --mz` to `entitySelector` as `mzName("…")` (quote and tilde escaped with `~`; an `mzName(…)`/`mzId(…)` value passes through), and refuses `get metrics --entity` with exit 2, pointing at `query metrics --entity`. `cmd/filters_test.go` pins the parameters sent.
+  - Three more, sent only by the MCP server, are **ignored** too (checked 2026-11-01 on `prod` at 1.348 and `stage` at 1.352). dtmgd puts these filters into the documented selectors:
+    - Top-level `impactLevel` on `/problems`: 365 (and 29 on `stage`) with no filter, with `ZZ_NOT_A_LEVEL`, with `SERVICES` and with `INFRASTRUCTURE`. `problemSelector=impactLevel("SERVICES")` filters (49 of 365); an invalid level there gets 400 "Constraints violated".
+    - Top-level `riskLevel` on `/securityProblems`: 281 (208) whatever the value. `securityProblemSelector=riskLevel("CRITICAL")` filters (3 of 281); an invalid level there gets 400.
+    - `entitySelector` on `/securityProblems`: 281 (208) with a nonexistent host ID, and even with `type(ZZ_NOT_A_TYPE)`. `securityProblemSelector=relatedHostIds("<nonexistent>")` returns 0.
+  - The MCP server (2.0.0, `main` at 857cecf) still sends all six; the live counts are posted on dynatrace-oss/dynatrace-managed-mcp#329.
+  - dtmgd cannot send those three, so the check went through a throwaway Go program in the scratchpad. It builds the client with `client.NewForContext` from the default config, calls `GetV2` with the raw parameters, and prints only `totalCount` and the API's error message. That keeps tokens, hosts and response data out of the transcript. The live suite does not cover the MCP-only parameters.
+  - dtmgd's `fields=+affectedEntities,+managementZones` on `/problems` is unchecked and harmless: both fields are in the default response.
+- **When it applies**: Adding or debugging a filter flag. Before trusting any undocumented parameter, compare an impossible value with no filter on a live environment, choosing a query and time range that return results; `make integration` (see the live-suite entry) re-runs the checks for dtmgd's own filters.
+- **Date**: 2026-10-29 (checked live 2026-10-30; MCP-only parameters 2026-11-01)
+- **Ref**: Phase 3 (2/2) MCP parity; filter fixes after v0.3.1; dynatrace-managed-mcp#329
 
 ### A cluster context's host is the cluster's own address, not an environment context's node host
 - **Context**: Phase 4 planned the Cluster API commands on top of the owner's existing environment contexts. Their hosts are node addresses on port 9999 (`https://<node>:9999`), where `/api/cluster/v2/...` and `/api/v1.0/onpremise/...` answer 404. The Cluster API answers on the cluster's public name, the address the Cluster Management Console uses.
