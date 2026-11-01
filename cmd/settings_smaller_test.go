@@ -73,22 +73,18 @@ func TestNotApplicable403OnAWriteSaysWhatTheUserSees(t *testing.T) {
 	}
 }
 
-// A multi-environment failure is reported per environment (errReported), so
-// the command prints no hint line at all, scopes or otherwise: the cluster's
-// reason is what the user sees. The hint logic is pinned on the error itself.
+// A multi-environment failure is reported per environment, then the hint
+// the failures share: no scopes line when every environment's 403 is "not
+// applicable", the scopes line when one is a real permission problem.
 func TestNotApplicableAcrossEnvironments(t *testing.T) {
 	const ordinary = `{"error":{"code":403,"message":"Token is missing required scope"}}`
-	run := func(bodyB string) cliResult {
-		a := newFakeAPI(t, map[string]route{effectivePath: {Status: 403, Body: notApplicableBody}})
-		b := newFakeAPI(t, map[string]route{effectivePath: {Status: 403, Body: bodyB}})
-		cfg := withFakeEnvs(t, fakeEnv{"a", a}, fakeEnv{"b", b})
-		return runCLI(t, cfg, "get", "settings", "--effective", "--scope", "HOST-0000000000000001", "--schema", "builtin:x", "--env", "a;b")
+	r := multiEnvEffective(t, nil, 403, notApplicableBody, notApplicableBody)
+	if r.Code != 5 || !strings.Contains(r.Stderr, "Setting not applicable") || strings.Contains(r.Stderr, "This command needs the token scope(s)") {
+		t.Errorf("both not applicable: %s", r)
 	}
-	for _, body := range []string{notApplicableBody, ordinary} {
-		r := run(body)
-		if r.Code != 5 || !strings.Contains(r.Stderr, "Setting not applicable") || strings.Contains(r.Stderr, "This command needs the token scope(s)") {
-			t.Errorf("%s", r)
-		}
+	r = multiEnvEffective(t, nil, 403, notApplicableBody, ordinary)
+	if r.Code != 5 || !strings.Contains(r.Stderr, "Setting not applicable") || !strings.Contains(r.Stderr, "This command needs the token scope(s)") {
+		t.Errorf("mixed: %s", r)
 	}
 
 	na := client.EnvResult{Error: client.APIError(403, notApplicableBody)}

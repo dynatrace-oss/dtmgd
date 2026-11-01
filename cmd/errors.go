@@ -245,12 +245,10 @@ func exitCode(err error) int {
 // failed).
 func (a *App) reportError(cmd *cobra.Command, err error) {
 	if errors.Is(err, errReported) {
+		a.printCommonHint(cmd, err)
 		return
 	}
-	hint := hintFor(err)
-	if scopes := requiredScopes(cmd); len(scopes) > 0 && isPermissionDenied(err) {
-		hint += "\n  This command needs the token scope(s): " + strings.Join(scopes, ", ") + "."
-	}
+	hint := scopedHint(cmd, err)
 	var usage *UsageError
 	agent := a.agentMode()
 	if errors.As(err, &usage) {
@@ -281,6 +279,35 @@ func (a *App) reportError(cmd *cobra.Command, err error) {
 			}
 		}
 	}
+}
+
+// printCommonHint prints, after a multi-environment failure whose errors
+// were already shown, the hint every failed environment shares and the
+// scopes line for a missing permission. Environments whose errors carry
+// their own hint showed it with the error, so nothing is repeated.
+func (a *App) printCommonHint(cmd *cobra.Command, err error) {
+	var partial *client.PartialFailureError
+	if a.agentMode() || !errors.As(err, &partial) {
+		return
+	}
+	for _, r := range partial.Failed {
+		if explicitHint(r.Error) != "" {
+			return
+		}
+	}
+	if hint := strings.TrimPrefix(scopedHint(cmd, partial), "\n  "); hint != "" {
+		output.PrintHint("%s", hint)
+	}
+}
+
+// scopedHint is what to do about err, with the command's token scopes
+// added when err is a missing permission.
+func scopedHint(cmd *cobra.Command, err error) string {
+	hint := hintFor(err)
+	if scopes := requiredScopes(cmd); len(scopes) > 0 && isPermissionDenied(err) {
+		hint += "\n  This command needs the token scope(s): " + strings.Join(scopes, ", ") + "."
+	}
+	return hint
 }
 
 // hintError is an error with its own hint, which replaces the one

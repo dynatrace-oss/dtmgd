@@ -263,7 +263,10 @@ func TestMultiEnvAgentPartialFailure(t *testing.T) {
 		"  },\n" +
 		"  \"error\": {\n" +
 		"    \"code\": \"partial_failure\",\n" +
-		"    \"message\": \"1 of 3 environments failed: b: API error 403: Token is missing required scope\"\n" +
+		"    \"message\": \"1 of 3 environments failed: b: API error 403: Token is missing required scope\",\n" +
+		"    \"suggestions\": [\n" +
+		"      \"Permission denied. Your API token may be missing required scopes.\"\n" +
+		"    ]\n" +
 		"  },\n" +
 		"  \"context\": {\n" +
 		"    \"has_more\": true,\n" +
@@ -288,7 +291,8 @@ func TestMultiEnvAgentPartialFailure(t *testing.T) {
 // TestMultiEnvTablePartialFailure pins table output when one environment
 // fails: a section per environment in request order, separated by blank
 // lines; the failure reported on stderr under its context name (and not
-// again as a summary); a truncation note for a cut-short list; exit code 1.
+// again as a summary), then the hint the failures share; a truncation note
+// for a cut-short list; exit code 1.
 func TestMultiEnvTablePartialFailure(t *testing.T) {
 	cases := []struct {
 		name string
@@ -303,7 +307,9 @@ func TestMultiEnvTablePartialFailure(t *testing.T) {
 			"\n" +
 			"== b ==\n" +
 			"== stderr\n" +
-			"Error: b: API error 403: Token is missing required scope\n"},
+			"Error: b: API error 403: Token is missing required scope\n" +
+			"Hint: Permission denied. Your API token may be missing required scopes.\n" +
+			"  This command needs the token scope(s): problems.read.\n"},
 		{"failure first, then a truncated list", []string{"--env", "b;d;c", "--limit", "1"}, "== exit code: 1\n" +
 			"== stdout\n" +
 			"== b ==\n" +
@@ -317,7 +323,9 @@ func TestMultiEnvTablePartialFailure(t *testing.T) {
 			" P1                                                      \n" +
 			"== stderr\n" +
 			"Error: b: API error 403: Token is missing required scope\n" +
-			"Showing 1 of 5 problems. Use --limit or narrower filters.\n"},
+			"Showing 1 of 5 problems. Use --limit or narrower filters.\n" +
+			"Hint: Permission denied. Your API token may be missing required scopes.\n" +
+			"  This command needs the token scope(s): problems.read.\n"},
 	}
 	for _, tc := range cases {
 		r := runCLI(t, multiEnvPartialConfig(t), append([]string{"get", "problems"}, tc.args...)...)

@@ -33,7 +33,7 @@ func Diagnose(err error) string {
 	var apiErr *ErrAPI
 	if errors.As(err, &apiErr) {
 		if IsNotApplicable(apiErr) {
-			return hintNotApplicable
+			return HintNotApplicable
 		}
 		return diagnoseStatus(apiErr.StatusCode)
 	}
@@ -64,8 +64,9 @@ func Diagnose(err error) string {
 	return ""
 }
 
-// hintNotApplicable is the hint for a 403 that is no permission problem.
-const hintNotApplicable = "The cluster says this setting does not apply to this scope (its reason is above). Check the scopes with dtmgd describe settings-schema <schema-id>, or read the setting at another scope."
+// HintNotApplicable is the hint for a 403 that is no permission problem:
+// the cluster's "Setting not applicable".
+const HintNotApplicable = "The cluster says this setting does not apply to this scope (its reason is above). Check the scopes with dtmgd describe settings-schema <schema-id>, or read the setting at another scope."
 
 // IsNotApplicable reports whether err is the cluster's 403 "Setting not
 // applicable": the setting does not exist for that entity (host anomaly

@@ -213,7 +213,7 @@ func planCreate(c *client.Client, schemaID, scope string, value map[string]inter
 	if err := requireOrdered(schemaID, shape, pos); err != nil {
 		return nil, err
 	}
-	w := plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: schemaID, Scope: scope, Value: value}
+	w := plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: schemaID, Scope: scope, Value: value, shape: &shape}
 	if shape.MultiObject && shape.KeyProperty == "" && pos.Kind == "" {
 		return []plannedWrite{w}, nil
 	}

@@ -183,7 +183,7 @@ func guardSecrets(c *client.Client, ws []plannedWrite, dryRun bool) error {
 		if !needsSchema(*w, dryRun) {
 			continue
 		}
-		shape, err := cachedShape(c, shapes, w.SchemaID)
+		shape, err := writeShape(c, shapes, w)
 		if err != nil {
 			return err
 		}
@@ -200,6 +200,15 @@ func needsSchema(w plannedWrite, dryRun bool) bool {
 		return true
 	}
 	return dryRun && (w.Value != nil || w.Current != nil)
+}
+
+// writeShape is w's schema definition: the one its planner read, else one
+// read here (once per schema).
+func writeShape(c *client.Client, shapes map[string]settingsSchemaShape, w *plannedWrite) (settingsSchemaShape, error) {
+	if w.shape != nil {
+		return *w.shape, nil
+	}
+	return cachedShape(c, shapes, w.SchemaID)
 }
 
 // cachedShape reads a schema's definition once.

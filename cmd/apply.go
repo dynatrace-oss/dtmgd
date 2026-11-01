@@ -27,6 +27,8 @@ type applyObject struct {
 	// Position places the object in an ordered schema: first, last,
 	// after:<ref> or before:<ref>.
 	Position string `json:"position"`
+	// pos is Position parsed, set by check.
+	pos settingsPosition
 }
 
 func newApplyCmd(a *App) *cobra.Command {
@@ -129,8 +131,8 @@ func readApplyFile(path string, stdin io.Reader) ([]applyObject, error) {
 	if err := jsonRoundTrip(list, &objs); err != nil {
 		return nil, &UsageError{Err: fmt.Errorf("%s: %w", path, err)}
 	}
-	for i, o := range objs {
-		if err := o.check(); err != nil {
+	for i := range objs {
+		if err := objs[i].check(); err != nil {
 			return nil, &UsageError{Err: fmt.Errorf("%s: object %d: %w", path, i, err)}
 		}
 	}
@@ -156,8 +158,8 @@ func applyItems(raw interface{}) ([]interface{}, error) {
 	return nil, errors.New("want an object, an array of objects, or a list with items")
 }
 
-// check refuses an object apply cannot place.
-func (o applyObject) check() error {
+// check refuses an object apply cannot place, and parses its position.
+func (o *applyObject) check() error {
 	switch {
 	case o.SchemaID == "":
 		return errors.New("no schemaId")
@@ -166,7 +168,8 @@ func (o applyObject) check() error {
 	case o.Value == nil:
 		return errors.New("no value")
 	}
-	_, err := parsePosition(o.Position)
+	pos, err := parsePosition(o.Position)
+	o.pos = pos
 	return err
 }
 
@@ -205,7 +208,18 @@ func planApply(c *client.Client, objs []applyObject) ([]plannedWrite, error) {
 		writes = append(writes, w)
 	}
 	p.finalPlaces(writes)
+	p.attachShapes(writes)
 	return writes, nil
+}
+
+// attachShapes gives each write the schema definition the planner read for
+// it, so the secret guard reuses it.
+func (p *applyPlanner) attachShapes(writes []plannedWrite) {
+	for i := range writes {
+		if s, ok := p.shapes[writes[i].SchemaID]; ok {
+			writes[i].shape = &s
+		}
+	}
 }
 
 // finalPlaces sets each positioned write's reported New place from the
@@ -356,10 +370,9 @@ func (p *applyPlanner) planByLookup(o applyObject) (plannedWrite, error) {
 	return w, nil
 }
 
-// position is o's parsed position (check has validated it).
+// position is o's parsed position, as check set it.
 func (o applyObject) position() settingsPosition {
-	pos, _ := parsePosition(o.Position)
-	return pos
+	return o.pos
 }
 
 // placeNew places a create in its scope's order and records it there, so

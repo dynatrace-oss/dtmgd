@@ -109,6 +109,9 @@ type plannedWrite struct {
 	// Warnings are problems that did not stop the plan (a check that
 	// skipped something); the report lists them.
 	Warnings []string
+	// shape is the schema definition the planner already read, when it
+	// read one, so the secret guard does not read it again.
+	shape *settingsSchemaShape
 }
 
 // writeSpec describes one write command for runWrites.
@@ -891,5 +894,34 @@ func writeHint(rep writeReport) string {
 			return "A write was lost in transit, and the cluster may have saved it: check with dtmgd get settings before running it again."
 		}
 	}
-	return ""
+	return forbiddenWriteHint(rep)
+}
+
+// hintWriteForbidden is the hint for writes the cluster refused with 403.
+const hintWriteForbidden = "Permission denied: writing settings needs settings.write and settings.read on the token (a cluster token needs them besides ServiceProviderAPI)."
+
+// forbiddenWriteHint is the hint when every failed write got 403: the
+// not-applicable reading when the cluster said so for each, else the scopes
+// a write needs.
+func forbiddenWriteHint(rep writeReport) string {
+	failed, notApplicable := 0, 0
+	for _, r := range rep.Results {
+		if r.Error == nil {
+			continue
+		}
+		if r.Error.Code != 403 {
+			return ""
+		}
+		failed++
+		if strings.HasPrefix(r.Error.Message, "Setting not applicable") {
+			notApplicable++
+		}
+	}
+	switch {
+	case failed == 0:
+		return ""
+	case notApplicable == failed:
+		return client.HintNotApplicable
+	}
+	return hintWriteForbidden
 }
