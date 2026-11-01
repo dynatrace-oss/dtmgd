@@ -428,7 +428,8 @@ dtmgd get settings --effective --scope HOST-0000000000000001 --schema builtin:de
 dtmgd get settings --schema builtin:deployment.management.update-windows
 ```
 
-An update window, disabled so it changes nothing until enabled:
+An update window, disabled so it changes nothing until enabled.
+`selectedWeekDays` must list all seven days, each `true` or `false`:
 
 ```yaml
 schemaId: builtin:deployment.management.update-windows
@@ -440,7 +441,8 @@ value:
   recurrence: WEEKLY
   weeklyRecurrence:
     every: 1
-    selectedWeekDays: {saturday: true}
+    selectedWeekDays:
+      {monday: false, tuesday: false, wednesday: false, thursday: false, friday: false, saturday: true, sunday: false}
     updateTime: {startTime: "02:00", timeZone: "GMT+00:00", duration: 120}
     recurrenceRange: {start: "2026-01-01T00:00:00Z", end: "2027-01-01T00:00:00Z"}
 ```
