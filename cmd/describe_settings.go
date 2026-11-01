@@ -27,10 +27,10 @@ Examples:
   dtmgd describe settings <object-id> -o yaml`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runFetch(fetchSpec{
+			return a.runSettingsFetch(fetchSpec{
 				Verb:     "describe",
 				Resource: "settings",
-				Fetch:    describeFetch(settingsObjectsPath+"/"+url.PathEscape(args[0]), nil),
+				Fetch:    settingsObjectFetch(settingsObjectsPath + "/" + url.PathEscape(args[0])),
 				Human:    printSettingsObject,
 			})
 		},

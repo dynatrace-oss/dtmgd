@@ -54,12 +54,12 @@ Examples:
 				if opts.search != "" {
 					return &UsageError{Err: fmt.Errorf("--search lists schemas; it cannot be combined with a schema ID")}
 				}
-				spec.Fetch = hintOnNotFound(describeFetch(settingsSchemasPath+"/"+url.PathEscape(args[0]), nil), hintListSchemas)
-				return a.runFetch(spec)
+				spec.Fetch = hintOnNotFound(settingsObjectFetch(settingsSchemasPath+"/"+url.PathEscape(args[0])), hintListSchemas)
+				return a.runSettingsFetch(spec)
 			}
 			spec.Fetch = settingsSchemasFetch(opts.search)
 			spec.List = true
-			return a.runFetch(spec)
+			return a.runSettingsFetch(spec)
 		},
 	}
 	cmd.Flags().StringVar(&opts.search, "search", "", "keep schemas whose ID or display name contains this text (ignoring case)")
@@ -73,7 +73,7 @@ Examples:
 func settingsSchemasFetch(search string) func(*client.Client, int) (fetched, error) {
 	return func(c *client.Client, limit int) (fetched, error) {
 		var body map[string]interface{}
-		if err := c.GetV2(settingsSchemasPath, nil, &body); err != nil {
+		if err := settingsGet(c, settingsSchemasPath, nil, &body); err != nil {
 			return fetched{}, err
 		}
 		if body == nil {

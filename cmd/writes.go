@@ -96,6 +96,9 @@ type writeSpec struct {
 	// Confirm, when set, asks before anything is written (not in a dry
 	// run); errCancelled ends the command with nothing changed.
 	Confirm func(writes []plannedWrite) error
+	// ClusterToo accepts one cluster context besides environment contexts:
+	// settings writes work on both APIs.
+	ClusterToo bool
 }
 
 // errCancelled is a write a person declined at the prompt.
@@ -151,6 +154,9 @@ func (a *App) runWrites(s writeSpec) error {
 	}
 	names, plans, err := a.planWrites(cfg, s)
 	if err != nil {
+		if a.onClusterContext(cfg) {
+			return clusterHint(err, cfg.CurrentContext, fetchSpec{Verb: s.Verb, Resource: s.Resource, Forbidden: hintClusterSettingsScopes})
+		}
 		return err
 	}
 	if err := s.checkPlans(names, plans, levels); err != nil {
@@ -203,8 +209,10 @@ func (a *App) checkWriteContexts(cfg *config.Config, s writeSpec) error {
 	if err := a.checkEnvVarContext(cfg); err != nil {
 		return err
 	}
-	if err := a.checkEnvironmentContexts(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
-		return err
+	if !s.ClusterToo || !a.onClusterContext(cfg) {
+		if err := a.checkEnvironmentContexts(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
+			return err
+		}
 	}
 	if !s.MultiEnv && a.isMultiEnv() {
 		return &UsageError{Err: fmt.Errorf("\"dtmgd %s %s\" changes one object in one context; give one context with --context", s.Verb, s.Resource)}
@@ -460,7 +468,7 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 			obj["externalId"] = w.ExternalID
 		}
 		var items []settingsWriteItem
-		err = c.PostV2(settingsObjectsPath, params, []interface{}{obj}, &items)
+		err = settingsPost(c, settingsObjectsPath, params, []interface{}{obj}, &items)
 		if len(items) > 0 {
 			item = items[0]
 		}
@@ -469,9 +477,9 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 		if w.UpdateToken != "" {
 			body["updateToken"] = w.UpdateToken
 		}
-		err = c.PutV2(settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), params, body, &item)
+		err = settingsPut(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), params, body, &item)
 	case actionDelete:
-		err = c.DeleteV2(settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), deleteParams(w.UpdateToken))
+		err = settingsDelete(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), deleteParams(w.UpdateToken))
 	default:
 		r.Action = actionUnchanged
 		return r

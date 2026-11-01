@@ -69,10 +69,10 @@ Examples:
   dtmgd describe settings-schema builtin:deployment.management.update-windows -o json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runFetch(fetchSpec{
+			return a.runSettingsFetch(fetchSpec{
 				Verb:     "describe",
 				Resource: "settings-schema",
-				Fetch:    hintOnNotFound(describeFetch(settingsSchemasPath+"/"+url.PathEscape(args[0]), nil), hintListSchemas),
+				Fetch:    hintOnNotFound(settingsObjectFetch(settingsSchemasPath+"/"+url.PathEscape(args[0])), hintListSchemas),
 				Human:    printSettingsSchemaDetail,
 			})
 		},

@@ -70,6 +70,7 @@ Examples:
 				return err
 			}
 			return a.runWrites(writeSpec{
+				ClusterToo:   true,
 				Verb:         "apply",
 				Resource:     "settings",
 				DryRun:       opts.dryRun,
@@ -213,7 +214,7 @@ func (p *applyPlanner) plan(o applyObject) (plannedWrite, error) {
 		return p.planByLookup(o)
 	}
 	var cur settingsObject
-	err := p.c.GetV2(settingsObjectsPath+"/"+url.PathEscape(o.ObjectID), nil, &cur)
+	err := settingsGet(p.c, settingsObjectsPath+"/"+url.PathEscape(o.ObjectID), nil, &cur)
 	var apiErr *client.ErrAPI
 	switch {
 	case errors.As(err, &apiErr) && apiErr.StatusCode == 404:

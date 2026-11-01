@@ -53,9 +53,10 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			return a.runWrites(writeSpec{
-				Verb:     "delete",
-				Resource: "settings",
-				DryRun:   opts.dryRun,
+				ClusterToo: true,
+				Verb:       "delete",
+				Resource:   "settings",
+				DryRun:     opts.dryRun,
 				Plan: func(_ string, c *client.Client) ([]plannedWrite, error) {
 					return planDelete(c, id)
 				},
@@ -75,10 +76,12 @@ Examples:
 // pointing at nothing.
 func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 	var cur settingsObject
-	if err := c.GetV2(settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
+	if err := settingsGet(c, settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
 		return nil, err
 	}
-	if cur.SchemaID == schemaUpdateWindows {
+	// The OneAgent and ActiveGate update schemas exist in environments
+	// only; a cluster's windows are checked against its ActiveGates' auto-update.
+	if cur.SchemaID == schemaUpdateWindows && !c.ClusterScoped() {
 		refs, err := windowReferences(c, id)
 		if err != nil {
 			return nil, err
@@ -97,7 +100,7 @@ func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 // windowReferences lists the OneAgent and ActiveGate update settings, at
 // every scope, that name update window windowID.
 func windowReferences(c *client.Client, windowID string) ([]settingsObject, error) {
-	body, err := c.GetV2Paged(settingsObjectsPath, map[string]string{
+	body, err := settingsPaged(c, settingsObjectsPath, map[string]string{
 		"schemaIds": schemaOneAgentUpdates + "," + schemaActiveGateUpdates,
 		"fields":    "objectId,schemaId,scope,value",
 		"pageSize":  "500",

@@ -91,6 +91,10 @@ func clusterHint(err error, ctxName string, s fetchSpec) error {
 	switch apiErr.StatusCode {
 	case 401:
 		return withHint(err, hintClusterAuth)
+	case 403:
+		if s.Forbidden != "" {
+			return withHint(err, s.Forbidden)
+		}
 	case 404:
 		noAPI := fmt.Sprintf(hintNoClusterAPI, ctxName)
 		if s.NotFound != "" {

@@ -182,10 +182,12 @@ func TestMultiEnvChecksEveryContextFirst(t *testing.T) {
 	}
 }
 
-func TestWriteRefusesClusterContext(t *testing.T) {
+// TestWriteOnAReadonlyClusterContextSendsNothing pins that settings writes,
+// which work on cluster contexts too, keep the default readonly there.
+func TestWriteOnAReadonlyClusterContextSendsNothing(t *testing.T) {
 	api := newFakeAPI(t, createRoutes())
 	cfg := withFakeContexts(t, "c", nil, []fakeEnv{{"c", api}})
-	if r := runCLI(t, cfg, createArgs(t)...); r.Code != 2 || api.totalHits() != 0 {
+	if r := runCLI(t, cfg, createArgs(t)...); r.Code != 6 || api.totalHits() != 0 {
 		t.Errorf("%s", r)
 	}
 }

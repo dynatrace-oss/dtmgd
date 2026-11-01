@@ -67,6 +67,7 @@ Examples:
 			}
 			id := args[0]
 			return a.runWrites(writeSpec{
+				ClusterToo:   true,
 				Verb:         "edit",
 				Resource:     "setting",
 				ValidateOnly: validateOnly,
@@ -107,7 +108,7 @@ func (a *App) checkCanUpdate() error {
 // update (unchanged when they saved nothing new).
 func (a *App) planEdit(c *client.Client, id string) ([]plannedWrite, error) {
 	var cur settingsObject
-	if err := c.GetV2(settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
+	if err := settingsGet(c, settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
 		return nil, err
 	}
 	value, changed, err := a.editValue(cur.Value)

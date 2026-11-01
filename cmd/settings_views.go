@@ -491,7 +491,7 @@ func (n *windowNames) name(id string) string {
 
 // lookupWindowNames fills n with the environment's update windows' names.
 func lookupWindowNames(c *client.Client, n *windowNames) error {
-	body, err := c.GetV2Paged(settingsObjectsPath, map[string]string{
+	body, err := settingsPaged(c, settingsObjectsPath, map[string]string{
 		"schemaIds": schemaUpdateWindows,
 		"scopes":    "environment",
 		"fields":    "objectId,value",

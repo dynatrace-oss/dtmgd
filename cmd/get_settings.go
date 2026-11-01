@@ -105,7 +105,7 @@ func (a *App) runGetSettings(opts getSettingsOptions, args []string) error {
 		return err
 	}
 	view := settingsView{names: &windowNames{}, effective: opts.effective}.forRequest(opts, len(args) == 1)
-	return a.runFetch(fetchSpec{
+	return a.runSettingsFetch(fetchSpec{
 		Verb:     "get",
 		Resource: "settings",
 		Fetch:    a.withWindowNames(fetch, view),
@@ -125,16 +125,16 @@ func settingsFetch(opts getSettingsOptions, args []string, maxPages int) (fetch 
 		if len(opts.schemas) > 0 || opts.scope != "" || opts.effective {
 			return nil, false, &UsageError{Err: fmt.Errorf("--schema, --scope and --effective list objects; they cannot be combined with an object ID")}
 		}
-		return describeFetch(settingsObjectsPath+"/"+url.PathEscape(args[0]), nil), false, nil
+		return settingsObjectFetch(settingsObjectsPath + "/" + url.PathEscape(args[0])), false, nil
 	case opts.effective:
 		if opts.scope == "" {
 			return nil, false, &UsageError{Err: fmt.Errorf(`--effective needs --scope: "environment" or the entity ID whose values to resolve`)}
 		}
-		return hintOnNotFound(pagedFetch(settingsEffectivePath, effectiveParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
+		return hintOnNotFound(settingsPagedFetch(settingsEffectivePath, effectiveParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
 	case len(opts.schemas) == 0 && opts.scope == "":
 		return nil, false, &UsageError{Err: fmt.Errorf("give --schema or --scope (the API needs one), or an object ID")}
 	}
-	return hintOnNotFound(pagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
+	return hintOnNotFound(settingsPagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, maxPages), hintSettingsNotFound), true, nil
 }
 
 // withWindowNames adds to fetch the lookup of update window names that the

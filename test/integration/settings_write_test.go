@@ -207,13 +207,15 @@ func effectiveValue(t *testing.T, ctx, schema string) map[string]any {
 	return value
 }
 
-// TestWriteRefusesTheClusterContext pins that a write command refuses a
-// cluster context before any request. It is a dry run, which sends GETs
-// only even if the refusal broke.
-func TestWriteRefusesTheClusterContext(t *testing.T) {
+// TestClusterDryRunPlans pins that a settings write works on a cluster
+// context: a dry run there plans a create (GETs only) through the Cluster
+// API. A token without settings.read skips it.
+func TestClusterDryRunPlans(t *testing.T) {
 	cfg, _ := writeConfig(t)
 	cluster := requireEnv(t, "DTMGD_IT_CLUSTER")
-	if r := writeRun(t, cfg, cluster, "apply", "-f", windowFile(t, testWindowPrefix+"cluster", 60), "--dry-run"); r.Code != 2 {
-		t.Errorf("apply against a cluster context: %s, want exit 2", brief(r))
+	r := writeRun(t, cfg, cluster, "apply", "-f", windowFile(t, testWindowPrefix+"cluster", 60), "--dry-run")
+	skipWithoutScope(t, r, []string{"apply", "settings"})
+	if r.Code != 0 {
+		t.Errorf("a dry run against a cluster context: %s, want exit 0", brief(r))
 	}
 }
