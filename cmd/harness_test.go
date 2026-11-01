@@ -52,11 +52,12 @@ type fakeAPI struct {
 	queries map[string][]url.Values
 	headers map[string][]http.Header
 	escaped map[string][]string
+	bodies  map[string][]string
 }
 
 func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}, escaped: map[string][]string{}}
+	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}, escaped: map[string][]string{}, bodies: map[string][]string{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
 		q := r.URL.Query()
@@ -65,6 +66,8 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 		f.queries[key] = append(f.queries[key], q)
 		f.headers[key] = append(f.headers[key], r.Header.Clone())
 		f.escaped[key] = append(f.escaped[key], r.URL.EscapedPath())
+		sent, _ := io.ReadAll(r.Body)
+		f.bodies[key] = append(f.bodies[key], string(sent))
 		f.mu.Unlock()
 
 		rt, ok := routes[key]
@@ -127,6 +130,13 @@ func (f *fakeAPI) EscapedPaths(key string) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.escaped[key]...)
+}
+
+// Bodies returns the request bodies sent to "METHOD /path", in order.
+func (f *fakeAPI) Bodies(key string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.bodies[key]...)
 }
 
 // fakeEnv names one context and the fake API it points at.

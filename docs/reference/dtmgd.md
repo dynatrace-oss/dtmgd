@@ -56,6 +56,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 
 ### SEE ALSO
 
+* [dtmgd apply](dtmgd_apply.md)	 - Create or update the Settings 2.0 objects in a file
 * [dtmgd commands](dtmgd_commands.md)	 - Print a machine-readable catalog of dtmgd commands
 * [dtmgd completion](dtmgd_completion.md)	 - Generate shell completion script
 * [dtmgd config](dtmgd_config.md)	 - Manage dtmgd configuration

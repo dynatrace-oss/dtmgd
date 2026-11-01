@@ -76,6 +76,9 @@ type plannedWrite struct {
 	Action                                                      string
 	ObjectID, SchemaID, Scope, ExternalID, UpdateToken, Summary string
 	Value, Current                                              map[string]interface{}
+	// Existing are the objects the plan listed for a create: a POST that
+	// answers with one of them overwrote it, and is reported as an update.
+	Existing map[string]bool
 }
 
 // writeSpec describes one write command for runWrites.
@@ -416,7 +419,11 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 		r.Action = actionUnchanged
 		return r
 	}
-	return finishWrite(r, err, item, done, validateOnly)
+	r = finishWrite(r, err, item, done, validateOnly)
+	if r.Action == actionCreated && w.Existing[r.ObjectID] {
+		r.Action = actionUpdated
+	}
+	return r
 }
 
 // deleteParams is a DELETE's query: the update token, when there is one.

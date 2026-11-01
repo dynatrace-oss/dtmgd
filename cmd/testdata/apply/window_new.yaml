@@ -1,0 +1,10 @@
+schemaId: builtin:deployment.management.update-windows
+scope: environment
+value:
+  enabled: false
+  name: dtmgd-test window
+  recurrence: DAILY
+  dailyRecurrence:
+    every: 1
+    updateTime: {startTime: "03:00", timeZone: "GMT+00:00", duration: 60}
+    recurrenceRange: {start: "2030-01-01T00:00:00Z", end: "2031-01-01T00:00:00Z"}
