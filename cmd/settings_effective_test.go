@@ -71,3 +71,15 @@ func TestGetSettingsEffectiveMixed(t *testing.T) {
 	}
 	assertGolden(t, "get_settings_effective_mixed_table", r.String())
 }
+
+// TestEffectiveLiteralDefaultOrigin pins the shape the server sends for a
+// schema default: origin "default".
+func TestEffectiveLiteralDefaultOrigin(t *testing.T) {
+	routes := updatesRoutes()
+	routes[effectivePath] = route{Body: `{"items":[{"schemaId":"builtin:deployment.oneagent.updates","origin":"default","value":{"updateMode":"AUTOMATIC"}}],"totalCount":1}`}
+	_, cfg := settingsFake(t, routes)
+	r := runCLI(t, cfg, "get", "settings", "--effective", "--scope", "environment", "--schema", schemaOneAgentUpdates)
+	if fields := strings.Fields(rowOf(t, r.Stdout, "AUTOMATIC")); fields[0] != "default" {
+		t.Errorf("row %q\n%s", fields, r)
+	}
+}

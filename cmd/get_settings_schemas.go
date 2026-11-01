@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -31,7 +30,7 @@ func newGetSettingsSchemasCmd(a *App) *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:     "settings-schemas [schema-id]",
-		Aliases: []string{"schema", "schemas"},
+		Aliases: []string{"settings-schema", "schema", "schemas"},
 		Short:   "List Settings 2.0 schemas",
 		Long: `List the Settings 2.0 schemas the environment offers, or one schema.
 
@@ -134,19 +133,4 @@ func settingsSchemaRows(body interface{}) (interface{}, int, error) {
 		rows = append(rows, settingsSchemaRow{SchemaID: e.SchemaID, Name: e.DisplayName, Version: version})
 	}
 	return rows, len(rows), nil
-}
-
-// decodeItems decodes a Settings API body into out, a pointer to a slice:
-// the body's items when it is a list, else the body itself as the only
-// element (a get by ID returns the bare object).
-func decodeItems(body map[string]interface{}, out interface{}) error {
-	var items interface{} = []interface{}{body}
-	if list, isList := body["items"]; isList {
-		items = list
-	}
-	data, err := json.Marshal(items)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, out)
 }

@@ -32,6 +32,13 @@ func TestUpdateWindowSchedule(t *testing.T) {
 		`{"recurrence":"MONTHLY","monthlyRecurrence":{"every":2,"selectedMonthDay":15,"updateTime":{"startTime":"03:00","timeZone":"GMT+00:00","duration":60}}}`:                          "every 2 months on day 15 03:00 GMT+00:00, 60 min",
 		`{"recurrence":"ONCE","onceRecurrence":{"recurrenceRange":{"start":"2026-11-01T03:00:00Z","end":"2026-11-01T04:00:00Z"}}}`:                                                        "once 2026-11-01T03:00:00Z – 2026-11-01T04:00:00Z",
 		`{"recurrence":"WEEKLY"}`: "WEEKLY",
+		// The range a recurring window runs in, so an expired one shows.
+		`{"recurrence":"DAILY","dailyRecurrence":{"every":1,"updateTime":{"startTime":"03:00","timeZone":"GMT+00:00","duration":60},"recurrenceRange":{"start":"2026-01-01T00:00:00Z","end":"2027-01-01T00:00:00Z"}}}`: "daily 03:00 GMT+00:00, 60 min, from 2026-01-01 until 2027-01-01",
+		// Partial values show no Go placeholders.
+		`{}`: "—",
+		`{"recurrence":"ONCE","onceRecurrence":{"recurrenceRange":{}}}`:                           "ONCE",
+		`{"recurrence":"ONCE","onceRecurrence":{}}`:                                               "ONCE",
+		`{"recurrence":"DAILY","dailyRecurrence":{"every":1,"updateTime":{"startTime":"03:00"}}}`: "daily 03:00",
 	}
 	for in, want := range cases {
 		var v map[string]interface{}
@@ -158,5 +165,48 @@ func TestWindowNamesAcrossEnvironments(t *testing.T) {
 	r := runCLI(t, withFakeEnvs(t, fakeEnv{"a", a}, fakeEnv{"b", b}), "get", "settings", "--schema", schemaOneAgentUpdates, "--env", "a;b")
 	if r.Code != 0 || strings.Count(r.Stdout, "Weekly maintenance") != 2 {
 		t.Errorf("want the name in both sections:\n%s", r)
+	}
+}
+
+// TestSettingsCSVAcrossEnvironmentsKeepsColumns pins that every environment
+// of a csv or tsv listing has the same columns, chosen by the request: an
+// environment with nothing stored, or one returning several schemas, does
+// not change them.
+func TestSettingsCSVAcrossEnvironmentsKeepsColumns(t *testing.T) {
+	empty := newFakeAPI(t, map[string]route{oneAgentRoute: {Body: `{"items":[],"totalCount":0}`}})
+	full := newFakeAPI(t, updatesRoutes())
+	cfg := withFakeEnvs(t, fakeEnv{"b", empty}, fakeEnv{"a", full})
+	r := runCLI(t, cfg, "get", "settings", "--schema", schemaOneAgentUpdates, "--env", "b;a", "-o", "csv")
+	if header, _, _ := strings.Cut(r.Stdout, "\n"); r.Code != 0 || header != "CONTEXT,SCOPE,UPDATE-MODE,TARGET-VERSION,REVISION,WINDOWS,OBJECT-ID" {
+		t.Errorf("one schema, one environment empty: %s", r)
+	}
+
+	single := newFakeAPI(t, map[string]route{objectsPath: {File: "settings_objects_alerting.json"}})
+	mixed := newFakeAPI(t, map[string]route{objectsPath: {File: "settings_objects_mixed.json"}})
+	cfg = withFakeEnvs(t, fakeEnv{"d", single}, fakeEnv{"c", mixed})
+	r = runCLI(t, cfg, "get", "settings", "--scope", "HOST-0000000000000001", "--env", "d;c", "-o", "tsv")
+	if header, _, _ := strings.Cut(r.Stdout, "\n"); r.Code != 0 || header != "CONTEXT\tSCHEMA\tOBJECT-ID\tSCOPE\tSUMMARY" {
+		t.Errorf("by scope, one environment with one schema: %s", r)
+	}
+}
+
+// TestEmptyListKeepsTheSchemasColumns pins that the columns of a listing
+// for one schema do not depend on whether anything is stored.
+func TestEmptyListKeepsTheSchemasColumns(t *testing.T) {
+	_, cfg := settingsFake(t, map[string]route{oneAgentRoute: {Body: `{"items":[],"totalCount":0}`}})
+	r := runCLI(t, cfg, "get", "settings", "--schema", schemaOneAgentUpdates, "-o", "csv")
+	if r.Stdout != "SCOPE,UPDATE-MODE,TARGET-VERSION,REVISION,WINDOWS,OBJECT-ID\n" {
+		t.Errorf("%s", r)
+	}
+}
+
+// TestNoWindowLookupForGenericTables pins that a listing across schemas,
+// whose table has no WINDOWS column, sends no update-window lookup even when
+// it holds OneAgent update settings.
+func TestNoWindowLookupForGenericTables(t *testing.T) {
+	api, cfg := settingsFake(t, map[string]route{objectsPath: {File: "settings_objects_mixed.json"}})
+	r := runCLI(t, cfg, "get", "settings", "--scope", "HOST-0000000000000001")
+	if r.Code != 0 || len(api.Queries(objectsPath)) != 1 || strings.Contains(r.Stderr, "update window") {
+		t.Errorf("%d queries: %s", len(api.Queries(objectsPath)), r)
 	}
 }

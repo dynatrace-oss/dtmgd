@@ -162,3 +162,39 @@ func TestDescribeSettingsHuman(t *testing.T) {
 		t.Errorf("an object without externalId: %s", plain)
 	}
 }
+
+// TestGetSettingsNotFoundHintNamesScope pins that a 404 on a listing also
+// points at the scopes a schema allows: the API answers 404 for a scope it
+// cannot use, too.
+func TestGetSettingsNotFoundHintNamesScope(t *testing.T) {
+	_, cfg := settingsFake(t, map[string]route{objectsPath: {
+		Status: 404, Body: `{"error":{"code":404,"message":"Scope 'host-1' not found"}}`,
+	}})
+	r := runCLI(t, cfg, "get", "settings", "--schema", "x", "--scope", "host-1")
+	if r.Code != 4 || !strings.Contains(r.Stderr, "describe settings-schema") {
+		t.Errorf("%s", r)
+	}
+}
+
+// TestGetSettingsHelpExplainsEffective pins that get settings' help says
+// what --effective returns.
+func TestGetSettingsHelpExplainsEffective(t *testing.T) {
+	r := runCLI(t, "", "get", "settings", "--help")
+	if !strings.Contains(r.Stdout, "get settings --effective --scope") || !strings.Contains(r.Stdout, "origin") {
+		t.Errorf("%s", r.Stdout)
+	}
+}
+
+// TestSettingsSchemaAliases pins the singular and plural forms the other
+// get and describe commands accept.
+func TestSettingsSchemaAliases(t *testing.T) {
+	_, cfg := schemasFake(t)
+	for _, args := range [][]string{
+		{"get", "settings-schema"},
+		{"describe", "settings-schemas", "builtin:deployment.oneagent.updates"},
+	} {
+		if r := runCLI(t, cfg, args...); r.Code != 0 {
+			t.Errorf("%v: %s", args, r)
+		}
+	}
+}

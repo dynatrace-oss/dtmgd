@@ -58,7 +58,7 @@ type schemaPropertyRow struct {
 func newDescribeSettingsSchemaCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "settings-schema <schema-id>",
-		Aliases: []string{"schema"},
+		Aliases: []string{"settings-schemas", "schema"},
 		Short:   "Show a Settings 2.0 schema: scopes, properties and allowed values",
 		Long: `Show a Settings 2.0 schema: its version, the scopes it can be set at, how
 many objects a scope holds, and its properties with their types, defaults

@@ -50,6 +50,11 @@ func (p *CSVPrinter) PrintSections(names []string, lists []interface{}) error {
 	if len(lists) == 0 {
 		return nil
 	}
+	for i, list := range lists[1:] {
+		if reflect.TypeOf(list) != reflect.TypeOf(lists[0]) {
+			return fmt.Errorf("%s and %s returned different columns; ask for one environment at a time", names[0], names[i+1])
+		}
+	}
 	headers, fieldIdx, err := p.header(lists[0])
 	if err != nil {
 		return err

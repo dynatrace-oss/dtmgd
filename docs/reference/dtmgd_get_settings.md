@@ -1,10 +1,13 @@
 ## dtmgd get settings
 
-List Settings 2.0 objects
+List Settings 2.0 objects, or the values in effect at a scope
 
 ### Synopsis
 
 List the Settings 2.0 objects stored in the environment, or one object.
+With --effective, list the values that apply at --scope instead: inherited
+values and schema defaults included, each with its origin (the scope it is
+stored at, or "default").
 
 A list needs --schema or --scope, as the API does. --schema takes one or more
 schema IDs (repeat it or separate them with commas); --scope takes
@@ -12,7 +15,8 @@ schema IDs (repeat it or separate them with commas); --scope takes
 ENVIRONMENT_ACTIVE_GATE-…. Find schema IDs with get settings-schemas.
 
 json and yaml print the API's own objects, with objectId, schemaId, scope,
-externalId, summary, updateToken, schemaVersion and value.
+externalId, summary, updateToken, schemaVersion and value; effective values
+have schemaId, origin, summary and value.
 
 Examples:
 ```
@@ -20,6 +24,7 @@ Examples:
   dtmgd get settings --schema builtin:deployment.oneagent.updates --scope HOST_GROUP-0000000000000001
   dtmgd get settings --scope HOST-0000000000000001          # every schema stored on a host
   dtmgd get settings <object-id> -o yaml
+  dtmgd get settings --effective --scope HOST-0000000000000001 --schema builtin:deployment.oneagent.updates
 ```
 
 ```

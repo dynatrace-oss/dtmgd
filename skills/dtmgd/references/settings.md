@@ -80,7 +80,9 @@ scope, it inherits.
   longer exists: the cluster lets a window be deleted while settings still
   name it.
 - The update-window table's `SCHEDULE` reads like
-  `every 2 weeks Mon,Fri 03:00 GMT+01:00, 90 min`.
+  `every 2 weeks Mon,Fri 03:00 GMT+01:00, 90 min, from 2026-01-01 until 2027-01-01`.
+  A window whose `until` date has passed no longer opens, so settings that
+  use only such windows never update.
 
 ## Recipe: which OneAgent update mode applies to host X?
 

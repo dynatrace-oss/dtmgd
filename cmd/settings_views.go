@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -55,10 +56,17 @@ type genericMultiSchemaRow struct {
 	Summary  string `table:"SUMMARY,max=80"`
 }
 
-// settingsView turns get settings' results into table rows. It picks the
-// table by the schema of the objects it gets: a readable view for the update
-// schemas, a generic one for any other schema or a mix of schemas.
+// settingsView turns get settings' results into table rows: a readable view
+// for the update schemas, a generic one for any other schema or a mix of
+// schemas. A listing's request decides the table (see forRequest), so every
+// environment of a multi-environment csv gets the same columns, nothing
+// stored or not; only a get by object ID goes by the object's schema.
 type settingsView struct {
+	// schema is the one schema a listing asks for; "" with fixed means
+	// several schemas or a scope, which get the multi-schema table.
+	schema string
+	// fixed says the request decided the table; otherwise the objects do.
+	fixed bool
 	// names are the update windows' names by object ID, for the WINDOWS
 	// column; nil (or a missing ID) shows the object ID.
 	names *windowNames
@@ -74,7 +82,7 @@ func (v settingsView) rows(body interface{}) (interface{}, int, error) {
 	if err := decodeItems(m, &objs); err != nil {
 		return nil, 0, err
 	}
-	schema, single := singleSchema(objs)
+	schema, single := v.table(objs)
 	if v.effective {
 		return v.effectiveRows(objs, schema, single)
 	}
@@ -90,6 +98,29 @@ func (v settingsView) rows(body interface{}) (interface{}, int, error) {
 		return v.activeGateUpdatesRows(objs)
 	}
 	return genericRows(objs)
+}
+
+// forRequest fixes the table by what a listing asks for: one --schema gets
+// that schema's table, several schemas or a scope alone the multi-schema
+// table. A get by object ID (no flags) leaves it to the object.
+func (v settingsView) forRequest(opts getSettingsOptions, byID bool) settingsView {
+	if byID {
+		return v
+	}
+	v.fixed = true
+	if len(opts.schemas) == 1 {
+		v.schema = opts.schemas[0]
+	}
+	return v
+}
+
+// table returns the schema whose table objs get, and whether it is a single
+// schema (false: the multi-schema table).
+func (v settingsView) table(objs []settingsObject) (string, bool) {
+	if v.fixed {
+		return v.schema, v.schema != ""
+	}
+	return singleSchema(objs)
 }
 
 // singleSchema returns the schema all objs belong to, and whether there is
@@ -330,14 +361,18 @@ func (v settingsView) windowsCell(value map[string]interface{}, mode, listKey, i
 }
 
 // updateWindowSchedule describes an update window's recurrence in one
-// phrase, e.g. "weekly Mon 03:00 GMT+00:00, 60 min". A window whose
-// recurrence block is missing shows its recurrence as is.
+// phrase, e.g. "weekly Mon 03:00 GMT+00:00, 60 min, from 2026-01-01 until
+// 2027-01-01". The range is there so an expired window shows. A window
+// whose recurrence block is missing shows its recurrence as is.
 func updateWindowSchedule(v map[string]interface{}) string {
 	recurrence, _ := v["recurrence"].(string)
 	switch recurrence {
+	case "":
+		return noValue
 	case "ONCE":
-		if r := nested(v, "onceRecurrence", "recurrenceRange"); r != nil {
-			return fmt.Sprintf("once %v – %v", r["start"], r["end"])
+		r := nested(v, "onceRecurrence", "recurrenceRange")
+		if start, end := text(r, "start"), text(r, "end"); start != "" && end != "" {
+			return fmt.Sprintf("once %s – %s", start, end)
 		}
 	case "DAILY":
 		if b := nested(v, "dailyRecurrence"); b != nil {
@@ -357,19 +392,41 @@ func updateWindowSchedule(v map[string]interface{}) string {
 
 // recurringSchedule is the phrase for a daily, weekly or monthly block:
 // its cadence ("weekly", "every 2 weeks"), when (days of the week or the
-// month, if any), then its start time, time zone and duration.
+// month, if any), its start time, time zone and duration, and the dates it
+// runs between. Parts the block lacks are left out.
 func recurringSchedule(block map[string]interface{}, once, unit, when string) string {
 	parts := []string{once}
 	if every := intOf(block["every"]); every > 1 {
 		parts[0] = fmt.Sprintf("every %d %s", every, unit)
 	}
-	if when != "" {
-		parts = append(parts, when)
+	for _, p := range []string{when, text(nested(block, "updateTime"), "startTime"), text(nested(block, "updateTime"), "timeZone")} {
+		if p != "" {
+			parts = append(parts, p)
+		}
 	}
-	if t := nested(block, "updateTime"); t != nil {
-		parts = append(parts, fmt.Sprintf("%v %v, %d min", t["startTime"], t["timeZone"], intOf(t["duration"])))
+	phrase := strings.Join(parts, " ")
+	if d := intOf(nested(block, "updateTime")["duration"]); d > 0 {
+		phrase += fmt.Sprintf(", %d min", d)
 	}
-	return strings.Join(parts, " ")
+	r := nested(block, "recurrenceRange")
+	if start, end := text(r, "start"), text(r, "end"); start != "" && end != "" {
+		phrase += fmt.Sprintf(", from %s until %s", day(start), day(end))
+	}
+	return phrase
+}
+
+// text is a string field of v, "" when v or the field is missing.
+func text(v map[string]interface{}, key string) string {
+	s, _ := v[key].(string)
+	return s
+}
+
+// day is a timestamp's date, e.g. 2026-01-01 for 2026-01-01T00:00:00Z.
+func day(timestamp string) string {
+	if d, _, found := strings.Cut(timestamp, "T"); found {
+		return d
+	}
+	return timestamp
 }
 
 // weekDays lists the selected days, Monday first, as "Mon,Fri".
@@ -455,18 +512,29 @@ func lookupWindowNames(c *client.Client, n *windowNames) error {
 	return nil
 }
 
-// usesWindows reports whether a get settings body holds OneAgent or
-// ActiveGate update settings, whose table names update windows.
-func usesWindows(body interface{}) bool {
+// usesWindows reports whether the table for a get settings body has a
+// WINDOWS column: OneAgent or ActiveGate update settings, alone.
+func (v settingsView) usesWindows(body interface{}) bool {
 	m, _ := body.(map[string]interface{})
 	var objs []settingsObject
 	if decodeItems(m, &objs) != nil {
 		return false
 	}
-	for _, o := range objs {
-		if o.SchemaID == schemaOneAgentUpdates || o.SchemaID == schemaActiveGateUpdates {
-			return true
-		}
+	schema, single := v.table(objs)
+	return single && (schema == schemaOneAgentUpdates || schema == schemaActiveGateUpdates)
+}
+
+// decodeItems decodes a Settings API body into out, a pointer to a slice:
+// the body's items when it is a list, else the body itself as the only
+// element (a get by ID returns the bare object).
+func decodeItems(body map[string]interface{}, out interface{}) error {
+	var items interface{} = []interface{}{body}
+	if list, isList := body["items"]; isList {
+		items = list
 	}
-	return false
+	data, err := json.Marshal(items)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, out)
 }
