@@ -44,6 +44,11 @@ type App struct {
 	// os.Stdin, and whether it is a terminal.
 	stdin       io.Reader
 	interactive func() bool
+
+	// cmd is the command running, set before it runs, so output written
+	// before the error reporter (a multi-environment agent envelope) can
+	// name its token scopes.
+	cmd *cobra.Command
 }
 
 // input is where dtmgd reads a person's answers.
@@ -107,7 +112,8 @@ func newRootCmd(a *App) *cobra.Command {
 		// classifyCobraError offers its own did-you-mean as a suggestion;
 		// cobra's would be appended to the error message itself.
 		DisableSuggestions: true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			a.cmd = cmd
 			a.applyPresentation()
 			f, err := output.ParseFormat(a.Opts.Output)
 			if err != nil {

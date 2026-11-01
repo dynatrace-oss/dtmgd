@@ -311,7 +311,7 @@ func (a *App) renderMultiAgent(s fetchSpec, results []client.EnvResult, merged m
 		return output.NewAgentPrinter(a.Out, ctx).Print(merged)
 	}
 	if hint == "" {
-		hint = client.Diagnose(partial)
+		hint = scopedHint(a.cmd, partial)
 	}
 	if err := output.WriteAgentPartial(a.Out, merged, errorDetail(partial, hint), ctx); err != nil {
 		return err

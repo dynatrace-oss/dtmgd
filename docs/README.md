@@ -7,4 +7,4 @@
 - [The dtmgd skill](../skills/dtmgd/SKILL.md) and its [references](../skills/dtmgd/references): how an AI agent should use dtmgd, with recipes per data type.
 - [Feature parity with the Dynatrace Managed MCP Server](../skills/dtmgd/references/mcp-parity.md).
 
-Working on dtmgd itself: [AGENTS.md](../AGENTS.md) and [CONTRIBUTING.md](../CONTRIBUTING.md).
+Working on dtmgd itself: [AGENTS.md](https://github.com/dynatrace-oss/dtmgd/blob/main/AGENTS.md) and [CONTRIBUTING.md](https://github.com/dynatrace-oss/dtmgd/blob/main/CONTRIBUTING.md).

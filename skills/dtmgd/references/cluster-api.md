@@ -45,6 +45,11 @@ each schema takes:
 - `environment-default`: defaults for every environment of the cluster;
 - `realm`, `metric` and `CLUSTER_ACTIVE_GATE`, in a few schemas.
 
+On a cluster context, `--scope environment` (or `tenant`) does not mean an
+environment: the cluster takes it as its own scope and returns the
+`cluster` objects. Environment and entity scopes (`HOST-…`) belong to an
+environment context; a cluster answers them with 404 "Scope … not found".
+
 ```bash
 dtmgd get settings-schemas --context <cluster-context>                     # the schemas a cluster has
 dtmgd get settings --scope cluster --context <cluster-context>             # every schema stored at one scope

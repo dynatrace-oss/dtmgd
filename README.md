@@ -10,7 +10,7 @@ It gives you terminal access to problems, entities, events, logs, metrics, SLOs,
 
 ## Architecture
 
-![dtmgd architecture — a local CLI fanning out across any number of Dynatrace Managed environments](assets/architecture.png)
+![dtmgd architecture — a local CLI fanning out across any number of Dynatrace Managed environments](https://raw.githubusercontent.com/dynatrace-oss/dtmgd/main/assets/architecture.png)
 
 `dtmgd` runs entirely on your workstation and talks directly to the Dynatrace
 Managed APIs, with no broker and no third-party service in between. Each named
@@ -284,8 +284,8 @@ tool.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md). Report
-security issues as described in [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](https://github.com/dynatrace-oss/dtmgd/blob/main/CONTRIBUTING.md) and [AGENTS.md](https://github.com/dynatrace-oss/dtmgd/blob/main/AGENTS.md). Report
+security issues as described in [SECURITY.md](https://github.com/dynatrace-oss/dtmgd/blob/main/SECURITY.md).
 
 ## License
 

@@ -81,8 +81,10 @@ func TestMultiEnvironmentFailureAgentGetsTheCommonHint(t *testing.T) {
 			Suggestions []string `json:"suggestions"`
 		} `json:"error"`
 	}
-	if err := json.Unmarshal([]byte(r.Stdout), &env); err != nil || !strings.Contains(strings.Join(env.Error.Suggestions, " "), "Permission denied") {
-		t.Errorf("%v: %s", err, r)
+	err := json.Unmarshal([]byte(r.Stdout), &env)
+	joined := strings.Join(env.Error.Suggestions, " ")
+	if err != nil || !strings.Contains(joined, "Permission denied") || !strings.Contains(joined, "This command needs the token scope(s): settings.read.") {
+		t.Errorf("%v (suggestions %q): %s", err, joined, r)
 	}
 }
 
@@ -103,7 +105,7 @@ func TestMultiEnvironmentOwnHintsAreNotRepeated(t *testing.T) {
 func TestWriteFailure403ShowsAHint(t *testing.T) {
 	cases := map[string]struct{ body, want string }{
 		"denied":         {`{"error":{"code":403,"message":"Token is missing required scope"}}`, "settings.write"},
-		"not applicable": {notApplicableBody, "does not apply to this scope"},
+		"not applicable": {notApplicableBody, "write it at a scope the schema allows"},
 	}
 	for name, tc := range cases {
 		_, cfg := applyFake(t, "readwrite-all", map[string]route{
