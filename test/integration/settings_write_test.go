@@ -158,29 +158,40 @@ func TestUpdateWindowLifecycle(t *testing.T) {
 func TestUpdateSettingsAreOnlyValidated(t *testing.T) {
 	cfg, ctx := writeConfig(t)
 	for _, schema := range []string{oneAgentSchema, activeGateSchema} {
-		t.Run(schema, func(t *testing.T) {
-			before := effectiveValue(t, ctx, schema)
-			changed := map[string]any{}
-			for k, v := range before {
-				changed[k] = v
-			}
-			changed["updateMode"] = "MANUAL"
-			if before["updateMode"] == "MANUAL" {
-				changed["updateMode"] = "AUTOMATIC"
-			}
-			body, _ := json.Marshal(map[string]any{"schemaId": schema, "scope": "environment", "value": changed})
-			file := writeFile(t, string(body))
-			if a := applied(t, cfg, ctx, "apply", "-f", file, "--validate-only").Results[0].Action; a != "validated" {
-				t.Errorf("--validate-only: action %q", a)
-			}
-			if rep := applied(t, cfg, ctx, "apply", "-f", file, "--dry-run"); !rep.DryRun {
-				t.Error("--dry-run: report is not marked as a dry run")
-			}
-			if after := effectiveValue(t, ctx, schema); !reflect.DeepEqual(before, after) {
-				t.Error("the effective value changed")
-			}
-		})
+		t.Run(schema, func(t *testing.T) { checkOnlyValidated(t, cfg, ctx, schema) })
 	}
+}
+
+// checkOnlyValidated validates and dry-runs a change of schema's update
+// mode at the environment, then checks that nothing changed.
+func checkOnlyValidated(t *testing.T, cfg, ctx, schema string) {
+	t.Helper()
+	before := effectiveValue(t, ctx, schema)
+	body, _ := json.Marshal(map[string]any{"schemaId": schema, "scope": "environment", "value": withOtherMode(before)})
+	file := writeFile(t, string(body))
+	if a := applied(t, cfg, ctx, "apply", "-f", file, "--validate-only").Results[0].Action; a != "validated" {
+		t.Errorf("--validate-only: action %q", a)
+	}
+	if rep := applied(t, cfg, ctx, "apply", "-f", file, "--dry-run"); !rep.DryRun {
+		t.Error("--dry-run: report is not marked as a dry run")
+	}
+	if after := effectiveValue(t, ctx, schema); !reflect.DeepEqual(before, after) {
+		t.Error("the effective value changed")
+	}
+}
+
+// withOtherMode is a copy of an update setting's value with another update
+// mode: MANUAL, or AUTOMATIC when it already is MANUAL.
+func withOtherMode(value map[string]any) map[string]any {
+	changed := make(map[string]any, len(value))
+	for k, v := range value {
+		changed[k] = v
+	}
+	changed["updateMode"] = "MANUAL"
+	if value["updateMode"] == "MANUAL" {
+		changed["updateMode"] = "AUTOMATIC"
+	}
+	return changed
 }
 
 // effectiveValue is schema's effective value at the environment.

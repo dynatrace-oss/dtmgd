@@ -42,16 +42,16 @@ func LowestClusterVersion(versions []string) string {
 	return lowest
 }
 
-// VersionAtLeast reports whether cluster version v is at least min, and
+// VersionAtLeast reports whether cluster version v is at least floor, and
 // whether v could be read at all (known false: treat as below any floor).
-func VersionAtLeast(v string, min [3]int) (ok, known bool) {
+func VersionAtLeast(v string, floor [3]int) (ok, known bool) {
 	parts, known := ParseClusterVersion(v)
 	if !known {
 		return false, false
 	}
 	for i := range parts {
-		if parts[i] != min[i] {
-			return parts[i] > min[i], true
+		if parts[i] != floor[i] {
+			return parts[i] > floor[i], true
 		}
 	}
 	return true, true
