@@ -24,7 +24,7 @@ names configured on this system.
 At the start of any investigation, run these to learn the commands and confirm connectivity:
 
 ```bash
-# Discover what dtmgd can do: the resources of get, describe, query, create, edit and delete
+# Discover what dtmgd can do: the resources of get, describe, query, create, edit, update and delete
 dtmgd commands --brief
 
 # Show active context (and all configured environments)
@@ -149,6 +149,8 @@ dtmgd create settings -f value.yaml --schema <id> --scope <scope>
 dtmgd delete settings <object-id> --yes    # --yes is required in agent mode
 ```
 
+The same commands work on a cluster context (the cluster's own settings, scope `cluster`); the cluster ActiveGates' auto-update is `get`/`update activegate-updates` there.
+
 Exit `6` / `safety_blocked` means the context's level forbids the write; nothing was sent. Details: [references/settings.md](references/settings.md).
 
 ## Gotchas
@@ -180,7 +182,8 @@ Read the one that matches the task:
 - [references/contexts.md](references/contexts.md): managing contexts,
   importing an MCP server config, multi-environment (`--env`) queries.
 - [references/cluster-api.md](references/cluster-api.md): a cluster's
-  environments, nodes, license, license usage and backup (cluster contexts).
+  environments, nodes, license, license usage, backup, its own settings, and
+  its ActiveGates' auto-update (cluster contexts).
 - [references/settings.md](references/settings.md): Settings 2.0 — finding a
   schema, stored objects versus effective values, scopes and inheritance, and
   the update-window, OneAgent update and ActiveGate update settings.

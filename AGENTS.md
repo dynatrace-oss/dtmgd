@@ -12,8 +12,9 @@ A `kubectl`-style CLI (`dtmgd <verb> <resource> [flags]`) for **Dynatrace
 Managed** (self-hosted) clusters, written in Go with Cobra. It **reads by
 default**: the only writes are Settings 2.0 objects (`apply`, `create`,
 `edit`, `delete`), and only through a context whose `safety-level` allows
-them. Every context starts `readonly`. The Cluster Management API is still
-read-only. Primary users are AI agents driving it through the bundled skill,
+them, and the cluster ActiveGates' auto-update. Every context starts
+`readonly`. The rest of the Cluster Management API is read-only. Primary
+users are AI agents driving it through the bundled skill,
 so output, limits and exit codes are part of its contract.
 
 ## Build, test, lint
@@ -43,6 +44,7 @@ cmd/            Cobra commands, one file per command (get_*.go, describe_*.go, q
   contextkind.go  refuses a command run against the wrong kind of context (exit 2)
   errors.go     error reporting, hints (withHint), exit codes
   writes.go     runWrites and writeSpec: plan → check levels → write → report, for every write command
+  settings_api.go  every Settings 2.0 call: the environment API or the Cluster API, by the client
   scopes.go     withScopes: the token scopes each command declares
   commands.go   the `dtmgd commands` catalog
 pkg/client/     HTTP client (resty): GetV2, GetV1, GetCluster, GetV2Paged, GetClusterPaged,
