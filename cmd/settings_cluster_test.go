@@ -275,3 +275,22 @@ func TestClusterScopeFallbackKeepsAPartialSchema(t *testing.T) {
 	r = runCLI(t, cfg, "get", "settings", "--scope", "cluster", "--max-pages", "1")
 	wantStderr(t, r, "Use --limit or narrower filters")
 }
+
+// TestClusterScopeFallbackSkipsSchemasNotQueryableAtTheScope pins a live
+// finding: a schema whose allowed scope is another one answers 400 "Not
+// allowed to query scope", which skips it like a 404 does.
+func TestClusterScopeFallbackSkipsSchemasNotQueryableAtTheScope(t *testing.T) {
+	notAllowed := route{Status: 400, Body: `{"error":{"code":400,"message":"Not allowed to query scope tenant for config 'builtin:b'"}}`}
+	for _, tc := range []struct {
+		path string
+		args []string
+	}{
+		{"/api/cluster/v2/settings/objects", []string{"get", "settings", "--scope", "cluster", "-o", "json"}},
+		{"/api/cluster/v2/settings/effectiveValues", []string{"get", "settings", "--effective", "--scope", "cluster", "-o", "json"}},
+	} {
+		routes := clusterFallbackRoutes(tc.path)
+		routes["GET "+tc.path+" schemaIds=builtin:b"] = notAllowed
+		_, _, cfg := clusterSettingsFake(t, "", routes)
+		wantObjectIDs(t, runCLI(t, cfg, tc.args...), "a1", "a2")
+	}
+}

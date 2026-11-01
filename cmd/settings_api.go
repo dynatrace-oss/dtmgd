@@ -157,7 +157,7 @@ const settingsPageCap = 500
 // schemaId <first schema>", and a schemaIds-less effectiveValues fails the
 // same way. On that error, on a cluster only, the fallback lists every
 // schema (8 at a time) and merges the results in schema ID order; a schema
-// that answers 404 (one that does not serve the scope) is skipped, any other
+// that cannot answer at the scope (cannotAnswerAtScope) is skipped, any other
 // error fails. Total stays -1 when a schema had more than it returned.
 func clusterScopeFallback(fetch func(*client.Client, int) (fetched, error), path string, params map[string]string, maxPages int) func(*client.Client, int) (fetched, error) {
 	return func(c *client.Client, limit int) (fetched, error) {
@@ -194,6 +194,19 @@ func clusterScopeFallback(fetch func(*client.Client, int) (fetched, error), path
 	}
 }
 
+// cannotAnswerAtScope reports whether a per-schema answer means "this schema
+// cannot answer at this scope": a 404, or the 400 "Not allowed to query
+// scope …" of a schema whose allowed scopes are others (seen on effective
+// values, for example realm-only schemas).
+func cannotAnswerAtScope(err error) bool {
+	var apiErr *client.ErrAPI
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return apiErr.StatusCode == 404 ||
+		(apiErr.StatusCode == 400 && strings.HasPrefix(apiErr.Message(), "Not allowed to query scope"))
+}
+
 // mergeSchemaListings runs the listing of each schema ID, 8 at a time, and
 // concatenates the items in ID order.
 func mergeSchemaListings(c *client.Client, ids []string, limit int, listingOf func(string) func(*client.Client, int) (fetched, error)) (fetched, error) {
@@ -215,7 +228,7 @@ func mergeSchemaListings(c *client.Client, ids []string, limit int, listingOf fu
 	more := false
 	for i := range ids {
 		if errs[i] != nil {
-			if isNotFound(errs[i]) {
+			if cannotAnswerAtScope(errs[i]) {
 				continue
 			}
 			return fetched{}, errs[i]
