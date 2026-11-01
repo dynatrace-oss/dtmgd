@@ -1,0 +1,8 @@
+{
+  "items": [
+    {"schemaId": "builtin:deployment.oneagent.updates", "origin": "HOST_GROUP-0000000000000001", "summary": "During update windows",
+     "value": {"targetVersion": "latest", "revision": "latest", "updateMode": "AUTOMATIC_DURING_MW", "maintenanceWindows": [{"maintenanceWindow": "uw-weekly"}]}}
+  ],
+  "totalCount": 1,
+  "pageSize": 500
+}

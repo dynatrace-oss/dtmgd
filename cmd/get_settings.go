@@ -16,13 +16,21 @@ const (
 	// settingsObjectFields are the fields get settings asks for: with them an
 	// exported object (-o yaml) carries what apply needs to write it back.
 	settingsObjectFields = "objectId,schemaId,scope,externalId,summary,updateToken,schemaVersion,value"
+
+	// settingsEffectivePath is the effective values list, relative to /api/v2.
+	settingsEffectivePath = "/settings/effectiveValues"
+	// settingsEffectiveFields are the fields get settings --effective asks
+	// for. An effective value has no objectId or updateToken; origin is the
+	// scope it is stored at.
+	settingsEffectiveFields = "schemaId,origin,summary,value"
 )
 
 // getSettingsOptions holds the flags of get settings.
 type getSettingsOptions struct {
-	schemas []string
-	scope   string
-	limit   int
+	schemas   []string
+	scope     string
+	effective bool
+	limit     int
 }
 
 // settingsParams is the /settings/objects query for the flags. The API needs
@@ -34,6 +42,16 @@ func settingsParams(o getSettingsOptions) map[string]string {
 	}
 	if o.scope != "" {
 		params["scopes"] = o.scope
+	}
+	return params
+}
+
+// effectiveParams is the /settings/effectiveValues query for the flags. Its
+// scope parameter is singular, unlike the object list's scopes.
+func effectiveParams(o getSettingsOptions) map[string]string {
+	params := map[string]string{"fields": settingsEffectiveFields, "scope": o.scope}
+	if len(o.schemas) > 0 {
+		params["schemaIds"] = strings.Join(o.schemas, ",")
 	}
 	return params
 }
@@ -61,33 +79,53 @@ Examples:
   dtmgd get settings <object-id> -o yaml`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			names := &windowNames{}
-			spec := fetchSpec{
-				Verb:     "get",
-				Resource: "settings",
-				Rows:     settingsView{names: names}.rows,
-				Limit:    opts.limit,
-				Empty:    "No settings found.",
-			}
-			if len(args) == 1 {
-				if len(opts.schemas) > 0 || opts.scope != "" {
-					return &UsageError{Err: fmt.Errorf("--schema and --scope list objects; they cannot be combined with an object ID")}
-				}
-				spec.Fetch = a.withWindowNames(describeFetch(settingsObjectsPath+"/"+url.PathEscape(args[0]), nil), names)
-				return a.runFetch(spec)
-			}
-			if len(opts.schemas) == 0 && opts.scope == "" {
-				return &UsageError{Err: fmt.Errorf("give --schema or --scope (the API needs one), or an object ID")}
-			}
-			spec.Fetch = a.withWindowNames(hintOnNotFound(pagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, a.Opts.MaxPages), hintListSchemas), names)
-			spec.List = true
-			return a.runFetch(spec)
+			return a.runGetSettings(opts, args)
 		},
 	}
 	cmd.Flags().StringSliceVar(&opts.schemas, "schema", nil, "schema ID(s) to list; repeat or separate with commas")
 	cmd.Flags().StringVar(&opts.scope, "scope", "", `scope: "environment" or an entity ID (HOST-…, HOST_GROUP-…, ENVIRONMENT_ACTIVE_GATE-…)`)
+	cmd.Flags().BoolVar(&opts.effective, "effective", false, "show the values that apply at --scope, inherited ones and schema defaults included")
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results to show")
 	return withScopes(cmd, scopeSettingsRead)
+}
+
+// runGetSettings runs get settings for its flags and arguments.
+func (a *App) runGetSettings(opts getSettingsOptions, args []string) error {
+	fetch, list, err := settingsFetch(opts, args, a.Opts.MaxPages)
+	if err != nil {
+		return err
+	}
+	names := &windowNames{}
+	return a.runFetch(fetchSpec{
+		Verb:     "get",
+		Resource: "settings",
+		Fetch:    a.withWindowNames(fetch, names),
+		Rows:     settingsView{names: names, effective: opts.effective}.rows,
+		Limit:    opts.limit,
+		List:     list,
+		Empty:    "No settings found.",
+	})
+}
+
+// settingsFetch picks get settings' request: one object by ID, the effective
+// values at a scope, or the stored objects; list reports whether the result
+// is a list. It refuses flags that do not fit together.
+func settingsFetch(opts getSettingsOptions, args []string, maxPages int) (fetch func(*client.Client, int) (fetched, error), list bool, err error) {
+	switch {
+	case len(args) == 1:
+		if len(opts.schemas) > 0 || opts.scope != "" || opts.effective {
+			return nil, false, &UsageError{Err: fmt.Errorf("--schema, --scope and --effective list objects; they cannot be combined with an object ID")}
+		}
+		return describeFetch(settingsObjectsPath+"/"+url.PathEscape(args[0]), nil), false, nil
+	case opts.effective:
+		if opts.scope == "" {
+			return nil, false, &UsageError{Err: fmt.Errorf(`--effective needs --scope: "environment" or the entity ID whose values to resolve`)}
+		}
+		return hintOnNotFound(pagedFetch(settingsEffectivePath, effectiveParams(opts), "items", 500, maxPages), hintListSchemas), true, nil
+	case len(opts.schemas) == 0 && opts.scope == "":
+		return nil, false, &UsageError{Err: fmt.Errorf("give --schema or --scope (the API needs one), or an object ID")}
+	}
+	return hintOnNotFound(pagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, maxPages), hintListSchemas), true, nil
 }
 
 // withWindowNames adds to fetch the lookup of update window names that the

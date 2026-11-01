@@ -62,6 +62,9 @@ type settingsView struct {
 	// names are the update windows' names by object ID, for the WINDOWS
 	// column; nil (or a missing ID) shows the object ID.
 	names *windowNames
+	// effective selects the tables for effective values, which show where
+	// each value is stored (ORIGIN) instead of an object ID and scope.
+	effective bool
 }
 
 // rows is get settings' fetchSpec.Rows. body is a list (items) or one object.
@@ -72,6 +75,9 @@ func (v settingsView) rows(body interface{}) (interface{}, int, error) {
 		return nil, 0, err
 	}
 	schema, single := singleSchema(objs)
+	if v.effective {
+		return v.effectiveRows(objs, schema, single)
+	}
 	if !single {
 		return genericMultiSchemaRows(objs)
 	}
@@ -159,14 +165,7 @@ func updateWindowRows(objs []settingsObject) (interface{}, int, error) {
 func (v settingsView) oneAgentUpdatesRows(objs []settingsObject) (interface{}, int, error) {
 	rows := make([]oneAgentUpdatesRow, 0, len(objs))
 	for _, o := range objs {
-		rows = append(rows, oneAgentUpdatesRow{
-			Scope:         o.Scope,
-			UpdateMode:    cell(o.Value, "updateMode"),
-			TargetVersion: cell(o.Value, "targetVersion"),
-			Revision:      cell(o.Value, "revision"),
-			Windows:       v.windowsCell(o.Value, modeOneAgentDuringWindows, "maintenanceWindows", "maintenanceWindow"),
-			ObjectID:      o.ObjectID,
-		})
+		rows = append(rows, v.oneAgentUpdatesRow(o))
 	}
 	return rows, len(rows), nil
 }
@@ -174,15 +173,112 @@ func (v settingsView) oneAgentUpdatesRows(objs []settingsObject) (interface{}, i
 func (v settingsView) activeGateUpdatesRows(objs []settingsObject) (interface{}, int, error) {
 	rows := make([]activeGateUpdatesRow, 0, len(objs))
 	for _, o := range objs {
-		rows = append(rows, activeGateUpdatesRow{
-			Scope:         o.Scope,
-			UpdateMode:    cell(o.Value, "updateMode"),
-			TargetVersion: cell(o.Value, "targetVersion"),
-			Windows:       v.windowsCell(o.Value, modeActiveGateDuringWindows, "updateWindows", "updateWindow"),
-			ObjectID:      o.ObjectID,
-		})
+		rows = append(rows, v.activeGateUpdatesRow(o))
 	}
 	return rows, len(rows), nil
+}
+
+// oneAgentUpdatesRow is o's row in the OneAgent updates table; the effective
+// table takes its cells from it too, so the two cannot drift.
+func (v settingsView) oneAgentUpdatesRow(o settingsObject) oneAgentUpdatesRow {
+	return oneAgentUpdatesRow{
+		Scope:         o.Scope,
+		UpdateMode:    cell(o.Value, "updateMode"),
+		TargetVersion: cell(o.Value, "targetVersion"),
+		Revision:      cell(o.Value, "revision"),
+		Windows:       v.windowsCell(o.Value, modeOneAgentDuringWindows, "maintenanceWindows", "maintenanceWindow"),
+		ObjectID:      o.ObjectID,
+	}
+}
+
+// activeGateUpdatesRow is o's row in the ActiveGate updates table, shared
+// with the effective table like oneAgentUpdatesRow.
+func (v settingsView) activeGateUpdatesRow(o settingsObject) activeGateUpdatesRow {
+	return activeGateUpdatesRow{
+		Scope:         o.Scope,
+		UpdateMode:    cell(o.Value, "updateMode"),
+		TargetVersion: cell(o.Value, "targetVersion"),
+		Windows:       v.windowsCell(o.Value, modeActiveGateDuringWindows, "updateWindows", "updateWindow"),
+		ObjectID:      o.ObjectID,
+	}
+}
+
+// updateWindowEffectiveRow is the table row for effective update windows.
+type updateWindowEffectiveRow struct {
+	Name     string `table:"NAME"`
+	Enabled  string `table:"ENABLED"`
+	Schedule string `table:"SCHEDULE"`
+	Origin   string `table:"ORIGIN"`
+}
+
+// oneAgentUpdatesEffectiveRow is the table row for effective OneAgent
+// update settings.
+type oneAgentUpdatesEffectiveRow struct {
+	Origin        string `table:"ORIGIN"`
+	UpdateMode    string `table:"UPDATE-MODE"`
+	TargetVersion string `table:"TARGET-VERSION"`
+	Revision      string `table:"REVISION"`
+	Windows       string `table:"WINDOWS,max=60"`
+}
+
+// activeGateUpdatesEffectiveRow is the table row for effective ActiveGate
+// update settings.
+type activeGateUpdatesEffectiveRow struct {
+	Origin        string `table:"ORIGIN"`
+	UpdateMode    string `table:"UPDATE-MODE"`
+	TargetVersion string `table:"TARGET-VERSION"`
+	Windows       string `table:"WINDOWS,max=60"`
+}
+
+// genericEffectiveRow is the table row for effective values of any schema.
+type genericEffectiveRow struct {
+	Schema  string `table:"SCHEMA"`
+	Origin  string `table:"ORIGIN"`
+	Summary string `table:"SUMMARY,max=80"`
+}
+
+// effectiveRows builds the effective-values table for objs, all of schema
+// when single.
+func (v settingsView) effectiveRows(objs []settingsObject, schema string, single bool) (interface{}, int, error) {
+	if !single {
+		schema = ""
+	}
+	switch schema {
+	case schemaUpdateWindows:
+		rows := make([]updateWindowEffectiveRow, 0, len(objs))
+		for _, o := range objs {
+			rows = append(rows, updateWindowEffectiveRow{Name: cell(o.Value, "name"), Enabled: enabledCell(o.Value), Schedule: updateWindowSchedule(o.Value), Origin: originCell(o)})
+		}
+		return rows, len(rows), nil
+	case schemaOneAgentUpdates:
+		rows := make([]oneAgentUpdatesEffectiveRow, 0, len(objs))
+		for _, o := range objs {
+			r := v.oneAgentUpdatesRow(o)
+			rows = append(rows, oneAgentUpdatesEffectiveRow{Origin: originCell(o), UpdateMode: r.UpdateMode, TargetVersion: r.TargetVersion, Revision: r.Revision, Windows: r.Windows})
+		}
+		return rows, len(rows), nil
+	case schemaActiveGateUpdates:
+		rows := make([]activeGateUpdatesEffectiveRow, 0, len(objs))
+		for _, o := range objs {
+			r := v.activeGateUpdatesRow(o)
+			rows = append(rows, activeGateUpdatesEffectiveRow{Origin: originCell(o), UpdateMode: r.UpdateMode, TargetVersion: r.TargetVersion, Windows: r.Windows})
+		}
+		return rows, len(rows), nil
+	}
+	rows := make([]genericEffectiveRow, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, genericEffectiveRow{Schema: o.SchemaID, Origin: originCell(o), Summary: o.Summary})
+	}
+	return rows, len(rows), nil
+}
+
+// originCell is where an effective value is stored; "default" when it has
+// no origin, which is the schema default applying.
+func originCell(o settingsObject) string {
+	if o.Origin == "" {
+		return "default"
+	}
+	return o.Origin
 }
 
 // cell is a value field as a table cell, noValue when the value lacks it.

@@ -1,0 +1,7 @@
+== exit code: 0
+== stdout
+ SCHEMA                               ORIGIN                       SUMMARY       
+ builtin:deployment.oneagent.updates  environment                  Automatic     
+ builtin:host.monitoring              HOST-0000000000000001        Full-stack    
+ builtin:tags.auto-tagging            HOST_GROUP-0000000000000001  team:payments 
+== stderr

@@ -1,0 +1,5 @@
+== exit code: 0
+== stdout
+ ORIGIN                       UPDATE-MODE          TARGET-VERSION  REVISION  WINDOWS            
+ HOST_GROUP-0000000000000001  AUTOMATIC_DURING_MW  latest          latest    Weekly maintenance 
+== stderr

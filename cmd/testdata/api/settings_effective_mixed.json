@@ -1,0 +1,9 @@
+{
+  "items": [
+    {"schemaId": "builtin:deployment.oneagent.updates", "origin": "environment", "summary": "Automatic", "value": {"updateMode": "AUTOMATIC"}},
+    {"schemaId": "builtin:host.monitoring", "origin": "HOST-0000000000000001", "summary": "Full-stack", "value": {"enabled": true}},
+    {"schemaId": "builtin:tags.auto-tagging", "origin": "HOST_GROUP-0000000000000001", "summary": "team:payments", "value": {"name": "team"}}
+  ],
+  "totalCount": 3,
+  "pageSize": 500
+}

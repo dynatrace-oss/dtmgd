@@ -29,6 +29,7 @@ dtmgd get settings [object-id] [flags]
 ### Options
 
 ```
+      --effective        show the values that apply at --scope, inherited ones and schema defaults included
   -h, --help             help for settings
       --limit int        maximum number of results to show
       --schema strings   schema ID(s) to list; repeat or separate with commas
