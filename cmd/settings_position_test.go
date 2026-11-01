@@ -226,8 +226,8 @@ func TestPositionAnchorMissingInOneContextWritesNothing(t *testing.T) {
 	without := newFakeAPI(t, bare)
 	cfg := withFakeEnvLevels(t, map[string]string{"a": "readwrite-all", "b": "readwrite-all"}, fakeEnv{"a", withAnchor}, fakeEnv{"b", without})
 	r := runCLI(t, cfg, "create", "settings", "-f", tempFile(t, "name: fresh\n"), "--schema", orderedSchema, "--scope", "environment", "--position", "after:x1", "--env", "a;b")
-	if r.Code != 1 {
-		t.Errorf("exit %d, want 1\n%s", r.Code, r)
+	if r.Code != 1 || !strings.Contains(r.Stderr, `no object "x1" at this scope`) {
+		t.Errorf("exit %d, want 1 naming the missing anchor\n%s", r.Code, r)
 	}
 	for _, api := range []*fakeAPI{withAnchor, without} {
 		if api.Hits(postObjects) != 0 || api.Hits(putPrefix+"o1") != 0 {
@@ -248,5 +248,51 @@ func TestApplyWithoutPositionSendsNoPositionFields(t *testing.T) {
 		if strings.Contains(b, "insertAfter") || strings.Contains(b, "insertBefore") {
 			t.Errorf("body has a position: %s", b)
 		}
+	}
+}
+
+func TestApplyBadPositionIsAUsageErrorBeforeAnyRequest(t *testing.T) {
+	api, cfg := applyFake(t, "readwrite-all", orderedRoutes())
+	doc := "objectId: o1\nschemaId: " + orderedSchema + "\nscope: environment\nvalue: {name: one}\n---\n" +
+		"objectId: o2\nschemaId: " + orderedSchema + "\nscope: environment\nposition: middle\nvalue: {name: two}\n"
+	r, _ := orderedApply(t, cfg, doc)
+	if r.Code != 2 || !strings.Contains(r.Stderr, "object 1") || !strings.Contains(r.Stderr, "middle") || api.totalHits() != 0 {
+		t.Errorf("%s (%d requests)", r, api.totalHits())
+	}
+}
+
+func TestApplyPositionByObjectIDRefusedOnUnorderedSchema(t *testing.T) {
+	api, cfg := applyFake(t, "readwrite-all", map[string]route{
+		schemaPathS:         {Body: `{"schemaId":"builtin:test.multi","multiObject":true}`},
+		objPrefix + "obj-1": {Body: `{"objectId":"obj-1","schemaId":"builtin:test.multi","scope":"environment","updateToken":"t","value":{"name":"a"}}`},
+		putPrefix + "obj-1": {Body: `{"code":200,"objectId":"obj-1"}`},
+	})
+	r, _ := orderedApply(t, cfg, "objectId: obj-1\nschemaId: builtin:test.multi\nscope: environment\nposition: first\nvalue: {name: b}\n")
+	if r.Code != 2 || !strings.Contains(r.Stderr, "position works only on ordered schemas") || api.Hits(putPrefix+"obj-1") != 0 {
+		t.Errorf("%s", r)
+	}
+}
+
+func TestDryRunReportsThePositionBlock(t *testing.T) {
+	_, cfg := applyFake(t, "readwrite-all", orderedRoutes())
+	r := runCLI(t, cfg, "create", "settings", "-f", tempFile(t, "name: fresh\n"), "--schema", orderedSchema,
+		"--scope", "environment", "--position", "first", "--dry-run", "-o", "json")
+	var rep struct {
+		Results []struct {
+			Position map[string]interface{} `json:"position"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(r.Stdout), &rep); err != nil || len(rep.Results) != 1 {
+		t.Fatalf("%v\n%s", err, r)
+	}
+	pos := rep.Results[0].Position
+	if _, has := pos["current"]; has || pos["new"] != float64(1) {
+		t.Errorf("create position %v, want new 1 and no current", pos)
+	}
+
+	doc := "objectId: o3\nschemaId: " + orderedSchema + "\nscope: environment\nposition: first\nvalue: {name: three}\n"
+	r = runCLI(t, cfg, "apply", "-f", tempFile(t, doc), "--dry-run", "-o", "yaml")
+	if r.Code != 0 || !strings.Contains(r.Stdout, "position:\n      current: 3\n      new: 1") {
+		t.Errorf("update yaml lacks the position block:\n%s", r)
 	}
 }
