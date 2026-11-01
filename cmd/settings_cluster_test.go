@@ -211,7 +211,11 @@ func TestClusterScopeFallbackForEffectiveValues(t *testing.T) {
 	r := runCLI(t, cfg, "get", "settings", "--effective", "--scope", "cluster", "-o", "json")
 	wantObjectIDs(t, r, "a1", "a2", "b1")
 	var ids []string
-	for _, q := range api.Queries(clusterEffective)[1:] {
+	queries := api.Queries(clusterEffective)
+	if len(queries) < 2 {
+		t.Fatalf("want the scope-only request and one per schema, got %d requests", len(queries))
+	}
+	for _, q := range queries[1:] {
 		if q.Get("scope") != "cluster" {
 			t.Errorf("scope = %q", q.Get("scope"))
 		}
@@ -281,17 +285,19 @@ func TestClusterScopeFallbackKeepsAPartialSchema(t *testing.T) {
 // allowed to query scope", which skips it like a 404 does.
 func TestClusterScopeFallbackSkipsSchemasNotQueryableAtTheScope(t *testing.T) {
 	notAllowed := route{Status: 400, Body: `{"error":{"code":400,"message":"Not allowed to query scope tenant for config 'builtin:b'"}}`}
-	for _, tc := range []struct {
+	for name, tc := range map[string]struct {
 		path string
 		args []string
 	}{
-		{"/api/cluster/v2/settings/objects", []string{"get", "settings", "--scope", "cluster", "-o", "json"}},
-		{"/api/cluster/v2/settings/effectiveValues", []string{"get", "settings", "--effective", "--scope", "cluster", "-o", "json"}},
+		"stored":    {"/api/cluster/v2/settings/objects", []string{"get", "settings", "--scope", "cluster", "-o", "json"}},
+		"effective": {"/api/cluster/v2/settings/effectiveValues", []string{"get", "settings", "--effective", "--scope", "cluster", "-o", "json"}},
 	} {
-		routes := clusterFallbackRoutes(tc.path)
-		routes["GET "+tc.path+" schemaIds=builtin:b"] = notAllowed
-		_, _, cfg := clusterSettingsFake(t, "", routes)
-		wantObjectIDs(t, runCLI(t, cfg, tc.args...), "a1", "a2")
+		t.Run(name, func(t *testing.T) {
+			routes := clusterFallbackRoutes(tc.path)
+			routes["GET "+tc.path+" schemaIds=builtin:b"] = notAllowed
+			_, _, cfg := clusterSettingsFake(t, "", routes)
+			wantObjectIDs(t, runCLI(t, cfg, tc.args...), "a1", "a2")
+		})
 	}
 }
 

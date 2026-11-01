@@ -88,7 +88,7 @@ func isNotFound(err error) bool {
 
 // readSchemasError adds the settings.read hint to a 403.
 func readSchemasError(err error) error {
-	if isForbidden(err) {
+	if isForbidden(err) && !client.IsNotApplicable(err) {
 		return withHint(err, hintReadSchemas)
 	}
 	return err
@@ -161,7 +161,7 @@ func findReferences(c *client.Client, objectID string, schemas []string) ([]sett
 		"pageSize":  "500",
 	}, client.Paging{ListKey: "items"})
 	if err != nil {
-		if isForbidden(err) {
+		if isForbidden(err) && !client.IsNotApplicable(err) {
 			return nil, withHint(err, hintFindReferences)
 		}
 		return nil, err

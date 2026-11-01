@@ -81,7 +81,10 @@ func deleteTestObjects(t testing.TB, cfg, ctx string, schemas ...string) {
 	for _, schema := range schemas {
 		list, r := listObjects(t, ctx, schema, testScope(ctx))
 		if r.Code == 5 {
-			continue // no settings.read: nothing can be listed, and the test skipped
+			// No settings.read: nothing can be listed. Say so, because a
+			// token that lost the scope mid-run could leave objects behind.
+			t.Logf("cleanup: cannot list %s without settings.read; check for leftover %s objects by hand", schema, testWindowPrefix)
+			continue
 		}
 		if r.Code != 0 {
 			t.Errorf("cleanup: listing %s: %s", schema, brief(r))

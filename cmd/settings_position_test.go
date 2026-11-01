@@ -5,7 +5,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+// notOrdered is how a position on an unordered schema is refused.
+const notOrdered = "position works only on ordered schemas"
 
 const (
 	orderedSchema = "builtin:test.ordered"
@@ -212,7 +217,7 @@ func TestPositionRefusedOnUnorderedSchema(t *testing.T) {
 	routes[objectsPath+" schemaIds=builtin:test.multi"] = route{Body: `{"items":[],"totalCount":0}`}
 	api, cfg := applyFake(t, "readwrite-all", routes)
 	r, _ := orderedApply(t, cfg, "schemaId: builtin:test.multi\nscope: environment\nposition: first\nvalue: {name: x}\n")
-	if r.Code != 2 || !strings.Contains(r.Stderr, "position works only on ordered schemas; builtin:test.multi is not ordered") || api.Hits(postObjects) != 0 {
+	if r.Code != 2 || !strings.Contains(r.Stderr, notOrdered+"; builtin:test.multi is not ordered") || api.Hits(postObjects) != 0 {
 		t.Errorf("%s", r)
 	}
 }
@@ -281,7 +286,7 @@ func TestApplyPositionByObjectIDRefusedOnUnorderedSchema(t *testing.T) {
 		putPrefix + "obj-1": {Body: `{"code":200,"objectId":"obj-1"}`},
 	})
 	r, _ := orderedApply(t, cfg, "objectId: obj-1\nschemaId: builtin:test.multi\nscope: environment\nposition: first\nvalue: {name: b}\n")
-	if r.Code != 2 || !strings.Contains(r.Stderr, "position works only on ordered schemas") || api.Hits(putPrefix+"obj-1") != 0 {
+	if r.Code != 2 || !strings.Contains(r.Stderr, notOrdered) || api.Hits(putPrefix+"obj-1") != 0 {
 		t.Errorf("%s", r)
 	}
 }
@@ -305,8 +310,14 @@ func TestDryRunReportsThePositionBlock(t *testing.T) {
 
 	doc := "objectId: o3\nschemaId: " + orderedSchema + "\nscope: environment\nposition: first\nvalue: {name: three}\n"
 	r = runCLI(t, cfg, "apply", "-f", tempFile(t, doc), "--dry-run", "-o", "yaml")
-	if r.Code != 0 || !strings.Contains(r.Stdout, "position:\n      current: 3\n      new: 1") {
-		t.Errorf("update yaml lacks the position block:\n%s", r)
+	var yrep struct {
+		Results []struct {
+			Position map[string]int `yaml:"position"`
+		} `yaml:"results"`
+	}
+	if err := yaml.Unmarshal([]byte(r.Stdout), &yrep); err != nil || r.Code != 0 || len(yrep.Results) != 1 ||
+		yrep.Results[0].Position["current"] != 3 || yrep.Results[0].Position["new"] != 1 {
+		t.Errorf("update yaml lacks the position block {current: 3, new: 1} (%v):\n%s", err, r)
 	}
 }
 

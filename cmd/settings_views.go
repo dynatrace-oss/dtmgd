@@ -558,5 +558,10 @@ func unescapeMarkdown(s string) string {
 }
 
 func isASCIIPunct(c byte) bool {
-	return strings.IndexByte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", c) >= 0
+	return strings.IndexByte(asciiPunctuation, c) >= 0
 }
+
+// asciiPunctuation is every ASCII punctuation character, the ones markdown
+// lets a backslash escape. unicode.IsPunct leaves out symbols such as $, +,
+// <, =, >, ^, `, | and ~, so the list is spelled out.
+const asciiPunctuation = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"

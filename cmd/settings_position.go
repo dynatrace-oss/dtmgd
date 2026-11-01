@@ -183,9 +183,6 @@ func anchorIndex(order, others []orderEntry, selfID string, pos settingsPosition
 			at--
 		}
 	}
-	if at >= len(others) {
-		return 0, fmt.Errorf("position %s: no object %q at this scope", pos, pos.Ref)
-	}
 	return at, nil
 }
 

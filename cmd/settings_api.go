@@ -180,9 +180,10 @@ func clusterScopeFallback(fetch func(*client.Client, int) (fetched, error), path
 			ids = append(ids, it.SchemaID)
 		}
 		sort.Strings(ids)
-		// --limit is applied after merging: a small --limit still asks every
-		// schema (8 at a time). The merged order is by schema ID, so a
-		// per-schema stop could not know where the global cut falls.
+		// --limit is applied after merging, so a small --limit still asks
+		// every schema. The schemas are read in parallel (8 at a time), so
+		// none can know how many items the schemas before it in ID order
+		// return, and the total and "more exist" need every schema's answer.
 		return mergeSchemaListings(c, ids, limit, scopeOf(params), func(id string) func(*client.Client, int) (fetched, error) {
 			p := make(map[string]string, len(params)+1)
 			for k, v := range params {
@@ -270,7 +271,10 @@ func collectListings(results []fetched, errs []error) (items []interface{}, more
 		}
 		answered++
 		body, _ := results[i].Body.(map[string]interface{})
-		list, _ := body["items"].([]interface{})
+		list, ok := body["items"].([]interface{})
+		if !ok {
+			return nil, false, 0, nil, errors.New("a per-schema settings listing came back without its items list")
+		}
 		items = append(items, list...)
 		more = more || results[i].HasMore
 	}
