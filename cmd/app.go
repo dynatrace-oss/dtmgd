@@ -10,6 +10,7 @@ import (
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
@@ -37,6 +38,32 @@ type App struct {
 	// watchStop ends a --watch loop when it closes, as Ctrl+C does. Only
 	// tests set it; nil never fires.
 	watchStop <-chan struct{}
+
+	// stdin and interactive are where a confirmation is read from and
+	// whether a person can answer it. Only tests set them; nil means
+	// os.Stdin, and whether it is a terminal.
+	stdin       io.Reader
+	interactive func() bool
+}
+
+// input is where dtmgd reads a person's answers.
+func (a *App) input() io.Reader {
+	if a.stdin != nil {
+		return a.stdin
+	}
+	return os.Stdin
+}
+
+// isInteractive reports whether a person can answer a prompt: never in
+// agent mode, otherwise when stdin is a terminal.
+func (a *App) isInteractive() bool {
+	if a.agentMode() {
+		return false
+	}
+	if a.interactive != nil {
+		return a.interactive()
+	}
+	return term.IsTerminal(int(os.Stdin.Fd()))
 }
 
 // Run executes dtmgd with args (without the program name), writing to stdout
@@ -136,6 +163,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 		newDescribeCmd(a),
 		newApplyCmd(a),
 		newCreateCmd(a),
+		newDeleteCmd(a),
 		newQueryCmd(a),
 		newConfigCmd(a),
 		newCtxCmd(a),

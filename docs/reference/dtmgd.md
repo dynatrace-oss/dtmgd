@@ -62,6 +62,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 * [dtmgd config](dtmgd_config.md)	 - Manage dtmgd configuration
 * [dtmgd create](dtmgd_create.md)	 - Create resources
 * [dtmgd ctx](dtmgd_ctx.md)	 - Manage contexts (shortcut for config context commands)
+* [dtmgd delete](dtmgd_delete.md)	 - Delete resources
 * [dtmgd describe](dtmgd_describe.md)	 - Show detailed information about a specific resource
 * [dtmgd doctor](dtmgd_doctor.md)	 - Check connectivity, token and cluster version of each context
 * [dtmgd get](dtmgd_get.md)	 - List or retrieve resources

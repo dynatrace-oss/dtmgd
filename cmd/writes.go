@@ -92,7 +92,13 @@ type writeSpec struct {
 	// Plan resolves, with GETs only, what the command would write in the
 	// context named name.
 	Plan func(name string, c *client.Client) ([]plannedWrite, error)
+	// Confirm, when set, asks before anything is written (not in a dry
+	// run); errCancelled ends the command with nothing changed.
+	Confirm func(writes []plannedWrite) error
 }
+
+// errCancelled is a write a person declined at the prompt.
+var errCancelled = errors.New("cancelled")
 
 // SafetyError is a write the context's safety-level does not allow. Nothing
 // was sent; dtmgd exits 6.
@@ -149,13 +155,36 @@ func (a *App) runWrites(s writeSpec) error {
 	if err := s.checkPlans(names, plans, levels); err != nil {
 		return err
 	}
-	rep := writeReport{DryRun: s.DryRun, ValidateOnly: s.ValidateOnly}
+	rep := writeReport{DryRun: s.DryRun, ValidateOnly: s.ValidateOnly, Results: []writeResult{}}
+	if cancelled, err := s.confirm(names, plans); err != nil {
+		return err
+	} else if cancelled {
+		output.PrintInfo("Cancelled: nothing was changed.")
+		return a.renderWriteReport(s, rep)
+	}
 	if s.DryRun {
 		rep.Results = plannedResults(names, plans)
 	} else if rep.Results, err = a.executeWrites(cfg, s, names, plans); err != nil {
 		return err
 	}
 	return a.renderWriteReport(s, rep)
+}
+
+// confirm runs s.Confirm over every planned write, unless this is a dry
+// run, and reports whether the person cancelled.
+func (s writeSpec) confirm(names []string, plans map[string]contextPlan) (bool, error) {
+	if s.Confirm == nil || s.DryRun {
+		return false, nil
+	}
+	var all []plannedWrite
+	for _, name := range names {
+		all = append(all, plans[name].writes...)
+	}
+	err := s.Confirm(all)
+	if errors.Is(err, errCancelled) {
+		return true, nil
+	}
+	return false, err
 }
 
 // envSpec is the --env value MultiRequest gets: the list for a
@@ -509,8 +538,10 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 		}
 		return fmt.Errorf("%w: %w", errReported, failErr)
 	}
-	if err := a.printWriteReport(rep); err != nil {
-		return err
+	if len(rep.Results) > 0 || a.dataFormat() {
+		if err := a.printWriteReport(rep); err != nil {
+			return err
+		}
 	}
 	if failErr == nil {
 		return nil
@@ -520,6 +551,12 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 		output.PrintHint("%s", hint)
 	}
 	return fmt.Errorf("%w: %w", errReported, failErr)
+}
+
+// dataFormat reports whether -o asks for json or yaml.
+func (a *App) dataFormat() bool {
+	f := a.format()
+	return f == output.FormatJSON || f == output.FormatYAML
 }
 
 // printWriteReport prints rep as json or yaml, or as a table for a person.
