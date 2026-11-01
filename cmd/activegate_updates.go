@@ -72,9 +72,13 @@ Examples:
 				Rows:     agUpdatesRows(""),
 				NotFound: hintListClusterActiveGates,
 			}
-			if len(args) == 1 {
-				spec.Fetch = clusterObjectFetch(agAutoUpdatePath(args[0]), nil)
-				spec.Rows = agUpdatesRows(args[0])
+			id, err := agID(args)
+			if err != nil {
+				return err
+			}
+			if id != "" {
+				spec.Fetch = clusterObjectFetch(agAutoUpdatePath(id), nil)
+				spec.Rows = agUpdatesRows(id)
 			}
 			return a.runClusterFetch(spec)
 		},
@@ -96,10 +100,11 @@ Examples:
   dtmgd describe activegate-updates <activegate-id> -o yaml --context prod-cluster`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := clusterAGAutoUpdatePath
-			if len(args) == 1 {
-				path = agAutoUpdatePath(args[0])
+			id, err := agID(args)
+			if err != nil {
+				return err
 			}
+			path := agConfigPath(id)
 			return a.runClusterFetch(fetchSpec{
 				Verb:     "describe",
 				Resource: "activegate-updates",
@@ -196,6 +201,41 @@ var agReadOnlyFields = []string{"metadata", "effectiveSetting"}
 // agFlaggedFields take effect only where the cluster's GET returns them.
 var agFlaggedFields = []string{"targetVersion", "updateWindows"}
 
+// errEmptyAGID refuses an empty ActiveGate ID, which would otherwise mean
+// the global configuration (an unset shell variable, say).
+var errEmptyAGID = &UsageError{Err: errors.New("the ActiveGate ID is empty; leave it out to mean the global configuration")}
+
+// agID is the ActiveGate a command names, "" for the global configuration.
+func agID(args []string) (string, error) {
+	if len(args) == 0 {
+		return "", nil
+	}
+	if args[0] == "" {
+		return "", errEmptyAGID
+	}
+	return args[0], nil
+}
+
+// normalAGConfig is an auto-update configuration as dtmgd sends and
+// compares it: without the fields the server sets (metadata,
+// effectiveSetting, each window's name), windows by id only.
+func normalAGConfig(m map[string]interface{}) map[string]interface{} {
+	out := withoutFields(m, agReadOnlyFields)
+	uw, ok := out["updateWindows"].(map[string]interface{})
+	if !ok {
+		return out
+	}
+	list, _ := uw["windows"].([]interface{})
+	ids := make([]interface{}, 0, len(list))
+	for _, w := range list {
+		if win, ok := w.(map[string]interface{}); ok {
+			ids = append(ids, map[string]interface{}{"id": win["id"]})
+		}
+	}
+	out["updateWindows"] = map[string]interface{}{"windows": ids}
+	return out
+}
+
 func newUpdateActiveGateUpdatesCmd(a *App) *cobra.Command {
 	var opts struct {
 		file                 string
@@ -228,9 +268,9 @@ Examples:
 			if err != nil {
 				return err
 			}
-			id := ""
-			if len(args) == 1 {
-				id = args[0]
+			id, err := agID(args)
+			if err != nil {
+				return err
 			}
 			return a.runWrites(writeSpec{
 				Verb: "update", Resource: "activegate-updates",
@@ -271,9 +311,9 @@ Examples:
 					return err
 				}
 			}
-			id := ""
-			if len(args) == 1 {
-				id = args[0]
+			id, err := agID(args)
+			if err != nil {
+				return err
 			}
 			return a.runWrites(writeSpec{
 				Verb: "edit", Resource: "activegate-updates",
@@ -317,7 +357,7 @@ func planActiveGateUpdate(c *client.Client, id string, value map[string]interfac
 	if err != nil {
 		return nil, err
 	}
-	value = withoutFields(value, agReadOnlyFields)
+	value = normalAGConfig(value)
 	if err := checkAutoUpdateFile(id, cur, value); err != nil {
 		return nil, err
 	}
@@ -333,7 +373,7 @@ func planActiveGateUpdate(c *client.Client, id string, value map[string]interfac
 			return sendAGConfig(c, agConfigPath(id), value, validateOnly)
 		},
 	}
-	if reflect.DeepEqual(value, withoutFields(cur, agReadOnlyFields)) {
+	if reflect.DeepEqual(value, normalAGConfig(cur)) {
 		w.Op, w.Action = "", actionUnchanged
 	}
 	return []plannedWrite{w}, nil
@@ -346,7 +386,7 @@ func (a *App) planActiveGateEdit(c *client.Client, id string) ([]plannedWrite, e
 	if err != nil {
 		return nil, err
 	}
-	edited, changed, err := a.editValue(withoutFields(cur, agReadOnlyFields))
+	edited, changed, err := a.editValue(normalAGConfig(cur))
 	if err != nil {
 		return nil, err
 	}
@@ -359,21 +399,49 @@ func (a *App) planActiveGateEdit(c *client.Client, id string) ([]plannedWrite, e
 // checkAutoUpdateFile refuses a configuration the cluster would take
 // differently than the file says.
 func checkAutoUpdateFile(id string, cur, value map[string]interface{}) error {
-	for _, f := range agFlaggedFields {
-		if _, inFile := value[f]; inFile {
-			if _, honoured := cur[f]; !honoured {
-				return &UsageError{Err: fmt.Errorf("this cluster ignores %s in ActiveGate auto-update (it takes effect only where the configuration already carries it); remove it from the file", f)}
-			}
-		}
+	if err := checkAGShape(id, value); err != nil {
+		return err
 	}
+	return checkAGFlagged(cur, value)
+}
+
+// checkAGShape refuses a file that is not one configuration: the global
+// one takes globalSetting ENABLED or DISABLED, one ActiveGate's setting
+// ENABLED, DISABLED or INHERITED, each besides targetVersion and
+// updateWindows.
+func checkAGShape(id string, value map[string]interface{}) error {
+	key, allowed := "globalSetting", "ENABLED, DISABLED"
 	if id != "" {
-		if _, ok := value["globalSetting"]; ok {
-			return &UsageError{Err: errors.New("one ActiveGate's configuration takes setting (ENABLED, DISABLED or INHERITED), not globalSetting")}
-		}
-		return nil
+		key, allowed = "setting", "ENABLED, DISABLED, INHERITED"
 	}
-	if _, ok := value["setting"]; ok || value["globalSetting"] == "INHERITED" {
-		return &UsageError{Err: errors.New("the global configuration takes globalSetting ENABLED or DISABLED; setting and INHERITED belong to one ActiveGate")}
+	for k := range value {
+		if k != key && k != "targetVersion" && k != "updateWindows" {
+			return &UsageError{Err: fmt.Errorf("unknown field %q: this configuration takes %s (%s), targetVersion and updateWindows", k, key, allowed)}
+		}
+	}
+	v, _ := value[key].(string)
+	if !strings.Contains(", "+allowed+",", ", "+v+",") || v == "" {
+		return &UsageError{Err: fmt.Errorf("%s must be one of %s, not %v", key, allowed, value[key])}
+	}
+	return nil
+}
+
+// checkAGFlagged refuses targetVersion or updateWindows where the cluster
+// would drop them (its GET does not return them), and a file that leaves
+// out the update windows of a cluster that honours them: it would clear
+// them.
+func checkAGFlagged(cur, value map[string]interface{}) error {
+	for _, f := range agFlaggedFields {
+		_, inFile := value[f]
+		_, honoured := cur[f]
+		if inFile && !honoured {
+			return &UsageError{Err: fmt.Errorf("this cluster ignores %s in ActiveGate auto-update (it takes effect only where the configuration already carries it); remove it from the file", f)}
+		}
+	}
+	if _, honoured := cur["updateWindows"]; honoured {
+		if _, inFile := value["updateWindows"]; !inFile {
+			return &UsageError{Err: errors.New("this cluster honours updateWindows, and a configuration without them clears them: keep updateWindows in the file (describe activegate-updates -o yaml shows them)")}
+		}
 	}
 	return nil
 }
@@ -428,7 +496,11 @@ func clusterWindowReferences(c *client.Client, windowID string) ([]string, error
 	}
 	gates, _ := list["activeGates"].([]interface{})
 	for _, g := range gates {
-		id := cell(g.(map[string]interface{}), "id")
+		gate, ok := g.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		id := cell(gate, "id")
 		cfg, err := readAGConfig(c, id)
 		if err != nil {
 			return nil, err

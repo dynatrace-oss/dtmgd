@@ -45,9 +45,13 @@ dtmgd get settings --schema builtin:deployment.management.update-windows --scope
 dtmgd apply -f window.yaml --dry-run --context <cluster-context>       # writes need the context's safety-level
 ```
 
-- The cluster token needs `settings.read` (and `settings.write` to write;
-  creating also needs `ServiceProviderAPI`) besides `ServiceProviderAPI`. A
-  token made for the other cluster commands often lacks them: a 403 says so.
+- The cluster token needs `settings.read` (and `settings.write` to write)
+  besides `ServiceProviderAPI`, which creating, `--validate-only` (it reads
+  the cluster version) and deleting an update window (it checks the
+  ActiveGates' auto-update first) also use. A token made for the other
+  cluster commands often lacks the settings scopes: a 403 says so.
+- A settings command's `--context <cluster>` cannot be combined with
+  `--env "a;b"`: a cluster context runs alone.
 - Cluster update windows are what cluster ActiveGates update in (where the
   cluster honours windows, below). The cluster's own self-update window
   (Cluster Management Console, Automatic update) has no public API.
@@ -63,13 +67,16 @@ dtmgd update activegate-updates [<activegate-id>] -f config.yaml --context <clus
 ```
 
 - The global configuration is `{globalSetting: ENABLED|DISABLED}`; one
-  ActiveGate's is `{setting: ENABLED|DISABLED|INHERITED}`, with the
+  ActiveGate's is `{setting: ENABLED|DISABLED|INHERITED}` (any other field is
+  refused, besides the two below), with the
   read-only `effectiveSetting` (what applies) and, in `get`, its update
   `STATUS` (`UP2DATE`, `OUTDATED`, `UPDATE_IN_PROGRESS`, …).
 - `targetVersion` and `updateWindows` take effect only where the cluster's
   configuration returns them (a server feature flag, off by default).
   `get` shows them only then, and `update` refuses a file that sets them
-  elsewhere instead of letting the cluster drop them silently.
+  elsewhere instead of letting the cluster drop them silently. Where the
+  cluster honours windows, a file must keep `updateWindows` (leaving it out
+  would clear them); window names are read-only and not sent.
 - `--validate-only` uses the cluster's validator, which never saves.
   Changing these settings starts or stops real updates: dry-run first.
 - A cluster update window that the ActiveGate configurations still name is

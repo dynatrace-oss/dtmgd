@@ -85,7 +85,7 @@ func writeConfigFor(t *testing.T, envVar string) (path, ctx string) {
 		}
 	}
 	if _, err := cfg.GetContext(ctx); err != nil {
-		t.Fatalf("DTMGD_IT_WRITE_ENV: %v", err)
+		t.Fatalf("%s: %v", envVar, err)
 	}
 	path = filepath.Join(t.TempDir(), "config")
 	if err := cfg.SaveTo(path); err != nil {
@@ -94,14 +94,20 @@ func writeConfigFor(t *testing.T, envVar string) (path, ctx string) {
 	return path, ctx
 }
 
-// writeRun runs a write command with config cfg against context ctx, the
-// write context. It refuses any verb but apply, create and delete, and any
-// other context, so a test can write nowhere else; a dry run, which sends
-// GETs only, may name any context.
+// writeRun runs a write command with config cfg against context ctx, a
+// write context (DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER). It refuses
+// any verb but apply, create, delete and update, any other context, and an
+// update without --validate-only or --dry-run: the suite never really
+// changes how ActiveGates update. A dry run, which sends GETs only, may
+// name any context.
 func writeRun(t testing.TB, cfg, ctx string, args ...string) result {
 	t.Helper()
 	if len(args) == 0 || !writeVerbs[args[0]] {
-		t.Fatalf("writeRun runs apply, create and delete only, not %q", args)
+		t.Fatalf("writeRun runs apply, create, delete and update only, not %q", args)
+		return result{}
+	}
+	if args[0] == "update" && !slices.Contains(args, "--validate-only") && !slices.Contains(args, "--dry-run") {
+		t.Fatalf("writeRun runs update only with --validate-only or --dry-run, not %q", args)
 		return result{}
 	}
 	if !isWriteContext(ctx) && !slices.Contains(args, "--dry-run") {
@@ -278,7 +284,7 @@ func TestWriteRunRefusesReadsAndOtherContexts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("DTMGD_IT_WRITE_ENV", "stage")
-	for _, args := range [][]string{{"get", "settings"}, {"config", "view"}, {"apply", "-f", "x"}, {"apply", "-f", "x", "--env", "prod"}, {"apply", "-f", "x", "--context=prod"}} {
+	for _, args := range [][]string{{"get", "settings"}, {"config", "view"}, {"apply", "-f", "x"}, {"apply", "-f", "x", "--env", "prod"}, {"apply", "-f", "x", "--context=prod"}, {"update", "activegate-updates", "-f", "x"}} {
 		ctx := "stage"
 		if len(args) == 3 && args[0] == "apply" {
 			ctx = "prod"

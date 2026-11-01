@@ -139,6 +139,9 @@ type contextPlan struct {
 	writes     []plannedWrite
 	version    string
 	versionErr error
+	// cluster says the context is a cluster context, whose version comes
+	// from the node list (ServiceProviderAPI).
+	cluster bool
 }
 
 // runWrites is the one path every write command takes. It plans every
@@ -228,6 +231,9 @@ func (a *App) checkWriteContexts(cfg *config.Config, s writeSpec) error {
 	if err := a.checkEnvVarContext(cfg); err != nil {
 		return err
 	}
+	if err := a.refuseClusterFanOut(cfg); err != nil {
+		return err
+	}
 	switch {
 	case s.ClusterOnly:
 		if err := a.checkClusterContext(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
@@ -292,7 +298,7 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 		return nil, nil, err
 	}
 	results, err := client.MultiRequestNamed(cfg, a.envSpec(), a.Opts.Concurrency, a.clientOptions(), func(name string, c *client.Client) (interface{}, error) {
-		var p contextPlan
+		p := contextPlan{cluster: c.ClusterScoped()}
 		var err error
 		if p.writes, err = s.Plan(name, c); err != nil {
 			return nil, err
@@ -394,8 +400,11 @@ func hasWrites(ws []plannedWrite) bool {
 func versionGate(name string, p contextPlan) error {
 	const dryRunHint = "--dry-run shows the planned change with GETs only and needs only settings.read"
 	if p.versionErr != nil {
-		return withHint(&UsageError{Err: fmt.Errorf("context %q: cannot read the cluster version, which --validate-only checks first: %w", name, p.versionErr)},
-			"Reading the version needs the DataExport scope on an environment token. "+dryRunHint)
+		scope := "Reading the version needs the DataExport scope on an environment token. "
+		if p.cluster {
+			scope = "Reading the version needs ServiceProviderAPI on the cluster token. "
+		}
+		return withHint(&UsageError{Err: fmt.Errorf("context %q: cannot read the cluster version, which --validate-only checks first: %w", name, p.versionErr)}, scope+dryRunHint)
 	}
 	ok, known := client.VersionAtLeast(p.version, validateOnlyFloor)
 	switch {

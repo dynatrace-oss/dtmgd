@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -125,7 +124,7 @@ func settingsFetch(opts getSettingsOptions, args []string, maxPages int) (fetch 
 		if len(opts.schemas) > 0 || opts.scope != "" || opts.effective {
 			return nil, false, &UsageError{Err: fmt.Errorf("--schema, --scope and --effective list objects; they cannot be combined with an object ID")}
 		}
-		return settingsObjectFetch(settingsObjectsPath + "/" + url.PathEscape(args[0])), false, nil
+		return settingsObjectByID(args[0]), false, nil
 	case opts.effective:
 		if opts.scope == "" {
 			return nil, false, &UsageError{Err: fmt.Errorf(`--effective needs --scope: "environment" or the entity ID whose values to resolve`)}

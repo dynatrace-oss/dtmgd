@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -30,7 +29,7 @@ Examples:
 			return a.runSettingsFetch(fetchSpec{
 				Verb:     "describe",
 				Resource: "settings",
-				Fetch:    settingsObjectFetch(settingsObjectsPath + "/" + url.PathEscape(args[0])),
+				Fetch:    settingsObjectByID(args[0]),
 				Human:    printSettingsObject,
 			})
 		},

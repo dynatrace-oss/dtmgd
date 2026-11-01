@@ -1,6 +1,11 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
 )
@@ -74,6 +79,46 @@ func settingsDelete(c *client.Client, path string, params map[string]string) err
 // ServiceProviderAPI, which does not reach the cluster's settings.
 const hintClusterSettingsScopes = "A cluster token needs settings.read (and settings.write to write) besides ServiceProviderAPI; add them to the token in the Cluster Management Console."
 
+// hintObjectNotFound is the next step after an unknown settings object ID.
+const hintObjectNotFound = "No settings object has this ID in this context; find object IDs with: dtmgd get settings --schema <schema-id>"
+
+// settingsObjectByID is settingsObjectFetch for one object by ID, a 404
+// hinting at how to find IDs.
+func settingsObjectByID(id string) func(*client.Client, int) (fetched, error) {
+	return hintOnNotFound(settingsObjectFetch(settingsObjectsPath+"/"+url.PathEscape(id)), hintObjectNotFound)
+}
+
+// getSettingsObject reads one object by ID into out, a 404 hinting at how
+// to find IDs.
+func getSettingsObject(c *client.Client, id string, out interface{}) error {
+	err := settingsGet(c, settingsObjectsPath+"/"+url.PathEscape(id), nil, out)
+	var apiErr *client.ErrAPI
+	if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		return withHint(err, hintObjectNotFound)
+	}
+	return err
+}
+
+// refuseClusterFanOut refuses, before any request, a cluster context in a
+// multi-environment run: named with --context beside --env "a;b", or inside
+// the --env list. A cluster context runs alone.
+func (a *App) refuseClusterFanOut(cfg *config.Config) error {
+	if !a.isMultiEnv() {
+		return nil
+	}
+	names := []string{a.Opts.Context}
+	if a.Opts.Env != "ALL_ENVIRONMENTS" {
+		names = append(names, strings.Split(a.Opts.Env, ";")...)
+	}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if nc, err := cfg.GetContext(name); err == nil && nc.Context.IsCluster() {
+			return &UsageError{Err: fmt.Errorf("context %q is a cluster context, which cannot be part of a multi-environment --env; run it alone: --context %s", name, name)}
+		}
+	}
+	return nil
+}
+
 // onClusterContext reports whether the command runs against one cluster
 // context: no multi-environment --env, and a current context without
 // env-id.
@@ -90,6 +135,9 @@ func (a *App) onClusterContext(cfg *config.Config) bool {
 func (a *App) runSettingsFetch(s fetchSpec) error {
 	cfg, err := a.loadConfig()
 	if err != nil {
+		return err
+	}
+	if err := a.refuseClusterFanOut(cfg); err != nil {
 		return err
 	}
 	if a.onClusterContext(cfg) {

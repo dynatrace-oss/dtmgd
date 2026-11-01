@@ -71,7 +71,7 @@ func TestUpdateActiveGateUpdatesReadonly(t *testing.T) {
 // TestUpdateRefusesUnhonouredFields pins that a field the cluster would
 // drop silently is refused, and sent where the cluster honours it.
 func TestUpdateRefusesUnhonouredFields(t *testing.T) {
-	file := tempFile(t, "globalSetting: ENABLED\ntargetVersion: previous\n")
+	file := tempFile(t, "globalSetting: ENABLED\ntargetVersion: previous\nupdateWindows: {windows: [{id: uw-c1}]}\n")
 	api, cfg := agWriteFake(t, "readwrite-all", agGlobalFile)
 	if r := runCLI(t, cfg, "update", "activegate-updates", "-f", file); r.Code != 2 || !strings.Contains(r.Stderr, "targetVersion") || api.Hits(agGlobalPut) != 0 {
 		t.Errorf("without the flag: %s", r)

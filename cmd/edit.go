@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"reflect"
@@ -113,7 +112,7 @@ func (a *App) checkCanUpdate() error {
 // update (unchanged when they saved nothing new).
 func (a *App) planEdit(c *client.Client, id string) ([]plannedWrite, error) {
 	var cur settingsObject
-	if err := settingsGet(c, settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
+	if err := getSettingsObject(c, id, &cur); err != nil {
 		return nil, err
 	}
 	value, changed, err := a.editValue(cur.Value)

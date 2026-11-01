@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -76,7 +76,7 @@ Examples:
 // pointing at nothing.
 func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 	var cur settingsObject
-	if err := settingsGet(c, settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
+	if err := getSettingsObject(c, id, &cur); err != nil {
 		return nil, err
 	}
 	if cur.SchemaID == schemaUpdateWindows {
@@ -97,6 +97,9 @@ func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 func checkWindowUnused(c *client.Client, id string) error {
 	if c.ClusterScoped() {
 		refs, err := clusterWindowReferences(c, id)
+		if isForbidden(err) {
+			return withHint(err, "Checking whether the cluster's ActiveGates still use this window needs ServiceProviderAPI on the cluster token, besides settings.write.")
+		}
 		if err != nil || len(refs) == 0 {
 			return err
 		}
@@ -108,6 +111,12 @@ func checkWindowUnused(c *client.Client, id string) error {
 		return err
 	}
 	return windowInUse(id, refs)
+}
+
+// isForbidden reports whether err is an HTTP 403.
+func isForbidden(err error) bool {
+	var apiErr *client.ErrAPI
+	return errors.As(err, &apiErr) && apiErr.StatusCode == 403
 }
 
 // windowReferences lists the OneAgent and ActiveGate update settings, at
