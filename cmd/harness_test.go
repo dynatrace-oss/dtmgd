@@ -34,6 +34,9 @@ type route struct {
 	Status int
 	File   string
 	Body   string
+	// Drop closes the connection without answering, as a network failure
+	// after the request was sent does.
+	Drop bool
 }
 
 // fakeAPI is an httptest server answering from a route table.
@@ -80,6 +83,12 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = io.WriteString(w, `{"error":{"code":404,"message":"not found"}}`)
+			return
+		}
+		if rt.Drop {
+			if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
+				_ = conn.Close()
+			}
 			return
 		}
 		body := rt.Body

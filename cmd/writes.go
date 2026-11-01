@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
 
@@ -208,6 +209,28 @@ func (a *App) checkWriteContexts(cfg *config.Config, s writeSpec) error {
 	if !s.MultiEnv && a.isMultiEnv() {
 		return &UsageError{Err: fmt.Errorf("\"dtmgd %s %s\" changes one object in one context; give one context with --context", s.Verb, s.Resource)}
 	}
+	contexts, err := client.ResolveContexts(cfg, a.envSpec())
+	if err != nil {
+		return err
+	}
+	return refuseDuplicateTargets(contexts)
+}
+
+// refuseDuplicateTargets refuses a context selected twice, or two contexts
+// for the same environment: each would receive the same writes, and the
+// second would duplicate every create.
+func refuseDuplicateTargets(contexts []config.NamedContext) error {
+	seen := map[string]string{}
+	for _, nc := range contexts {
+		target := strings.TrimRight(strings.ToLower(nc.Context.Host), "/") + "\x00" + nc.Context.EnvID
+		if prev, ok := seen[target]; ok {
+			if prev == nc.Name {
+				return &UsageError{Err: fmt.Errorf("context %q is selected twice; every write would be sent twice", nc.Name)}
+			}
+			return &UsageError{Err: fmt.Errorf("contexts %q and %q are the same environment; every write would be sent twice, so select one of them", prev, nc.Name)}
+		}
+		seen[target] = nc.Name
+	}
 	return nil
 }
 
@@ -265,7 +288,7 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 	case len(failed) == 1 && len(results) == 1:
 		return nil, nil, failed[0].Error
 	case len(failed) > 0:
-		return nil, nil, &client.PartialFailureError{Failed: failed, Total: len(results)}
+		return nil, nil, fmt.Errorf("nothing was written anywhere: %w", &client.PartialFailureError{Failed: failed, Total: len(results)})
 	}
 	return names, plans, nil
 }
@@ -305,6 +328,11 @@ func (s writeSpec) checkPlans(names []string, plans map[string]contextPlan, leve
 // checkPlan is checkPlans for one context.
 func (s writeSpec) checkPlan(name string, p contextPlan, level config.SafetyLevel) error {
 	if s.ValidateOnly {
+		for _, w := range p.writes {
+			if w.Op == config.OpDelete {
+				return &UsageError{Err: errors.New("--validate-only cannot check a delete: the API would carry it out")}
+			}
+		}
 		if !hasWrites(p.writes) {
 			return nil
 		}
@@ -489,7 +517,9 @@ func finishWrite(r writeResult, err error, item settingsWriteItem, done string, 
 func toWriteError(err error) *writeError {
 	var apiErr *client.ErrAPI
 	if !errors.As(err, &apiErr) {
-		return &writeError{Message: err.Error()}
+		// The request may have reached the cluster before the connection
+		// failed: say so, so nobody repeats a create that was saved.
+		return &writeError{Message: err.Error() + " (the cluster may have saved this change)"}
 	}
 	var items []settingsWriteItem
 	if json.Unmarshal([]byte(apiErr.Body), &items) == nil && len(items) > 0 && items[0].Error != nil {
@@ -542,6 +572,9 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 		if err := a.printWriteReport(rep); err != nil {
 			return err
 		}
+	}
+	if rep.DryRun && !a.dataFormat() {
+		output.PrintInfo("Dry run: nothing was changed. -o yaml shows each object's current and new value.")
 	}
 	if failErr == nil {
 		return nil
@@ -598,35 +631,77 @@ func (a *App) printWriteFailures(rep writeReport) {
 	}
 }
 
-// writeFailures is the error a report with failed objects ends in: one
-// failure per object, so the exit code is that of the API error when every
-// object failed the same way, else 1. nil when nothing failed.
+// writeFailureError is the error of a report with failed objects. Its exit
+// code is that of the HTTP error when every object failed the same way,
+// otherwise 1; its message carries the first failure in the server's words.
+type writeFailureError struct {
+	failed []writeResult
+	total  int
+}
+
+func (e *writeFailureError) Error() string {
+	first := e.failed[0]
+	target := first.ObjectID
+	if target == "" {
+		target = first.Scope
+	}
+	msg := "write failed"
+	if first.Error != nil {
+		msg = first.Error.Message
+	}
+	if e.total == 1 {
+		return fmt.Sprintf("%s %s: %s", first.SchemaID, target, msg)
+	}
+	return fmt.Sprintf("%d of %d objects failed; first, %s %s: %s", len(e.failed), e.total, first.SchemaID, target, msg)
+}
+
+// status is the HTTP status every object failed with, or 0 when they did
+// not all fail, or not the same way.
+func (e *writeFailureError) status() int {
+	if len(e.failed) != e.total {
+		return 0
+	}
+	code := 0
+	for _, r := range e.failed {
+		if r.Error == nil || r.Error.Code < 400 || (code != 0 && r.Error.Code != code) {
+			return 0
+		}
+		code = r.Error.Code
+	}
+	return code
+}
+
+// exitCode is the process exit code for e.
+func (e *writeFailureError) exitCode() int {
+	if s := e.status(); s != 0 {
+		return client.ExitCodeForStatus(s)
+	}
+	return client.ExitError
+}
+
+// writeFailures is the error a report with failed objects ends in, or nil.
 func writeFailures(rep writeReport) error {
-	var failed []client.EnvResult
+	var failed []writeResult
 	for _, r := range rep.Results {
-		if r.Action != actionFailed {
-			continue
+		if r.Action == actionFailed {
+			failed = append(failed, r)
 		}
-		err := errors.New("write failed")
-		if r.Error != nil {
-			err = errors.New(r.Error.Message)
-			if r.Error.Code >= 400 {
-				err = client.APIError(r.Error.Code, r.Error.Message)
-			}
-		}
-		failed = append(failed, client.EnvResult{Name: r.Context, Error: err})
 	}
 	if len(failed) == 0 {
 		return nil
 	}
-	return &client.PartialFailureError{Failed: failed, Total: len(rep.Results)}
+	return &writeFailureError{failed: failed, total: len(rep.Results)}
 }
 
 // writeHint is the next step after failed writes, or "".
 func writeHint(rep writeReport) string {
 	for _, r := range rep.Results {
-		if r.Error != nil && r.Error.Code == 409 {
+		switch {
+		case r.Error == nil:
+		case r.Error.Code == 409:
 			return "The object changed after it was read: re-read it (dtmgd describe settings <object-id> -o yaml) and apply again."
+		case r.Error.Code == 0:
+			return "A write was lost in transit, and the cluster may have saved it: check with dtmgd get settings before running it again."
 		}
 	}
 	return ""

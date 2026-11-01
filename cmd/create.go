@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -77,7 +78,7 @@ Examples:
   dtmgd create settings -f window.yaml --schema builtin:deployment.management.update-windows --scope environment --env "stage;prod"`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			value, err := readValueFile(opts.file, os.Stdin)
+			value, err := readValueFile(opts.file, a.input())
 			if err != nil {
 				return err
 			}
@@ -111,15 +112,39 @@ func readValueFile(path string, stdin io.Reader) (map[string]interface{}, error)
 	if err != nil {
 		return nil, err
 	}
-	var raw interface{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	docs, err := yamlDocuments(data)
+	if err != nil {
 		return nil, &UsageError{Err: fmt.Errorf("%s: not YAML or JSON: %w", path, err)}
 	}
+	if len(docs) != 1 {
+		return nil, &UsageError{Err: fmt.Errorf("%s holds %d YAML documents; a value file holds one value", path, len(docs))}
+	}
 	var value map[string]interface{}
-	if err := jsonRoundTrip(raw, &value); err != nil || value == nil {
+	if err := jsonRoundTrip(docs[0], &value); err != nil || value == nil {
 		return nil, &UsageError{Err: fmt.Errorf("%s: the value must be an object", path)}
 	}
 	return value, nil
+}
+
+// yamlDocuments decodes every document of a YAML (or JSON) stream, empty
+// ones left out: a file of several "---" documents must not be read as its
+// first one alone.
+func yamlDocuments(data []byte) ([]interface{}, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	var docs []interface{}
+	for {
+		var doc interface{}
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return docs, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if doc != nil {
+			docs = append(docs, doc)
+		}
+	}
 }
 
 // readInput reads path, or stdin for "-".
@@ -161,25 +186,37 @@ func schemaShape(c *client.Client, schemaID string) (settingsSchemaShape, error)
 	return shape, err
 }
 
-// planCreate plans create settings: one create, refused when the schema
-// holds one object per scope and the scope already has it (a POST would
-// overwrite it).
+// planCreate plans create settings: one create, refused when the POST would
+// overwrite an object instead: the scope's object of a one-per-scope
+// schema, or the object with the same key property.
 func planCreate(c *client.Client, schemaID, scope string, value map[string]interface{}) ([]plannedWrite, error) {
 	shape, err := schemaShape(c, schemaID)
 	if err != nil {
 		return nil, err
 	}
-	if !shape.MultiObject {
-		existing, err := listSettings(c, schemaID, scope, "objectId")
-		if err != nil {
-			return nil, err
-		}
-		if len(existing) > 0 {
-			return nil, withHint(fmt.Errorf("scope %s already has its %s object (%s)", scope, schemaID, existing[0].ObjectID),
-				"Use apply to change it: dtmgd describe settings "+existing[0].ObjectID+" -o yaml > object.yaml, edit the value, then dtmgd apply -f object.yaml")
-		}
+	w := plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: schemaID, Scope: scope, Value: value}
+	if shape.MultiObject && shape.KeyProperty == "" {
+		return []plannedWrite{w}, nil
 	}
-	return []plannedWrite{{Op: config.OpCreate, Action: actionCreate, SchemaID: schemaID, Scope: scope, Value: value}}, nil
+	listed, err := listSettings(c, schemaID, scope, "objectId,externalId,value")
+	if err != nil {
+		return nil, err
+	}
+	if m := findMatch(shape, applyObject{SchemaID: schemaID, Scope: scope, Value: value}, listed); m != nil {
+		return nil, withHint(fmt.Errorf("creating this %s object at %s would overwrite object %s", schemaID, scope, m.ObjectID),
+			"Use apply to change it: dtmgd describe settings "+m.ObjectID+" -o yaml > object.yaml, edit the value, then dtmgd apply -f object.yaml")
+	}
+	w.Existing = listedIDs(listed)
+	return []plannedWrite{w}, nil
+}
+
+// listedIDs is the set of the listed objects' IDs.
+func listedIDs(listed []settingsObject) map[string]bool {
+	ids := make(map[string]bool, len(listed))
+	for _, l := range listed {
+		ids[l.ObjectID] = true
+	}
+	return ids
 }
 
 // listSettings returns every object of schemaID at scope, with fields.

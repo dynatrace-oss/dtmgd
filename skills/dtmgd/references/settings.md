@@ -116,21 +116,34 @@ dtmgd apply -f object.yaml                 # writes; result action created/updat
   control (`settings.write`), so ask the user before raising a level for
   them.
 - **The apply file** is `{objectId?, externalId?, schemaId, scope, value,
-  updateToken?}`, one object, an array, or a `get settings -o yaml` list.
-  With `objectId` apply updates that object (or creates it in an environment
-  where it does not exist); without it, it updates the scope's object of a
-  one-per-scope schema (OneAgent and ActiveGate updates) or the object with
-  the same `externalId`, and otherwise creates. **Give objects of
-  multi-object schemas (update windows) an `externalId`**, or a repeated
-  apply creates duplicates.
+  updateToken?}`: one object, an array, a `get settings -o yaml` list, or
+  several `---` documents. An export made in agent mode (the envelope)
+  applies too.
+  - With `objectId`, apply updates that object, which must have the file's
+    `schemaId` and `scope` (to copy a value to another scope, remove
+    `objectId`). In an environment where the object does not exist, apply
+    creates it.
+  - Without `objectId`, apply updates the scope's object of a one-per-scope
+    schema (OneAgent and ActiveGate updates), else the object with the same
+    `externalId`, else the one with the same key property, and otherwise
+    creates.
+  - **Give objects of multi-object schemas an `externalId`**, so a repeated
+    apply updates them. Update windows have unique names, so a repeated
+    create of one fails with 400; schemas without a unique field would get a
+    duplicate.
+  - Two objects of one file may not write the same object.
 - **Conflicts.** An exported `updateToken` makes the write fail with `409`
   if someone changed the object meanwhile: re-read it and apply again.
+- **A write lost in transit** (`failed`, "the cluster may have saved this
+  change") may have been saved: check with `get settings` before running it
+  again. dtmgd never resends a write itself.
 - **Several environments:** `apply` and `create settings` take
   `--env "a;b"` or `--env ALL_ENVIRONMENTS`. Every context is checked before
   any is written; one blocked context means nothing is written anywhere.
 - **Creating one object** from a bare value: `dtmgd create settings -f
-  value.yaml --schema <id> --scope <scope>`. It refuses a one-per-scope
-  schema whose scope already has its object: use apply.
+  value.yaml --schema <id> --scope <scope>`. It refuses when the create
+  would overwrite an object (the scope's object of a one-per-scope schema,
+  or one with the same key property): use apply.
 - **Deleting:** `dtmgd delete settings <object-id> --yes` (`--yes` is
   required in agent mode). Deleting the object at a scope makes that scope
   inherit again. An update window that a OneAgent or ActiveGate update

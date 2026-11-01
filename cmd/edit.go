@@ -58,6 +58,13 @@ Examples:
 				return withHint(&UsageError{Err: fmt.Errorf("edit opens an editor and needs a person at a terminal")},
 					"Use: dtmgd describe settings "+args[0]+" -o yaml > object.yaml, change the value, then dtmgd apply -f object.yaml")
 			}
+			if !validateOnly {
+				// Check before the editor opens: a blocked edit would
+				// otherwise cost the person their changes.
+				if err := a.checkCanUpdate(); err != nil {
+					return err
+				}
+			}
 			id := args[0]
 			return a.runWrites(writeSpec{
 				Verb:         "edit",
@@ -71,6 +78,29 @@ Examples:
 	}
 	cmd.Flags().BoolVar(&validateOnly, "validate-only", false, "have the cluster validate the edited value without saving it")
 	return withWrites(cmd)
+}
+
+// checkCanUpdate refuses an edit through a context whose level does not
+// allow updates, before anything else happens.
+func (a *App) checkCanUpdate() error {
+	cfg, err := a.loadConfig()
+	if err != nil {
+		return err
+	}
+	contexts, err := client.ResolveContexts(cfg, a.envSpec())
+	if err != nil {
+		return err
+	}
+	for _, nc := range contexts {
+		level, err := nc.Context.Level()
+		if err != nil {
+			return &UsageError{Err: fmt.Errorf("context %q: %w", nc.Name, err)}
+		}
+		if !level.Allows(config.OpUpdate) {
+			return safetyBlocked(&SafetyError{Context: nc.Name, Level: level, Op: config.OpUpdate})
+		}
+	}
+	return nil
 }
 
 // planEdit reads object id, lets the person edit its value, and plans the
@@ -122,7 +152,12 @@ func (a *App) editValue(value map[string]interface{}) (map[string]interface{}, b
 		return nil, false, err
 	}
 	path := f.Name()
-	defer func() { _ = os.Remove(path) }()
+	keep := false
+	defer func() {
+		if !keep {
+			_ = os.Remove(path)
+		}
+	}()
 	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
 		err = cerr
@@ -138,7 +173,8 @@ func (a *App) editValue(value map[string]interface{}) (map[string]interface{}, b
 	}
 	edited, err := readValueFile(path, nil)
 	if err != nil {
-		return nil, false, err
+		keep = true
+		return nil, false, fmt.Errorf("%w; your edit is kept in %s", err, path)
 	}
 	return edited, !reflect.DeepEqual(edited, value), nil
 }

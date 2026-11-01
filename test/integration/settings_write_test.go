@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dynatrace-oss/dtmgd/pkg/config"
 )
 
 // writeReport is the part of a write command's json output the checks read.
@@ -91,6 +93,13 @@ func testWindows(t *testing.T, ctx, name string) []string {
 func TestReadonlyContextBlocksALiveWrite(t *testing.T) {
 	_, ctx := writeConfig(t)
 	orig := requireEnv(t, "DTMGD_IT_CONFIG")
+	cfg, err := config.LoadFrom(orig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nc, err := cfg.GetContext(ctx); err != nil || nc.Context.SafetyLevel != "" && nc.Context.SafetyLevel != string(config.SafetyReadOnly) {
+		t.Skipf("the write context is not readonly in the config itself, so this check would write")
+	}
 	r := writeRun(t, orig, ctx, "apply", "-f", windowFile(t, testWindowPrefix+"blocked", 60))
 	if r.Code != 6 {
 		t.Errorf("apply through a readonly context: %s, want exit 6", brief(r))

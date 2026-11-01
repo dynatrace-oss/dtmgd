@@ -300,7 +300,8 @@ your task.
   - The client never retries a POST, PUT or DELETE after it may have been sent (5xx, connection reset, unexpected EOF); only connect/TLS timeouts and 429 (`isRetryable`).
   - Deleting an update window is not blocked by references on the server, so `delete settings` lists both update schemas at every scope and refuses while one names the window.
   - In tests, `withFakeEnvLevels` writes a config with levels, `fakeAPI.Bodies(key)` shows request bodies, and `runInteractive` drives `(*App).run()` as a person at a terminal (`App.interactive`, `App.stdin`). Tests that build an `App` themselves must clear `agentmode.EnvVars()`: the developer's own agent session would otherwise turn agent mode on.
-  - The live write suite never touches the maintainer's config: it saves a temporary copy with only the write context raised to `readwrite-all` (`DTMGD_IT_WRITE_ENV`).
+  - Guards the final review added: a context selected twice, or two contexts with the same host and env-id, are refused (every write would be sent twice); an `objectId` must name an object of the file's schema and scope (`tenant` = `environment`); every `---` document of a file is read; an agent envelope in an apply file is unwrapped; two objects of one file may not target the same object; `create settings` also refuses a key-property match; a transport failure says the change may have been saved.
+  - The live write suite never touches the maintainer's config: it saves a temporary copy in which only the write context (`DTMGD_IT_WRITE_ENV`) is `readwrite-all` and every other context is `readonly`; `writeRun` refuses `--context`/`--env`/`--config` in its arguments.
 - **When it applies**: Adding or changing a write command, or reading why a write was refused
 - **Date**: 2026-11-01
 - **Ref**: Settings 2.0 phase 2 (docs/superpowers/plans/2026-11-01-settings-write-environments.md)

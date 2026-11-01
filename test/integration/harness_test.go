@@ -68,8 +68,17 @@ func writeConfig(t *testing.T) (path, ctx string) {
 	if err != nil {
 		t.Fatalf("loading the config: %v", err)
 	}
-	if err := cfg.SetSafetyLevel(ctx, config.SafetyReadWriteAll); err != nil {
-		t.Fatal(err)
+	for _, nc := range cfg.Contexts {
+		level := config.SafetyReadOnly
+		if nc.Name == ctx {
+			level = config.SafetyReadWriteAll
+		}
+		if err := cfg.SetSafetyLevel(nc.Name, level); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := cfg.GetContext(ctx); err != nil {
+		t.Fatalf("DTMGD_IT_WRITE_ENV: %v", err)
 	}
 	path = filepath.Join(t.TempDir(), "config")
 	if err := cfg.SaveTo(path); err != nil {
@@ -91,6 +100,14 @@ func writeRun(t testing.TB, cfg, ctx string, args ...string) result {
 	if want := os.Getenv("DTMGD_IT_WRITE_ENV"); ctx != want && !slices.Contains(args, "--dry-run") {
 		t.Fatalf("writeRun writes to %q only, not %q", want, ctx)
 		return result{}
+	}
+	for _, arg := range args {
+		for _, flag := range []string{"--context", "-c", "--env", "-e", "--config"} {
+			if arg == flag || strings.HasPrefix(arg, flag+"=") {
+				t.Fatalf("writeRun picks the context and config itself; %s in %q is refused", flag, args)
+				return result{}
+			}
+		}
 	}
 	full := append([]string{"--config", cfg, "--context", ctx, "--no-agent", "--plain"}, args...)
 	var out, errb bytes.Buffer
@@ -243,9 +260,9 @@ func TestWriteRunRefusesReadsAndOtherContexts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("DTMGD_IT_WRITE_ENV", "stage")
-	for _, args := range [][]string{{"get", "settings"}, {"config", "view"}, {"apply", "-f", "x"}} {
+	for _, args := range [][]string{{"get", "settings"}, {"config", "view"}, {"apply", "-f", "x"}, {"apply", "-f", "x", "--env", "prod"}, {"apply", "-f", "x", "--context=prod"}} {
 		ctx := "stage"
-		if args[0] == "apply" {
+		if len(args) == 3 && args[0] == "apply" {
 			ctx = "prod"
 		}
 		rec := &fatalRecorder{TB: t}

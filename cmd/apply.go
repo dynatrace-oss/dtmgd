@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"reflect"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"github.com/dynatrace-oss/dtmgd/pkg/config"
@@ -38,13 +36,17 @@ func newApplyCmd(a *App) *cobra.Command {
 		Long: `Create or update the Settings 2.0 objects in a file: YAML or JSON (- for
 stdin), holding one {objectId?, externalId?, schemaId, scope, value,
 updateToken?} object, an array of them, or a list as get settings -o yaml
-prints it. An exported object applies back as it is.
+prints it, in one or several "---" documents. An exported object applies back
+as it is, an agent-mode export (the envelope) included.
 
 For each object apply first finds out whether it exists, with GETs only:
-  - with objectId: that object (if it is not found, apply creates it, which
-    moves a file from one environment to another);
+  - with objectId: that object, which must have the file's schemaId and
+    scope (if it is not found, apply creates it, which moves a file from one
+    environment to another);
   - without: for a schema holding one object per scope, the object at the
-    scope; otherwise the object with the same externalId.
+    scope; otherwise the object with the same externalId, or with the same
+    value of the schema's key property.
+Two objects of one file may not write the same object.
 An existing object is updated, with the updateToken from the file (which
 catches changes since the export) or from the GET; one whose value is the
 same is left unchanged. Anything else is created. Give objects of
@@ -63,7 +65,7 @@ Examples:
   dtmgd apply -f windows.yaml --env ALL_ENVIRONMENTS`,
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			objs, err := readApplyFile(opts.file, os.Stdin)
+			objs, err := readApplyFile(opts.file, a.input())
 			if err != nil {
 				return err
 			}
@@ -93,13 +95,20 @@ func readApplyFile(path string, stdin io.Reader) ([]applyObject, error) {
 	if err != nil {
 		return nil, err
 	}
-	var raw interface{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	docs, err := yamlDocuments(data)
+	if err != nil {
 		return nil, &UsageError{Err: fmt.Errorf("%s: not YAML or JSON: %w", path, err)}
 	}
-	list, err := applyItems(raw)
-	if err != nil {
-		return nil, &UsageError{Err: fmt.Errorf("%s: %w", path, err)}
+	var list []interface{}
+	for _, doc := range docs {
+		items, err := applyItems(doc)
+		if err != nil {
+			return nil, &UsageError{Err: fmt.Errorf("%s: %w", path, err)}
+		}
+		list = append(list, items...)
+	}
+	if len(list) == 0 {
+		return nil, &UsageError{Err: fmt.Errorf("%s holds no objects", path)}
 	}
 	var objs []applyObject
 	if err := jsonRoundTrip(list, &objs); err != nil {
@@ -113,12 +122,17 @@ func readApplyFile(path string, stdin io.Reader) ([]applyObject, error) {
 	return objs, nil
 }
 
-// applyItems is the list of objects in a decoded apply file.
+// applyItems is the list of objects in one decoded document of an apply
+// file. An agent envelope ({ok, result, …}, what an export in agent mode
+// prints) is unwrapped first.
 func applyItems(raw interface{}) ([]interface{}, error) {
 	switch v := raw.(type) {
 	case []interface{}:
 		return v, nil
 	case map[string]interface{}:
+		if result, ok := v["result"]; ok && v["ok"] != nil {
+			return applyItems(result)
+		}
 		if items, ok := v["items"].([]interface{}); ok {
 			return items, nil
 		}
@@ -154,14 +168,43 @@ type applyPlanner struct {
 func planApply(c *client.Client, objs []applyObject) ([]plannedWrite, error) {
 	p := &applyPlanner{c: c, shapes: map[string]settingsSchemaShape{}, listed: map[string][]settingsObject{}}
 	writes := make([]plannedWrite, 0, len(objs))
-	for _, o := range objs {
+	targets := map[string]int{}
+	for i, o := range objs {
 		w, err := p.plan(o)
 		if err != nil {
 			return nil, err
 		}
+		if t := p.target(w); t != "" {
+			if j, dup := targets[t]; dup {
+				return nil, &UsageError{Err: fmt.Errorf("objects %d and %d of the file write the same object; keep one of them", j, i)}
+			}
+			targets[t] = i
+		}
 		writes = append(writes, w)
 	}
 	return writes, nil
+}
+
+// target names the object w writes, so two writes to one object are found
+// before anything is sent: the objectId of an update, or for a create the
+// key the server would match it on (the scope of a one-per-scope schema,
+// the externalId, the key property). "" for a create no server lookup
+// matches.
+func (p *applyPlanner) target(w plannedWrite) string {
+	if w.ObjectID != "" {
+		return "object\x00" + w.ObjectID
+	}
+	shape := p.shapes[w.SchemaID]
+	base := w.SchemaID + "\x00" + w.Scope + "\x00"
+	switch {
+	case !shape.MultiObject:
+		return "scope\x00" + base
+	case w.ExternalID != "":
+		return "external\x00" + base + w.ExternalID
+	case shape.KeyProperty != "" && w.Value[shape.KeyProperty] != nil:
+		return fmt.Sprintf("key\x00%s%v", base, w.Value[shape.KeyProperty])
+	}
+	return ""
 }
 
 // plan resolves one object: by its objectId, else by a lookup.
@@ -184,7 +227,32 @@ func (p *applyPlanner) plan(o applyObject) (plannedWrite, error) {
 	case err != nil:
 		return plannedWrite{}, fmt.Errorf("object %s: %w", o.ObjectID, err)
 	}
+	if err := sameObject(o, cur); err != nil {
+		return plannedWrite{}, err
+	}
 	return updateOrUnchanged(o, cur), nil
+}
+
+// sameObject refuses a file object whose objectId names an object of
+// another schema or scope: the PUT would change that object, wherever the
+// file says it goes.
+func sameObject(o applyObject, cur settingsObject) error {
+	hint := "To put this value at another scope, remove objectId (and updateToken) from the file; apply then creates or updates the object there."
+	switch {
+	case cur.SchemaID != "" && cur.SchemaID != o.SchemaID:
+		return withHint(&UsageError{Err: fmt.Errorf("objectId %s is a %s object, but the file says %s", o.ObjectID, cur.SchemaID, o.SchemaID)}, hint)
+	case o.Scope != "" && cur.Scope != "" && canonicalScope(o.Scope) != canonicalScope(cur.Scope):
+		return withHint(&UsageError{Err: fmt.Errorf("objectId %s is stored at %s, but the file says scope %s", o.ObjectID, cur.Scope, o.Scope)}, hint)
+	}
+	return nil
+}
+
+// canonicalScope is the scope with the environment's two names made one.
+func canonicalScope(scope string) string {
+	if scope == "tenant" {
+		return "environment"
+	}
+	return scope
 }
 
 // planByLookup finds the object a POST would overwrite: for a single-object
@@ -204,14 +272,12 @@ func (p *applyPlanner) planByLookup(o applyObject) (plannedWrite, error) {
 		o.UpdateToken = ""
 		return updateOrUnchanged(o, *match), nil
 	}
-	existing := make(map[string]bool, len(listed))
-	for _, l := range listed {
-		existing[l.ObjectID] = true
-	}
-	return plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: o.SchemaID, Scope: o.Scope, ExternalID: o.ExternalID, Value: o.Value, Existing: existing}, nil
+	return plannedWrite{Op: config.OpCreate, Action: actionCreate, SchemaID: o.SchemaID, Scope: o.Scope, ExternalID: o.ExternalID, Value: o.Value, Existing: listedIDs(listed)}, nil
 }
 
-// findMatch is the listed object o would overwrite, or nil.
+// findMatch is the listed object o would overwrite, or nil, in the order
+// the server matches: the scope's object of a one-per-scope schema, then
+// the externalId, then the key property.
 func findMatch(shape settingsSchemaShape, o applyObject, listed []settingsObject) *settingsObject {
 	if !shape.MultiObject {
 		if len(listed) > 0 {
@@ -219,11 +285,21 @@ func findMatch(shape settingsSchemaShape, o applyObject, listed []settingsObject
 		}
 		return nil
 	}
-	for i, l := range listed {
-		if o.ExternalID != "" && l.ExternalID == o.ExternalID {
-			return &listed[i]
+	if o.ExternalID != "" {
+		if m := firstListed(listed, func(l settingsObject) bool { return l.ExternalID == o.ExternalID }); m != nil {
+			return m
 		}
-		if k := shape.KeyProperty; k != "" && o.Value[k] != nil && reflect.DeepEqual(o.Value[k], l.Value[k]) {
+	}
+	if k := shape.KeyProperty; k != "" && o.Value[k] != nil {
+		return firstListed(listed, func(l settingsObject) bool { return reflect.DeepEqual(o.Value[k], l.Value[k]) })
+	}
+	return nil
+}
+
+// firstListed is the first listed object match accepts, or nil.
+func firstListed(listed []settingsObject, match func(settingsObject) bool) *settingsObject {
+	for i := range listed {
+		if match(listed[i]) {
 			return &listed[i]
 		}
 	}

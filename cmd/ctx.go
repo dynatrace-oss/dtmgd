@@ -240,6 +240,23 @@ func (a *App) useContext(name string) error {
 	return nil
 }
 
+// warnRepointedLevel warns when set-context points a context that may
+// write at another host or environment: its level stays, and now applies
+// to the new target.
+func warnRepointedLevel(cfg *config.Config, name, host, envID string) {
+	existing, err := cfg.GetContext(name)
+	if err != nil {
+		return
+	}
+	level, err := existing.Context.Level()
+	if err != nil || level == config.SafetyReadOnly {
+		return
+	}
+	if (host != "" && host != existing.Context.Host) || (envID != "" && envID != existing.Context.EnvID) {
+		output.PrintWarning("Context %q keeps safety-level %s, which now applies to its new host or environment. Lower it with --safety-level readonly if that is not intended.", name, level)
+	}
+}
+
 // warnClobberedContextRefs warns before a set-context call replaces a ${VAR}
 // reference with a literal value. The user gets no other signal that the
 // indirection is gone, and only the matched references are echoed — never the
@@ -289,6 +306,9 @@ func (a *App) setContext(name, host, envID, tokenRef, description, safetyLevel s
 		return fmt.Errorf("--host is required for new contexts")
 	}
 	warnClobberedContextRefs(cfg, name, host, envID, tokenRef)
+	if safetyLevel == "" {
+		warnRepointedLevel(cfg, name, host, envID)
+	}
 
 	cfg.SetContext(name, host, envID, tokenRef, description)
 	if safetyLevel != "" {

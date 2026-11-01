@@ -7,15 +7,19 @@ Create or update the Settings 2.0 objects in a file
 Create or update the Settings 2.0 objects in a file: YAML or JSON (- for
 stdin), holding one {objectId?, externalId?, schemaId, scope, value,
 updateToken?} object, an array of them, or a list as get settings -o yaml
-prints it. An exported object applies back as it is.
+prints it, in one or several "---" documents. An exported object applies back
+as it is, an agent-mode export (the envelope) included.
 
 For each object apply first finds out whether it exists, with GETs only:
 ```
-  - with objectId: that object (if it is not found, apply creates it, which
-    moves a file from one environment to another);
+  - with objectId: that object, which must have the file's schemaId and
+    scope (if it is not found, apply creates it, which moves a file from one
+    environment to another);
   - without: for a schema holding one object per scope, the object at the
-    scope; otherwise the object with the same externalId.
+    scope; otherwise the object with the same externalId, or with the same
+    value of the schema's key property.
 ```
+Two objects of one file may not write the same object.
 An existing object is updated, with the updateToken from the file (which
 catches changes since the export) or from the GET; one whose value is the
 same is left unchanged. Anything else is created. Give objects of
