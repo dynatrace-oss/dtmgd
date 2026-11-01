@@ -255,7 +255,7 @@ func checkMaskKept(t *testing.T, cfg, ctx string) {
 		value["displayName"] = notificationExternalID + "-renamed"
 	})
 	expectAction(t, "apply the export", applied(t, cfg, ctx, "apply", "-f", file), "updated")
-	if after := headerMask(onlyObject(t, ctx, notificationSchema)); after != before {
+	if headerMask(onlyObject(t, ctx, notificationSchema)) != before {
 		t.Error("the secret's mask changed: the export's mask was stored as a new secret")
 	}
 }
