@@ -79,15 +79,9 @@ func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 	if err := settingsGet(c, settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
 		return nil, err
 	}
-	// The OneAgent and ActiveGate update schemas exist in environments
-	// only; a cluster's windows are checked against its ActiveGates' auto-update.
-	if cur.SchemaID == schemaUpdateWindows && !c.ClusterScoped() {
-		refs, err := windowReferences(c, id)
-		if err != nil {
+	if cur.SchemaID == schemaUpdateWindows {
+		if err := checkWindowUnused(c, id); err != nil {
 			return nil, err
-		}
-		if len(refs) > 0 {
-			return nil, windowInUse(id, refs)
 		}
 	}
 	return []plannedWrite{{
@@ -95,6 +89,25 @@ func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 		ObjectID: id, SchemaID: cur.SchemaID, Scope: cur.Scope, Summary: cur.Summary,
 		UpdateToken: cur.UpdateToken, Current: cur.Value,
 	}}, nil
+}
+
+// checkWindowUnused refuses deleting update window id while something uses
+// it: in an environment, OneAgent and ActiveGate update settings; on a
+// cluster, its ActiveGates' auto-update.
+func checkWindowUnused(c *client.Client, id string) error {
+	if c.ClusterScoped() {
+		refs, err := clusterWindowReferences(c, id)
+		if err != nil || len(refs) == 0 {
+			return err
+		}
+		return withHint(fmt.Errorf("update window %s is still used by the cluster ActiveGates' auto-update: %s", id, strings.Join(refs, ", ")),
+			"Point those configurations at another window first (dtmgd update activegate-updates), then delete the window.")
+	}
+	refs, err := windowReferences(c, id)
+	if err != nil || len(refs) == 0 {
+		return err
+	}
+	return windowInUse(id, refs)
 }
 
 // windowReferences lists the OneAgent and ActiveGate update settings, at

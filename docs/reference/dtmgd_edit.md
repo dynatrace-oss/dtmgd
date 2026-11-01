@@ -9,7 +9,8 @@ scripts use apply.
 
 Supported resources:
 ```
-  setting <object-id>   A Settings 2.0 object's value
+  setting <object-id>        A Settings 2.0 object's value
+  activegate-updates [id]    The cluster ActiveGates' auto-update (cluster contexts)
 ```
 
 ```
@@ -41,5 +42,6 @@ dtmgd edit [flags]
 ### SEE ALSO
 
 * [dtmgd](dtmgd.md)	 - Dynatrace Managed CLI
+* [dtmgd edit activegate-updates](dtmgd_edit_activegate-updates.md)	 - Edit the cluster ActiveGates' auto-update in an editor
 * [dtmgd edit setting](dtmgd_edit_setting.md)	 - Edit a Settings 2.0 object's value in an editor
 

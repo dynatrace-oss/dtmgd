@@ -69,5 +69,6 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 * [dtmgd get](dtmgd_get.md)	 - List or retrieve resources
 * [dtmgd query](dtmgd_query.md)	 - Query time-series or log data
 * [dtmgd skills](dtmgd_skills.md)	 - Manage AI coding assistant skill files
+* [dtmgd update](dtmgd_update.md)	 - Update resources from a file
 * [dtmgd version](dtmgd_version.md)	 - Show dtmgd version
 

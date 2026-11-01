@@ -1,12 +1,17 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
+	"github.com/dynatrace-oss/dtmgd/pkg/config"
+	"github.com/dynatrace-oss/dtmgd/pkg/output"
 )
 
 // Cluster ActiveGate auto-update lives at the Cluster API's own endpoints:
@@ -182,4 +187,266 @@ func configWindows(cfg map[string]interface{}) string {
 		return noValue
 	}
 	return strings.Join(names, ", ")
+}
+
+// agReadOnlyFields are fields of an auto-update configuration that the
+// server sets: dropped from a file, ignored when comparing.
+var agReadOnlyFields = []string{"metadata", "effectiveSetting"}
+
+// agFlaggedFields take effect only where the cluster's GET returns them.
+var agFlaggedFields = []string{"targetVersion", "updateWindows"}
+
+func newUpdateActiveGateUpdatesCmd(a *App) *cobra.Command {
+	var opts struct {
+		file                 string
+		dryRun, validateOnly bool
+	}
+	cmd := &cobra.Command{
+		Use:     "activegate-updates [activegate-id] -f <file>",
+		Aliases: []string{"ag-updates"},
+		Short:   "Change how the cluster's ActiveGates update",
+		Long: `Change the cluster ActiveGates' global auto-update configuration, or, with an
+ID, one ActiveGate's. The file (YAML or JSON, - for stdin) holds the object
+describe activegate-updates prints: {globalSetting: ENABLED|DISABLED} for the
+global one, {setting: ENABLED|DISABLED|INHERITED} for one ActiveGate.
+
+targetVersion and updateWindows are accepted only where the cluster's
+configuration carries them (they take effect behind a server feature flag);
+elsewhere the file is refused rather than the fields dropped.
+
+--dry-run shows the change with GETs only. --validate-only has the cluster's
+validator check it without saving. Needs a cluster context whose
+safety-level allows updates, and a token with ServiceProviderAPI.
+
+Examples:
+  dtmgd describe activegate-updates -o yaml --context stage-cluster > global.yaml
+  dtmgd update activegate-updates -f global.yaml --dry-run --context stage-cluster
+  dtmgd update activegate-updates <activegate-id> -f gate.yaml --context stage-cluster`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			value, err := readValueFile(opts.file, a.input())
+			if err != nil {
+				return err
+			}
+			id := ""
+			if len(args) == 1 {
+				id = args[0]
+			}
+			return a.runWrites(writeSpec{
+				Verb: "update", Resource: "activegate-updates",
+				DryRun: opts.dryRun, ValidateOnly: opts.validateOnly,
+				ClusterOnly: true, NotFound: hintListClusterActiveGates,
+				Plan: func(_ string, c *client.Client) ([]plannedWrite, error) {
+					return planActiveGateUpdate(c, id, value)
+				},
+			})
+		},
+	}
+	cmd.Flags().StringVarP(&opts.file, "filename", "f", "", "file holding the configuration, YAML or JSON (- for stdin)")
+	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "show the change, sending GETs only")
+	cmd.Flags().BoolVar(&opts.validateOnly, "validate-only", false, "have the cluster's validator check the change without saving it")
+	_ = cmd.MarkFlagRequired("filename")
+	return markMutating(clusterCommand(cmd))
+}
+
+func newEditActiveGateUpdatesCmd(a *App) *cobra.Command {
+	var validateOnly bool
+	cmd := &cobra.Command{
+		Use:     "activegate-updates [activegate-id]",
+		Aliases: []string{"ag-updates"},
+		Short:   "Edit the cluster ActiveGates' auto-update in an editor",
+		Long: `Open the cluster ActiveGates' global auto-update configuration (or one
+ActiveGate's) in $EDITOR, and update it when the file changed. For people at a
+terminal; agents use update activegate-updates -f.
+
+Examples:
+  dtmgd edit activegate-updates --context stage-cluster`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !a.isInteractive() {
+				return withHint(&UsageError{Err: errNeedsTerminal}, "Use: dtmgd describe activegate-updates -o yaml > config.yaml, change it, then dtmgd update activegate-updates -f config.yaml")
+			}
+			if !validateOnly {
+				if err := a.checkCanUpdate(); err != nil {
+					return err
+				}
+			}
+			id := ""
+			if len(args) == 1 {
+				id = args[0]
+			}
+			return a.runWrites(writeSpec{
+				Verb: "edit", Resource: "activegate-updates",
+				ValidateOnly: validateOnly, ClusterOnly: true, NotFound: hintListClusterActiveGates,
+				Plan: func(_ string, c *client.Client) ([]plannedWrite, error) {
+					return a.planActiveGateEdit(c, id)
+				},
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&validateOnly, "validate-only", false, "have the cluster's validator check the edited configuration without saving it")
+	return markMutating(clusterCommand(cmd))
+}
+
+// agConfigPath is the auto-update path of ActiveGate id, or the global one.
+func agConfigPath(id string) string {
+	if id == "" {
+		return clusterAGAutoUpdatePath
+	}
+	return agAutoUpdatePath(id)
+}
+
+// readAGConfig reads an auto-update configuration, a 404 hinting at the
+// ActiveGate list.
+func readAGConfig(c *client.Client, id string) (map[string]interface{}, error) {
+	var cur map[string]interface{}
+	err := c.GetCluster(agConfigPath(id), nil, &cur)
+	var apiErr *client.ErrAPI
+	if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		return nil, withHint(err, hintListClusterActiveGates)
+	}
+	return cur, err
+}
+
+// planActiveGateUpdate plans writing value as ActiveGate id's auto-update
+// configuration (the global one for ""): refused when it holds fields the
+// cluster would drop or values that configuration cannot take, unchanged
+// when it equals the current one.
+func planActiveGateUpdate(c *client.Client, id string, value map[string]interface{}) ([]plannedWrite, error) {
+	cur, err := readAGConfig(c, id)
+	if err != nil {
+		return nil, err
+	}
+	value = withoutFields(value, agReadOnlyFields)
+	if err := checkAutoUpdateFile(id, cur, value); err != nil {
+		return nil, err
+	}
+	scope := id
+	if scope == "" {
+		scope = "global"
+	}
+	w := plannedWrite{
+		Op: config.OpUpdate, Action: actionUpdate,
+		SchemaID: "cluster-activegate-autoupdate", Scope: scope,
+		Value: value, Current: cur,
+		Exec: func(c *client.Client, validateOnly bool) writeResult {
+			return sendAGConfig(c, agConfigPath(id), value, validateOnly)
+		},
+	}
+	if reflect.DeepEqual(value, withoutFields(cur, agReadOnlyFields)) {
+		w.Op, w.Action = "", actionUnchanged
+	}
+	return []plannedWrite{w}, nil
+}
+
+// planActiveGateEdit lets a person edit ActiveGate id's configuration, then
+// plans writing it.
+func (a *App) planActiveGateEdit(c *client.Client, id string) ([]plannedWrite, error) {
+	cur, err := readAGConfig(c, id)
+	if err != nil {
+		return nil, err
+	}
+	edited, changed, err := a.editValue(withoutFields(cur, agReadOnlyFields))
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		output.PrintInfo("Edit cancelled: the configuration is unchanged.")
+	}
+	return planActiveGateUpdate(c, id, edited)
+}
+
+// checkAutoUpdateFile refuses a configuration the cluster would take
+// differently than the file says.
+func checkAutoUpdateFile(id string, cur, value map[string]interface{}) error {
+	for _, f := range agFlaggedFields {
+		if _, inFile := value[f]; inFile {
+			if _, honoured := cur[f]; !honoured {
+				return &UsageError{Err: fmt.Errorf("this cluster ignores %s in ActiveGate auto-update (it takes effect only where the configuration already carries it); remove it from the file", f)}
+			}
+		}
+	}
+	if id != "" {
+		if _, ok := value["globalSetting"]; ok {
+			return &UsageError{Err: errors.New("one ActiveGate's configuration takes setting (ENABLED, DISABLED or INHERITED), not globalSetting")}
+		}
+		return nil
+	}
+	if _, ok := value["setting"]; ok || value["globalSetting"] == "INHERITED" {
+		return &UsageError{Err: errors.New("the global configuration takes globalSetting ENABLED or DISABLED; setting and INHERITED belong to one ActiveGate")}
+	}
+	return nil
+}
+
+// sendAGConfig PUTs a configuration, or POSTs it to the validator, which
+// checks it without saving.
+func sendAGConfig(c *client.Client, path string, value map[string]interface{}, validateOnly bool) writeResult {
+	var err error
+	action := actionUpdated
+	if validateOnly {
+		err, action = c.PostCluster(path+"/validator", nil, value, nil), actionValidated
+	} else {
+		err = c.PutCluster(path, nil, value, nil)
+	}
+	if err != nil {
+		return writeResult{Action: actionFailed, Error: toWriteError(err)}
+	}
+	return writeResult{Action: action}
+}
+
+// withoutFields is a copy of m without fields.
+func withoutFields(m map[string]interface{}, fields []string) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	for _, f := range fields {
+		delete(out, f)
+	}
+	return out
+}
+
+// clusterWindowReferences lists the cluster ActiveGate auto-update
+// configurations ("global", "ActiveGate <id>") that name cluster update
+// window windowID. A cluster whose configuration carries no updateWindows
+// ignores them, so nothing references a window there.
+func clusterWindowReferences(c *client.Client, windowID string) ([]string, error) {
+	global, err := readAGConfig(c, "")
+	if err != nil {
+		return nil, err
+	}
+	if _, honoured := global["updateWindows"]; !honoured {
+		return nil, nil
+	}
+	var refs []string
+	if namesWindow(global, windowID) {
+		refs = append(refs, "global")
+	}
+	var list map[string]interface{}
+	if err := c.GetCluster(clusterAGPath, map[string]string{"type": "CLUSTER"}, &list); err != nil {
+		return nil, err
+	}
+	gates, _ := list["activeGates"].([]interface{})
+	for _, g := range gates {
+		id := cell(g.(map[string]interface{}), "id")
+		cfg, err := readAGConfig(c, id)
+		if err != nil {
+			return nil, err
+		}
+		if namesWindow(cfg, windowID) {
+			refs = append(refs, "ActiveGate "+id)
+		}
+	}
+	return refs, nil
+}
+
+// namesWindow reports whether a configuration's updateWindows name windowID.
+func namesWindow(cfg map[string]interface{}, windowID string) bool {
+	list, _ := nested(cfg, "updateWindows")["windows"].([]interface{})
+	for _, w := range list {
+		if win, _ := w.(map[string]interface{}); win["id"] == windowID {
+			return true
+		}
+	}
+	return false
 }

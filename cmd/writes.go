@@ -80,6 +80,11 @@ type plannedWrite struct {
 	// Existing are the objects the plan listed for a create: a POST that
 	// answers with one of them overwrote it, and is reported as an update.
 	Existing map[string]bool
+	// Exec, when set, carries out a write that is not a settings object
+	// (cluster ActiveGate auto-update): it gets validateOnly and reports
+	// the action and error. Such a write validates its own way, so the
+	// validateOnly version gate does not apply to it.
+	Exec func(c *client.Client, validateOnly bool) writeResult
 }
 
 // writeSpec describes one write command for runWrites.
@@ -99,6 +104,10 @@ type writeSpec struct {
 	// ClusterToo accepts one cluster context besides environment contexts:
 	// settings writes work on both APIs.
 	ClusterToo bool
+	// ClusterOnly accepts one cluster context only (cluster ActiveGate
+	// auto-update); NotFound is its hint for a 404.
+	ClusterOnly bool
+	NotFound    string
 }
 
 // errCancelled is a write a person declined at the prompt.
@@ -155,7 +164,7 @@ func (a *App) runWrites(s writeSpec) error {
 	names, plans, err := a.planWrites(cfg, s)
 	if err != nil {
 		if a.onClusterContext(cfg) {
-			return clusterHint(err, cfg.CurrentContext, fetchSpec{Verb: s.Verb, Resource: s.Resource, Forbidden: hintClusterSettingsScopes})
+			return clusterHint(err, cfg.CurrentContext, s.clusterHints())
 		}
 		return err
 	}
@@ -175,6 +184,16 @@ func (a *App) runWrites(s writeSpec) error {
 		return err
 	}
 	return a.renderWriteReport(s, rep)
+}
+
+// clusterHints are the hints of s's errors on a cluster context: a
+// settings write's 403 needs the settings scopes on the cluster token.
+func (s writeSpec) clusterHints() fetchSpec {
+	f := fetchSpec{Verb: s.Verb, Resource: s.Resource, NotFound: s.NotFound}
+	if s.ClusterToo {
+		f.Forbidden = hintClusterSettingsScopes
+	}
+	return f
 }
 
 // confirm runs s.Confirm over every planned write, unless this is a dry
@@ -209,7 +228,12 @@ func (a *App) checkWriteContexts(cfg *config.Config, s writeSpec) error {
 	if err := a.checkEnvVarContext(cfg); err != nil {
 		return err
 	}
-	if !s.ClusterToo || !a.onClusterContext(cfg) {
+	switch {
+	case s.ClusterOnly:
+		if err := a.checkClusterContext(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
+			return err
+		}
+	case !s.ClusterToo || !a.onClusterContext(cfg):
 		if err := a.checkEnvironmentContexts(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
 			return err
 		}
@@ -273,7 +297,7 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 		if p.writes, err = s.Plan(name, c); err != nil {
 			return nil, err
 		}
-		if s.ValidateOnly {
+		if s.ValidateOnly && hasWrites(p.writes) {
 			p.version, p.versionErr = c.ClusterVersion()
 		}
 		return p, nil
@@ -354,10 +378,11 @@ func (s writeSpec) checkPlan(name string, p contextPlan, level config.SafetyLeve
 	return nil
 }
 
-// hasWrites reports whether ws would send anything.
+// hasWrites reports whether ws would send anything through the settings
+// API, whose validateOnly needs the version gate.
 func hasWrites(ws []plannedWrite) bool {
 	for _, w := range ws {
-		if w.Op != "" {
+		if w.Op != "" && w.Exec == nil {
 			return true
 		}
 	}
@@ -454,6 +479,11 @@ type settingsWriteItem struct {
 // executeWrite sends one planned write and reports its outcome.
 func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResult {
 	r := w.result("")
+	if w.Exec != nil && w.Op != "" {
+		done := w.Exec(c, validateOnly)
+		r.Action, r.Error = done.Action, done.Error
+		return r
+	}
 	var params map[string]string
 	if validateOnly {
 		params = map[string]string{"validateOnly": "true"}
