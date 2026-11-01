@@ -180,6 +180,9 @@ func clusterScopeFallback(fetch func(*client.Client, int) (fetched, error), path
 			ids = append(ids, it.SchemaID)
 		}
 		sort.Strings(ids)
+		// --limit is applied after merging: a small --limit still asks every
+		// schema (8 at a time). The merged order is by schema ID, so a
+		// per-schema stop could not know where the global cut falls.
 		return mergeSchemaListings(c, ids, limit, func(id string) func(*client.Client, int) (fetched, error) {
 			p := make(map[string]string, len(params)+1)
 			for k, v := range params {

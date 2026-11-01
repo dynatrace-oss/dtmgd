@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -209,8 +210,16 @@ func TestClusterScopeFallbackForEffectiveValues(t *testing.T) {
 	api, _, cfg := clusterSettingsFake(t, "", clusterFallbackRoutes("/api/cluster/v2/settings/effectiveValues"))
 	r := runCLI(t, cfg, "get", "settings", "--effective", "--scope", "cluster", "-o", "json")
 	wantObjectIDs(t, r, "a1", "a2", "b1")
-	if q := api.Queries(clusterEffective); len(q) < 2 || q[1].Get("scope") != "cluster" {
-		t.Errorf("queries = %v", q)
+	var ids []string
+	for _, q := range api.Queries(clusterEffective)[1:] {
+		if q.Get("scope") != "cluster" {
+			t.Errorf("scope = %q", q.Get("scope"))
+		}
+		ids = append(ids, q.Get("schemaIds"))
+	}
+	sort.Strings(ids)
+	if strings.Join(ids, ",") != "builtin:a,builtin:b,builtin:c" {
+		t.Errorf("per-schema schemaIds = %v", ids)
 	}
 }
 
@@ -240,4 +249,29 @@ func TestClusterSettings404WithMessageHasNoHostHint(t *testing.T) {
 	if r.Code != 4 || strings.Contains(r.Stderr, "port 9999") {
 		t.Errorf("%s", r)
 	}
+}
+
+func TestClusterScopeFallbackFailsOnANon404SchemaError(t *testing.T) {
+	routes := clusterFallbackRoutes("/api/cluster/v2/settings/objects")
+	routes["GET /api/cluster/v2/settings/objects schemaIds=builtin:b"] = route{Status: 400, Body: `{"error":{"code":400,"message":"Constraints violated"}}`}
+	_, _, cfg := clusterSettingsFake(t, "", routes)
+	r := runCLI(t, cfg, "get", "settings", "--scope", "cluster", "-o", "json")
+	if r.Code == 0 || strings.Contains(r.Stdout, "a1") {
+		t.Errorf("%s", r)
+	}
+}
+
+// TestClusterScopeFallbackKeepsAPartialSchema pins that a schema cut short
+// by the page cap makes the merged list partial: no totalCount, a note.
+func TestClusterScopeFallbackKeepsAPartialSchema(t *testing.T) {
+	routes := clusterFallbackRoutes("/api/cluster/v2/settings/objects")
+	routes["GET /api/cluster/v2/settings/objects schemaIds=builtin:a"] = route{Body: `{"items":[{"objectId":"a1"},{"objectId":"a2"}],"nextPageKey":"more"}`}
+	_, _, cfg := clusterSettingsFake(t, "", routes)
+	r := runCLI(t, cfg, "get", "settings", "--scope", "cluster", "--max-pages", "1", "-o", "json")
+	wantObjectIDs(t, r, "a1", "a2", "b1")
+	if strings.Contains(r.Stdout, "totalCount") {
+		t.Errorf("totalCount present:\n%s", r.Stdout)
+	}
+	r = runCLI(t, cfg, "get", "settings", "--scope", "cluster", "--max-pages", "1")
+	wantStderr(t, r, "Use --limit or narrower filters")
 }
