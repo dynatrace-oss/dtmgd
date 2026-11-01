@@ -98,7 +98,6 @@ func TestClusterWindowDelete403NamesServiceProviderAPI(t *testing.T) {
 	routes := agRoutes(flaggedGlobal)
 	routes[agGlobal] = route{Status: 403, File: "error_403.json"}
 	routes[clusterObjPrefix+"uw-c1"] = route{Body: `{"objectId":"uw-c1","schemaId":"builtin:deployment.management.update-windows","scope":"cluster","value":{}}`}
-	maps.Copy(routes, schemaCatalog(clusterSchemaPrefix, map[string]string{schemaUpdateWindows: "{}"}))
 	_, _, cfg := clusterSettingsFake(t, "readwrite-all", routes)
 	if r := runCLI(t, cfg, "delete", "settings", "uw-c1", "--yes"); r.Code != 5 || !strings.Contains(r.Stderr, "ServiceProviderAPI") {
 		t.Errorf("%s", r)

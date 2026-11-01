@@ -691,7 +691,7 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 	failErr := writeFailures(rep)
 	hint := writeHint(rep)
 	if a.agentMode() {
-		ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource}
+		ctx := &agentmode.ResponseContext{Verb: s.Verb, Resource: s.Resource, Warnings: rep.Warnings}
 		if failErr == nil {
 			return output.NewAgentPrinter(a.Out, ctx).Print(rep)
 		}

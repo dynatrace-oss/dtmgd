@@ -23,6 +23,7 @@ const (
 	// maxListedReferences is how many referencing objects a refusal names.
 	maxListedReferences = 10
 	hintReadSchemas     = "Reading settings schemas needs settings.read."
+	hintFindReferences  = "Checking which settings use this object needs settings.read."
 )
 
 // schemaDefinitions reads every schema's definition. A definition that
@@ -46,6 +47,12 @@ func schemaDefinitions(c *client.Client) (defs map[string]json.RawMessage, warni
 		go func() {
 			defer wg.Done()
 			for id := range ids {
+				mu.Lock()
+				failed := err != nil
+				mu.Unlock()
+				if failed {
+					continue // drain the IDs without fetching once a read failed
+				}
 				var def json.RawMessage
 				e := settingsGet(c, settingsSchemasPath+"/"+url.PathEscape(id), nil, &def)
 				mu.Lock()
@@ -154,7 +161,10 @@ func findReferences(c *client.Client, objectID string, schemas []string) ([]sett
 		"pageSize":  "500",
 	}, client.Paging{ListKey: "items"})
 	if err != nil {
-		return nil, readSchemasError(err)
+		if isForbidden(err) {
+			return nil, withHint(err, hintFindReferences)
+		}
+		return nil, err
 	}
 	var objs []settingsObject
 	if err := decodeItems(body, &objs); err != nil {

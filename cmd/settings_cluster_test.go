@@ -145,3 +145,20 @@ func TestClusterWritesKeepTheGuards(t *testing.T) {
 		t.Errorf("delete: %s", r)
 	}
 }
+
+func TestClusterDeleteRefusesAReferencedObject(t *testing.T) {
+	routes := map[string]route{
+		clusterObjPrefix + "obj-x": {Body: `{"objectId":"obj-x","schemaId":"builtin:test.multi","scope":"cluster","updateToken":"t-x","value":{}}`},
+		clusterDelPrefix + "obj-x": {Body: ""},
+		clusterObjects:             {Body: `{"items":[{"objectId":"user-1","schemaId":"builtin:test.user","scope":"cluster","summary":"Uses it","value":{"ref":"obj-x"}}],"totalCount":1}`},
+	}
+	maps.Copy(routes, schemaCatalog(clusterSchemaPrefix, map[string]string{
+		"builtin:test.multi": `{"multiObject":true}`,
+		"builtin:test.user":  `{"properties":{"ref":{"type":"setting","referencedType":"builtin:test.multi"}}}`,
+	}))
+	api, _, cfg := clusterSettingsFake(t, "readwrite-all", routes)
+	r := runCLI(t, cfg, "delete", "settings", "obj-x", "--yes")
+	if r.Code != 1 || !strings.Contains(r.Stderr, "user-1") || api.Hits(clusterObjects) != 1 || api.Hits(clusterDelPrefix+"obj-x") != 0 {
+		t.Errorf("%s", r)
+	}
+}

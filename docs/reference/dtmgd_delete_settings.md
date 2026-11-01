@@ -11,7 +11,8 @@ A person at a terminal confirms the delete; --yes skips the question, and is
 required in agent mode or without a terminal. An object that other
 settings still reference (a schema's "setting" properties, such as an
 alerting profile a notification uses) is not deleted: change or delete
-those settings first. Only Settings 2.0 is checked; dashboards and other
+those settings first. On a cluster context, an update window that the
+ActiveGates' auto-update uses is not deleted either. Only Settings 2.0 is checked; dashboards and other
 configuration are not.
 
 --dry-run shows what would be deleted, with GETs only, at any write level.

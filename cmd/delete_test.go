@@ -23,19 +23,6 @@ const (
 	refWindow      = `{"types":{"W":{"properties":{"w":{"type":"list","items":{"type":"setting","referencedType":"builtin:deployment.management.update-windows"}}}}}}`
 )
 
-// schemaCatalog is the schema list and one definition route per schema, at
-// the schemas path prefix (without the method).
-func schemaCatalog(prefix string, defs map[string]string) map[string]route {
-	routes := map[string]route{}
-	var items []string
-	for id, def := range defs {
-		items = append(items, fmt.Sprintf(`{"schemaId":%q}`, id))
-		routes["GET "+prefix+"/"+id] = route{Body: def}
-	}
-	routes["GET "+prefix] = route{Body: fmt.Sprintf(`{"items":[%s],"totalCount":%d}`, strings.Join(items, ","), len(items))}
-	return routes
-}
-
 // deleteCatalog is the schemas deleteFake serves: a notification that
 // references alerting profiles, and the two update schemas that reference
 // update windows.
@@ -109,7 +96,7 @@ func TestDeleteRefusesAReferencedWindow(t *testing.T) {
 	}
 }
 
-// notification is a listed notification object that references profile id.
+// refNotification is a listed notification object that references profile id.
 func refNotification(id, profile string) string {
 	return fmt.Sprintf(`{"objectId":%q,"schemaId":"builtin:problem.notifications","scope":"environment","summary":"Mail %s","value":{"alertingProfile":%q}}`, id, id, profile)
 }
@@ -189,25 +176,42 @@ func TestDeleteSkipsAnUnreadableDefinition(t *testing.T) {
 }
 
 func TestDeleteFailsWhenTheScanFails(t *testing.T) {
-	for status, want := range map[int]string{400: "", 403: "settings.read"} {
-		api, cfg := deleteFake(t, "readwrite-all", "", map[string]route{notifPath: {Status: status, Body: `{"error":{"code":1,"message":"nope"}}`}})
+	denied := `{"error":{"code":403,"message":"denied"}}`
+	badReq := `{"error":{"code":400,"message":"nope"}}`
+	cases := map[string]struct {
+		key    string
+		status int
+		body   string
+		hint   string
+	}{
+		"listing 400":    {notifPath, 400, badReq, ""},
+		"listing 403":    {notifPath, 403, denied, "Hint: Checking which settings use this object needs settings.read."},
+		"definition 400": {"GET " + envSchemas + "/builtin:problem.notifications", 400, badReq, ""},
+		"definition 403": {"GET " + envSchemas + "/builtin:problem.notifications", 403, denied, "Hint: " + hintReadSchemas},
+	}
+	for name, tc := range cases {
+		api, cfg := deleteFake(t, "readwrite-all", "", map[string]route{tc.key: {Status: tc.status, Body: tc.body}})
 		r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes")
-		if r.Code == 0 || api.Hits(deletePrefix+"obj-alerting-1") != 0 || !strings.Contains(r.Stderr, want) {
-			t.Errorf("%d: %s", status, r)
+		if r.Code == 0 || api.Hits(deletePrefix+"obj-alerting-1") != 0 || !strings.Contains(r.Stderr, tc.hint) {
+			t.Errorf("%s: %s", name, r)
 		}
 	}
 }
 
-func TestReferencingSchemas(t *testing.T) {
-	defs := map[string]json.RawMessage{
-		"builtin:problem.notifications": json.RawMessage(`{"properties":{"alertingProfile":{"type":"setting","referencedType":"builtin:alerting.profile"}}}`),
-		"builtin:x.nested":              json.RawMessage(`{"types":{"F":{"properties":{"mz":{"type":"list","items":{"type":"setting","referencedType":"builtin:alerting.profile"}}}}}}`),
-		"builtin:other":                 json.RawMessage(`{"properties":{"a":{"type":"setting","referencedType":"builtin:management-zones"}}}`),
-		"builtin:plain":                 json.RawMessage(`{"properties":{"a":{"type":"text","referencedType":"builtin:alerting.profile"}}}`),
+func TestDeleteAgentModeCarriesTheWarnings(t *testing.T) {
+	defs := deleteCatalog()
+	defs["builtin:unreadable"] = "{}"
+	catalog := schemaCatalog(envSchemas, defs)
+	catalog["GET "+envSchemas+"/builtin:unreadable"] = route{Status: 404, Body: `{"error":{"code":404,"message":"gone"}}`}
+	_, cfg := deleteFake(t, "readwrite-all", "", catalog)
+	r := runCLIWithEnv(t, map[string]string{"CLAUDECODE": "1"}, cfg, "delete", "settings", "obj-alerting-1", "--yes")
+	var env struct {
+		Context struct {
+			Warnings []string `json:"warnings"`
+		} `json:"context"`
 	}
-	got := strings.Join(referencingSchemas(defs, "builtin:alerting.profile"), ",")
-	if got != "builtin:problem.notifications,builtin:x.nested" {
-		t.Errorf("got %s", got)
+	if err := json.Unmarshal([]byte(r.Stdout), &env); err != nil || r.Code != 0 || len(env.Context.Warnings) != 1 || !strings.Contains(env.Context.Warnings[0], "builtin:unreadable") {
+		t.Errorf("%v\n%s", err, r)
 	}
 }
 
