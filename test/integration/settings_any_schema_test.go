@@ -80,6 +80,9 @@ func deleteTestObjects(t testing.TB, cfg, ctx string, schemas ...string) {
 	t.Helper()
 	for _, schema := range schemas {
 		list, r := listObjects(t, ctx, schema, testScope(ctx))
+		if r.Code == 5 {
+			continue // no settings.read: nothing can be listed, and the test skipped
+		}
 		if r.Code != 0 {
 			t.Errorf("cleanup: listing %s: %s", schema, brief(r))
 			continue
@@ -98,6 +101,9 @@ func deleteTestObjects(t testing.TB, cfg, ctx string, schemas ...string) {
 // list the referencing schema before the referenced one.
 func cleanupTestObjects(t *testing.T, cfg, ctx string, schemas ...string) {
 	t.Helper()
+	// A token without settings.read skips the test, as the other tests do.
+	_, r := listObjects(t, ctx, schemas[0], testScope(ctx))
+	skipWithoutScope(t, r, []string{"get", "settings"})
 	deleteTestObjects(t, cfg, ctx, schemas...)
 	t.Cleanup(func() { deleteTestObjects(t, cfg, ctx, schemas...) })
 }
@@ -263,8 +269,9 @@ func checkCopyRefused(t *testing.T, cfg, ctx string) {
 		delete(m, "updateToken")
 		m["externalId"] = notificationExternalID + "-copy"
 	})
-	if r := writeRun(t, cfg, ctx, "apply", "-f", file); r.Code != 2 {
-		t.Errorf("a copy made from an export: %s, want exit 2", brief(r))
+	r := writeRun(t, cfg, ctx, "apply", "-f", file)
+	if r.Code != 2 || !strings.Contains(r.Err, "masked secret") {
+		t.Errorf("a copy made from an export: %s, want exit 2 naming the masked secret (stderr mentions it: %v)", brief(r), strings.Contains(r.Err, "masked secret"))
 	}
 	if n := len(testObjects(t, ctx, notificationSchema, "environment")); n != 1 {
 		t.Errorf("%d test notifications are listed after the refused copy, want 1", n)
@@ -407,12 +414,12 @@ func TestExportsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(items(t, sample, "items")) == 0 {
+		t.Skip("the environment has no settings to round-trip")
+	}
 	file := filepath.Join(t.TempDir(), "export.json")
 	if err := os.WriteFile(file, data, 0o600); err != nil {
 		t.Fatal(err)
-	}
-	if len(items(t, sample, "items")) == 0 {
-		t.Skip("the environment has no settings to round-trip")
 	}
 	r := writeRun(t, cfg, ctx, "apply", "-f", file, "--dry-run", "-o", "json")
 	skipWithoutScope(t, r, []string{"apply", "settings"})
@@ -441,6 +448,13 @@ func TestClusterScopeListing(t *testing.T) {
 		skipWithoutScope(t, r, args)
 		if r.Code != 0 {
 			t.Errorf("%v: %s", args[:3], brief(r))
+			continue
+		}
+		var body map[string]any
+		if err := json.Unmarshal(r.Out, &body); err != nil {
+			t.Errorf("%v: stdout is not JSON: %v", args[:3], err)
+		} else if _, ok := body["items"].([]any); !ok {
+			t.Errorf("%v: the response has no items list", args[:3])
 		}
 	}
 }
