@@ -41,8 +41,13 @@ func writeFile(t *testing.T, content string) string {
 // windowFile is an apply file for a disabled daily test window: disabled,
 // and in 2030, so it opens no update even while it exists.
 func windowFile(t *testing.T, name string, duration int) string {
+	return windowFileAt(t, "environment", name, duration)
+}
+
+// windowFileAt is windowFile at scope.
+func windowFileAt(t *testing.T, scope, name string, duration int) string {
 	return writeFile(t, fmt.Sprintf(`schemaId: %s
-scope: environment
+scope: %s
 externalId: %s
 value:
   enabled: false
@@ -52,13 +57,14 @@ value:
     every: 1
     updateTime: {startTime: "03:00", timeZone: "GMT+00:00", duration: %d}
     recurrenceRange: {start: "2030-01-01T00:00:00Z", end: "2031-01-01T00:00:00Z"}
-`, updateWindowsSchema, name, name, duration))
+`, updateWindowsSchema, scope, name, name, duration))
 }
 
 // applied runs a write and returns its report, failing on a non-zero exit.
 func applied(t *testing.T, cfg, ctx string, args ...string) writeReport {
 	t.Helper()
 	r := writeRun(t, cfg, ctx, append(args, "-o", "json")...)
+	skipWithoutScope(t, r, append(args, ""))
 	if r.Code != 0 {
 		t.Fatalf("%v: %s", args[:1], brief(r))
 	}
@@ -73,7 +79,13 @@ func applied(t *testing.T, cfg, ctx string, args ...string) writeReport {
 // testWindowPrefix (or exactly name, when given).
 func testWindows(t *testing.T, ctx, name string) []string {
 	t.Helper()
-	body := decode[map[string]any](t, "get", "settings", "--schema", updateWindowsSchema, "--scope", "environment", "--context", ctx, "-o", "json")
+	return testWindowsAt(t, ctx, "environment", name)
+}
+
+// testWindowsAt is testWindows at scope.
+func testWindowsAt(t *testing.T, ctx, scope, name string) []string {
+	t.Helper()
+	body := decode[map[string]any](t, "get", "settings", "--schema", updateWindowsSchema, "--scope", scope, "--context", ctx, "-o", "json")
 	var ids []string
 	for _, item := range items(t, body, "items") {
 		m, _ := item.(map[string]any)

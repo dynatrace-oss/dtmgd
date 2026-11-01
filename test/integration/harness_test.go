@@ -54,7 +54,7 @@ func run(t testing.TB, args ...string) result {
 }
 
 // writeVerbs are the only verbs writeRun runs.
-var writeVerbs = map[string]bool{"apply": true, "create": true, "delete": true}
+var writeVerbs = map[string]bool{"apply": true, "create": true, "delete": true, "update": true}
 
 // writeConfig returns a temporary copy of DTMGD_IT_CONFIG in which only the
 // write context, DTMGD_IT_WRITE_ENV, may write (readwrite-all), and that
@@ -62,8 +62,15 @@ var writeVerbs = map[string]bool{"apply": true, "create": true, "delete": true}
 // variables the test skips.
 func writeConfig(t *testing.T) (path, ctx string) {
 	t.Helper()
+	return writeConfigFor(t, "DTMGD_IT_WRITE_ENV")
+}
+
+// writeConfigFor is writeConfig for the write context named by the
+// variable envVar: DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER.
+func writeConfigFor(t *testing.T, envVar string) (path, ctx string) {
+	t.Helper()
 	orig := requireEnv(t, "DTMGD_IT_CONFIG")
-	ctx = requireEnv(t, "DTMGD_IT_WRITE_ENV")
+	ctx = requireEnv(t, envVar)
 	cfg, err := config.LoadFrom(orig)
 	if err != nil {
 		t.Fatalf("loading the config: %v", err)
@@ -97,8 +104,8 @@ func writeRun(t testing.TB, cfg, ctx string, args ...string) result {
 		t.Fatalf("writeRun runs apply, create and delete only, not %q", args)
 		return result{}
 	}
-	if want := os.Getenv("DTMGD_IT_WRITE_ENV"); ctx != want && !slices.Contains(args, "--dry-run") {
-		t.Fatalf("writeRun writes to %q only, not %q", want, ctx)
+	if !isWriteContext(ctx) && !slices.Contains(args, "--dry-run") {
+		t.Fatalf("writeRun writes to DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER only, not %q", ctx)
 		return result{}
 	}
 	for _, arg := range args {
@@ -113,6 +120,17 @@ func writeRun(t testing.TB, cfg, ctx string, args ...string) result {
 	var out, errb bytes.Buffer
 	code := cmd.Run(full, &out, &errb)
 	return result{Out: out.Bytes(), Err: errb.String(), Code: code}
+}
+
+// isWriteContext reports whether ctx is one of the contexts the suite may
+// write to: DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER.
+func isWriteContext(ctx string) bool {
+	for _, v := range []string{"DTMGD_IT_WRITE_ENV", "DTMGD_IT_WRITE_CLUSTER"} {
+		if w := os.Getenv(v); w != "" && w == ctx {
+			return true
+		}
+	}
+	return false
 }
 
 var (
