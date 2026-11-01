@@ -52,6 +52,9 @@ type placement struct {
 	InsertAfter, InsertBefore *string
 	Current, New              int
 	AnchorPlanned             int
+	// AnchorBefore is true when the planned anchor fills InsertBefore,
+	// false when it fills InsertAfter.
+	AnchorBefore bool
 }
 
 // positionChange is the move a report shows.
@@ -115,54 +118,91 @@ func placeObject(order []orderEntry, selfID string, pos settingsPosition) (place
 			pl.InsertBefore = &empty
 		}
 	case "after":
-		pl.InsertAfter, pl.New = &others[at].ObjectID, at+2
+		pl.New = at + 2
+		pl.anchorAfter(others[at])
 	case "before":
 		pl.New = at + 1
 		switch {
 		case update:
-			pl.InsertBefore = &others[at].ObjectID
+			pl.anchorBefore(others[at])
 		case at == 0:
 			pl.InsertAfter = &empty
 		default:
-			pl.InsertAfter = &others[at-1].ObjectID
+			pl.anchorAfter(others[at-1])
 		}
 	}
 	return pl, nil
 }
 
+// anchorAfter makes e the object to insert after: its objectId, or, for an
+// object this file creates, the plan index whose result fills it.
+func (pl *placement) anchorAfter(e orderEntry) {
+	if e.Planned > 0 {
+		pl.AnchorPlanned, pl.AnchorBefore = e.Planned, false
+		return
+	}
+	pl.InsertAfter = &e.ObjectID
+}
+
+// anchorBefore is anchorAfter for InsertBefore.
+func (pl *placement) anchorBefore(e orderEntry) {
+	if e.Planned > 0 {
+		pl.AnchorPlanned, pl.AnchorBefore = e.Planned, true
+		return
+	}
+	pl.InsertBefore = &e.ObjectID
+}
+
+// moveEntry is order with e put at the 1-based place at, after removing the
+// entry whose objectId is selfID ("" for a create). It never changes order.
+func moveEntry(order []orderEntry, selfID string, at int, e orderEntry) []orderEntry {
+	rest := make([]orderEntry, 0, len(order)+1)
+	for _, o := range order {
+		if selfID == "" || o.ObjectID != selfID {
+			rest = append(rest, o)
+		}
+	}
+	at = max(0, min(at-1, len(rest)))
+	return append(rest[:at], append([]orderEntry{e}, rest[at:]...)...)
+}
+
 // anchorIndex finds pos's anchor, an index into others (the order without
 // self).
 func anchorIndex(order, others []orderEntry, selfID string, pos settingsPosition) (int, error) {
-	anchor, ok := findEntry(order, pos.Ref)
-	if !ok {
+	idx := findEntry(order, pos.Ref)
+	if idx < 0 {
 		return 0, withHint(fmt.Errorf("position %s: no object %q at this scope", pos, pos.Ref),
 			"List the objects and their order: dtmgd get settings --schema <schema-id> --scope <scope>")
 	}
-	if selfID != "" && anchor.ObjectID == selfID {
+	if selfID != "" && order[idx].ObjectID == selfID {
 		return 0, &UsageError{Err: fmt.Errorf("position %s: an object cannot be placed relative to itself", pos)}
 	}
-	for i, o := range others {
-		if o.ObjectID == anchor.ObjectID {
-			return i, nil
+	at := idx
+	for i := 0; i < idx; i++ {
+		if selfID != "" && order[i].ObjectID == selfID {
+			at--
 		}
 	}
-	return 0, fmt.Errorf("position %s: no object %q at this scope", pos, pos.Ref)
+	if at >= len(others) {
+		return 0, fmt.Errorf("position %s: no object %q at this scope", pos, pos.Ref)
+	}
+	return at, nil
 }
 
-// findEntry is the entry whose objectId is ref, else the one whose
-// externalId is.
-func findEntry(order []orderEntry, ref string) (orderEntry, bool) {
-	for _, e := range order {
+// findEntry is the index of the entry whose objectId is ref, else of the
+// one whose externalId is, else -1.
+func findEntry(order []orderEntry, ref string) int {
+	for i, e := range order {
 		if e.ObjectID == ref {
-			return e, true
+			return i
 		}
 	}
-	for _, e := range order {
+	for i, e := range order {
 		if e.ExternalID == ref {
-			return e, true
+			return i
 		}
 	}
-	return orderEntry{}, false
+	return -1
 }
 
 // setPlacement records pl on w: the fields the request carries, and the
@@ -170,6 +210,7 @@ func findEntry(order []orderEntry, ref string) (orderEntry, bool) {
 func (w *plannedWrite) setPlacement(pl placement) {
 	w.InsertAfter, w.InsertBefore = pl.InsertAfter, pl.InsertBefore
 	w.Position = &positionChange{Current: pl.Current, New: pl.New}
+	w.anchorFrom, w.anchorBefore = pl.AnchorPlanned, pl.AnchorBefore
 }
 
 // addPlacement puts w's position fields into a request body: a create

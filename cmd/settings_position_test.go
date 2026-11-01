@@ -296,3 +296,66 @@ func TestDryRunReportsThePositionBlock(t *testing.T) {
 		t.Errorf("update yaml lacks the position block:\n%s", r)
 	}
 }
+
+// anchorFile creates a (first) and then b (after:a), in one file.
+const anchorFile = "externalId: a\nschemaId: " + orderedSchema + "\nscope: environment\nposition: first\nvalue: {name: a}\n---\n" +
+	"externalId: b\nschemaId: " + orderedSchema + "\nscope: environment\nposition: after:a\nvalue: {name: b}\n"
+
+func anchorRoutes(seq ...string) map[string]route {
+	routes := orderedRoutes()
+	routes[postObjects] = route{Seq: seq}
+	return routes
+}
+
+func TestPositionAnchorEarlierInFile(t *testing.T) {
+	api, cfg := applyFake(t, "readwrite-all", anchorRoutes(`[{"code":200,"objectId":"new-a"}]`, `[{"code":200,"objectId":"new-b"}]`))
+	r, rep := orderedApply(t, cfg, anchorFile)
+	if r.Code != 0 || actions(rep) != "created,created" {
+		t.Fatalf("%s", r)
+	}
+	bodies := api.Bodies(postObjects)
+	if len(bodies) != 2 {
+		t.Fatalf("%d POSTs, want 2", len(bodies))
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(bodies[1]), &items); err != nil {
+		t.Fatal(err)
+	}
+	if items[0]["insertAfter"] != "new-a" {
+		t.Errorf("second body %v, want insertAfter new-a", items[0])
+	}
+
+	_, cfg = applyFake(t, "readwrite-all", orderedRoutes())
+	r, rep = orderedApply(t, cfg, anchorFile, "--dry-run")
+	if r.Code != 0 || len(rep.Results) != 2 || rep.Results[0].Position.New != 1 || rep.Results[1].Position.New != 2 {
+		t.Errorf("dry run positions: %s", r)
+	}
+}
+
+func TestPositionAnchorNotWrittenFailsOnlyItsDependent(t *testing.T) {
+	routes := orderedRoutes()
+	routes[postObjects] = route{Status: 400, Body: `[{"code":400,"error":{"code":400,"message":"bad value"}}]`}
+	api, cfg := applyFake(t, "readwrite-all", routes)
+	r, rep := orderedApply(t, cfg, anchorFile)
+	if actions(rep) != "failed,failed" || rep.Results[1].Error == nil || rep.Results[1].Error.Message != "its position anchor was not written" {
+		t.Fatalf("%s", r)
+	}
+	if api.Hits(postObjects) != 1 {
+		t.Errorf("%d POSTs, want 1", api.Hits(postObjects))
+	}
+}
+
+func TestPositionAnchorUnderValidateOnly(t *testing.T) {
+	api, cfg := applyFake(t, "readwrite-all", anchorRoutes(`[{"code":200}]`))
+	r, rep := orderedApply(t, cfg, anchorFile, "--validate-only")
+	if r.Code != 0 || actions(rep) != "validated,validated" {
+		t.Fatalf("%s", r)
+	}
+	bodies := api.Bodies(postObjects)
+	if len(bodies) != 2 || strings.Contains(bodies[1], "insertAfter") {
+		t.Errorf("second body %v, want no insertAfter", bodies)
+	}
+	if want := "validated without its position: its anchor is created by this file"; rep.Results[1].Note != want || rep.Results[0].Note != "" {
+		t.Errorf("notes %q, %q", rep.Results[0].Note, rep.Results[1].Note)
+	}
+}

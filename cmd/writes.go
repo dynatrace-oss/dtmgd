@@ -50,6 +50,9 @@ type writeResult struct {
 	Value   map[string]interface{} `json:"value,omitempty" yaml:"value,omitempty"`
 	// Position is the move within an ordered schema, when one was asked for.
 	Position *positionChange `json:"position,omitempty" yaml:"position,omitempty"`
+	// Note explains a result that is not what it seems, such as a
+	// validation that left out the position.
+	Note string `json:"note,omitempty" yaml:"note,omitempty"`
 }
 
 // writeError is why one object's write failed, in the API's own terms.
@@ -87,6 +90,11 @@ type plannedWrite struct {
 	InsertAfter, InsertBefore *string
 	// Position is the move the report shows.
 	Position *positionChange
+	// anchorFrom is the 1-based plan index of a create in this file whose
+	// objectId fills the anchor when the write executes (0: none);
+	// anchorBefore says it fills InsertBefore rather than InsertAfter.
+	anchorFrom   int
+	anchorBefore bool
 	// Existing are the objects the plan listed for a create: a POST that
 	// answers with one of them overwrote it, and is reported as an update.
 	Existing map[string]bool
@@ -453,13 +461,7 @@ func (w plannedWrite) result(context string) writeResult {
 // object its own outcome.
 func (a *App) executeWrites(cfg *config.Config, s writeSpec, names []string, plans map[string]contextPlan) ([]writeResult, error) {
 	results, err := client.MultiRequestNamed(cfg, a.envSpec(), a.Opts.Concurrency, a.clientOptions(), func(name string, c *client.Client) (interface{}, error) {
-		var out []writeResult
-		for _, w := range plans[name].writes {
-			r := executeWrite(c, w, s.ValidateOnly)
-			r.Context = name
-			out = append(out, r)
-		}
-		return out, nil
+		return executeContext(c, name, plans[name].writes, s.ValidateOnly), nil
 	})
 	if err != nil {
 		return nil, err
@@ -477,6 +479,53 @@ func (a *App) executeWrites(cfg *config.Config, s writeSpec, names []string, pla
 		all = append(all, byName[name]...)
 	}
 	return all, nil
+}
+
+// executeContext sends one context's writes in plan order, filling each
+// position anchor created earlier in the file with that write's objectId.
+func executeContext(c *client.Client, name string, writes []plannedWrite, validateOnly bool) []writeResult {
+	out := make([]writeResult, 0, len(writes))
+	ids := make([]string, len(writes)+1) // objectId by 1-based plan index
+	for i, w := range writes {
+		note, blocked := resolveAnchor(&w, ids, validateOnly)
+		var r writeResult
+		if blocked {
+			r = w.result("")
+			r.Action, r.Error = actionFailed, &writeError{Message: "its position anchor was not written"}
+		} else {
+			r = executeWrite(c, w, validateOnly)
+			r.Note = note
+			if r.Error == nil {
+				ids[i+1] = r.ObjectID
+			}
+		}
+		r.Context = name
+		out = append(out, r)
+	}
+	return out
+}
+
+// resolveAnchor fills w's position anchor from an earlier write of the
+// file. Under validateOnly nothing was written, so the position is left
+// out and a note says so. blocked is true when the anchor's write failed.
+func resolveAnchor(w *plannedWrite, ids []string, validateOnly bool) (note string, blocked bool) {
+	if w.anchorFrom == 0 {
+		return "", false
+	}
+	if validateOnly {
+		w.InsertAfter, w.InsertBefore = nil, nil
+		return "validated without its position: its anchor is created by this file", false
+	}
+	id := ids[w.anchorFrom]
+	if id == "" {
+		return "", true
+	}
+	if w.anchorBefore {
+		w.InsertBefore = &id
+	} else {
+		w.InsertAfter = &id
+	}
+	return "", false
 }
 
 // failAll reports every write of a context that could not be reached.

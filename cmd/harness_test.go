@@ -37,6 +37,9 @@ type route struct {
 	// Drop closes the connection without answering, as a network failure
 	// after the request was sent does.
 	Drop bool
+	// Seq, when set, replaces Body: bodies served in order, the last one
+	// repeating, so one route can answer two requests differently.
+	Seq []string
 }
 
 // fakeAPI is an httptest server answering from a route table.
@@ -56,11 +59,12 @@ type fakeAPI struct {
 	headers map[string][]http.Header
 	escaped map[string][]string
 	bodies  map[string][]string
+	seq     map[string]int
 }
 
 func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}, escaped: map[string][]string{}, bodies: map[string][]string{}}
+	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}, escaped: map[string][]string{}, bodies: map[string][]string{}, seq: map[string]int{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
 		q := r.URL.Query()
@@ -92,6 +96,12 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 			return
 		}
 		body := rt.Body
+		if len(rt.Seq) > 0 {
+			f.mu.Lock()
+			body = rt.Seq[min(f.seq[key], len(rt.Seq)-1)]
+			f.seq[key]++
+			f.mu.Unlock()
+		}
 		if rt.File != "" {
 			b, err := os.ReadFile(filepath.Join("testdata", "api", rt.File))
 			if err != nil {

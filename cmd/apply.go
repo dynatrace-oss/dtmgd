@@ -168,6 +168,8 @@ type applyPlanner struct {
 	// order is each scope's objects in server order, for placing objects;
 	// separate from listed, which the lookups use.
 	order map[string][]orderEntry
+	// cur is the 1-based plan index of the object being planned.
+	cur int
 }
 
 // planApply resolves what apply would do with each object in one context.
@@ -178,6 +180,7 @@ func planApply(c *client.Client, objs []applyObject) ([]plannedWrite, error) {
 	writes := make([]plannedWrite, 0, len(objs))
 	targets := map[string]int{}
 	for i, o := range objs {
+		p.cur = i + 1
 		w, err := p.plan(o)
 		if err != nil {
 			return nil, err
@@ -301,10 +304,12 @@ func (o applyObject) position() settingsPosition {
 	return pos
 }
 
-// placeNew places a create in its scope's order, when o asks for it.
+// placeNew places a create in its scope's order and records it there, so
+// a later object can name it. The report and the request carry a position
+// only when o asks for one.
 func (p *applyPlanner) placeNew(w *plannedWrite, shape settingsSchemaShape, o applyObject) error {
 	pos := o.position()
-	if err := requireOrdered(o.SchemaID, shape, pos); err != nil || pos.Kind == "" {
+	if err := requireOrdered(o.SchemaID, shape, pos); err != nil || !shape.Ordered {
 		return err
 	}
 	order, err := p.scopeOrder(o.SchemaID, o.Scope)
@@ -312,14 +317,18 @@ func (p *applyPlanner) placeNew(w *plannedWrite, shape settingsSchemaShape, o ap
 		return err
 	}
 	pl, err := placeObject(order, "", pos)
-	if err == nil {
+	if err != nil {
+		return err
+	}
+	if pos.Kind != "" {
 		w.setPlacement(pl)
 	}
-	return err
+	p.order[orderKey(o.SchemaID, o.Scope)] = moveEntry(order, "", pl.New, orderEntry{ExternalID: o.ExternalID, Planned: p.cur})
+	return nil
 }
 
 // placeExisting places an existing object cur, or returns nil when o asks
-// for no position.
+// for no position. A move is recorded in the scope's order.
 func (p *applyPlanner) placeExisting(o applyObject, cur settingsObject) (*placement, error) {
 	pos := o.position()
 	if pos.Kind == "" {
@@ -341,12 +350,23 @@ func (p *applyPlanner) placeExisting(o applyObject, cur settingsObject) (*placem
 		return nil, err
 	}
 	pl, err := placeObject(order, cur.ObjectID, pos)
-	return &pl, err
+	if err != nil {
+		return &pl, err
+	}
+	if i := findEntry(order, cur.ObjectID); i >= 0 {
+		p.order[orderKey(o.SchemaID, scope)] = moveEntry(order, cur.ObjectID, pl.New, order[i])
+	}
+	return &pl, nil
+}
+
+// orderKey names a scope's order; the environment's two scope names are one.
+func orderKey(schemaID, scope string) string {
+	return schemaID + "\x00" + canonicalScope(scope)
 }
 
 // scopeOrder is the order of schemaID's objects at scope, built once.
 func (p *applyPlanner) scopeOrder(schemaID, scope string) ([]orderEntry, error) {
-	key := schemaID + "\x00" + scope
+	key := orderKey(schemaID, scope)
 	if o, ok := p.order[key]; ok {
 		return o, nil
 	}
