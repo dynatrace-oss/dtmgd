@@ -24,11 +24,12 @@ func windowObject(id string) route {
 func deleteFake(t *testing.T, level, refs string) (*fakeAPI, string) {
 	t.Helper()
 	routes := map[string]route{
-		objPrefix + "obj-alerting-1":    alertingObject("obj-alerting-1", "Default"),
-		objPrefix + "uw-weekly":         windowObject("uw-weekly"),
-		deletePrefix + "obj-alerting-1": {Body: ""},
-		deletePrefix + "uw-weekly":      {Body: ""},
-		referencesPath:                  {Body: refs},
+		"GET /e/env1/api/v2/settings/schemas/builtin:alerting.profile": {Body: `{"multiObject":true}`},
+		objPrefix + "obj-alerting-1":                                   alertingObject("obj-alerting-1", "Default"),
+		objPrefix + "uw-weekly":                                        windowObject("uw-weekly"),
+		deletePrefix + "obj-alerting-1":                                {Body: ""},
+		deletePrefix + "uw-weekly":                                     {Body: ""},
+		referencesPath:                                                 {Body: refs},
 	}
 	if level == "" {
 		api := newFakeAPI(t, routes)

@@ -172,8 +172,13 @@ func jsonRoundTrip(v, out interface{}) error {
 
 // settingsSchemaShape is the part of a schema definition writes need.
 type settingsSchemaShape struct {
-	MultiObject bool   `json:"multiObject"`
-	KeyProperty string `json:"keyProperty"`
+	MultiObject bool                      `json:"multiObject"`
+	KeyProperty string                    `json:"keyProperty"`
+	Ordered     bool                      `json:"ordered"`
+	Properties  map[string]schemaProperty `json:"properties"`
+	Types       map[string]struct {
+		Properties map[string]schemaProperty `json:"properties"`
+	} `json:"types"`
 }
 
 // schemaShape reads schemaID's definition.

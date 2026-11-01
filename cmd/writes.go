@@ -77,6 +77,9 @@ type plannedWrite struct {
 	Action                                                      string
 	ObjectID, SchemaID, Scope, ExternalID, UpdateToken, Summary string
 	Value, Current                                              map[string]interface{}
+	// ReportValue is what a dry-run report shows as value: Value with its
+	// secrets masked by guardSecrets.
+	ReportValue map[string]interface{}
 	// Existing are the objects the plan listed for a create: a POST that
 	// answers with one of them overwrote it, and is reported as an update.
 	Existing map[string]bool
@@ -303,6 +306,9 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 		if p.writes, err = s.Plan(name, c); err != nil {
 			return nil, err
 		}
+		if err = guardSecrets(c, p.writes, s.DryRun); err != nil {
+			return nil, err
+		}
 		if s.ValidateOnly && hasWrites(p.writes) {
 			p.version, p.versionErr = c.ClusterVersion()
 		}
@@ -423,7 +429,7 @@ func plannedResults(names []string, plans map[string]contextPlan) []writeResult 
 	for _, name := range names {
 		for _, w := range plans[name].writes {
 			r := w.result(name)
-			r.Action, r.Current, r.Value = w.Action, w.Current, w.Value
+			r.Action, r.Current, r.Value = w.Action, w.Current, w.ReportValue
 			results = append(results, r)
 		}
 	}
