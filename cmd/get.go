@@ -24,11 +24,13 @@ Cluster resources (need a cluster context: one without env-id):
   environments (envs)   The cluster's environments
   nodes (node)          The cluster's nodes, their state, version and roles
   license-usage         Each environment's total billed license usage
+  activegate-updates    How the cluster's ActiveGates update automatically
 
 Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		RunE: requireSubcommand,
 	}
 	cmd.AddCommand(
+		newGetActiveGateUpdatesCmd(a),
 		newGetEntityTypesCmd(a),
 		newGetEntitiesCmd(a),
 		newGetEnvironmentsCmd(a),

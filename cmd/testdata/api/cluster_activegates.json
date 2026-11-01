@@ -1,0 +1,6 @@
+{"activeGates": [
+  {"id": "ag-1", "hostname": "ag1.example.com", "type": "CLUSTER", "version": "1.347.0.20260901-120000",
+   "autoUpdateSettings": {"setting": "INHERITED", "effectiveSetting": "ENABLED"}, "autoUpdateStatus": "UP2DATE"},
+  {"id": "ag-2", "hostname": "ag2.example.com", "type": "CLUSTER", "version": "1.345.0.20260801-120000",
+   "autoUpdateSettings": {"setting": "DISABLED", "effectiveSetting": "DISABLED"}, "autoUpdateStatus": "OUTDATED"}
+]}

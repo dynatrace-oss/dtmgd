@@ -22,6 +22,7 @@ Supported resources:
 
 Cluster resources (need a cluster context: one without env-id):
 ```
+  activegate-updates [id]   The cluster ActiveGates' auto-update configuration
   backup                    The cluster's backup configuration
   cluster                   The cluster's name, version and node states
   environment <id>          An environment's properties, quotas and storage
@@ -59,6 +60,7 @@ dtmgd describe [flags]
 ### SEE ALSO
 
 * [dtmgd](dtmgd.md)	 - Dynatrace Managed CLI
+* [dtmgd describe activegate-updates](dtmgd_describe_activegate-updates.md)	 - Show the cluster ActiveGates' auto-update configuration
 * [dtmgd describe backup](dtmgd_describe_backup.md)	 - Show a Dynatrace Managed cluster's backup configuration (cluster context)
 * [dtmgd describe cluster](dtmgd_describe_cluster.md)	 - Show a Dynatrace Managed cluster's name, version and nodes (cluster context)
 * [dtmgd describe entity](dtmgd_describe_entity.md)	 - Show detailed information about a specific entity
