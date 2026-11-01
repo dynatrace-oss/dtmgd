@@ -194,9 +194,9 @@ command needs; a test keeps this list identical to those declarations.
 - Read problems (`problems.read`): problems
 - Read security problems (`securityProblems.read`): security problems
 - Read SLO (`slo.read`): SLOs
-- Read settings (`settings.read`): settings schemas, settings objects and effective values
-- Write settings (`settings.write`): `apply`, `create settings`, `edit setting`, `delete settings`, on a context whose safety-level allows it
-- Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`, `doctor`
+- Read settings (`settings.read`): settings schemas, settings objects and effective values, on an environment token, or on a cluster token for the cluster's own settings
+- Write settings (`settings.write`): `apply`, `create settings`, `edit setting`, `delete settings`, on a context whose safety-level allows it; creating the cluster's own settings also needs `ServiceProviderAPI`
+- Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`, `get`/`describe`/`update`/`edit activegate-updates`, `doctor`
 <!-- scopes:end -->
 
 > **Note:** API token scopes in Managed deployments differ from SaaS Platform tokens. Ensure you select the correct scopes for your Managed cluster version.
@@ -209,12 +209,13 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 
 | Verb | Resources |
 |---|---|
-| `get` | `problems`, `entities`, `entity-types`, `events`, `metrics`, `slos`, `security-problems`, `settings-schemas`, `settings`; cluster contexts: `environments`, `nodes`, `license-usage` |
-| `describe` | `problem`, `entity`, `entity-type`, `entity-relations`, `event`, `metric`, `slo`, `security-problem`, `settings-schema`, `settings`; cluster contexts: `environment`, `cluster`, `license`, `backup` |
+| `get` | `problems`, `entities`, `entity-types`, `events`, `metrics`, `slos`, `security-problems`, `settings-schemas`, `settings`; cluster contexts: `environments`, `nodes`, `license-usage`, `activegate-updates` |
+| `describe` | `problem`, `entity`, `entity-type`, `entity-relations`, `event`, `metric`, `slo`, `security-problem`, `settings-schema`, `settings`; cluster contexts: `environment`, `cluster`, `license`, `backup`, `activegate-updates` |
 | `query` | `metrics`, `logs`, `log-counts` |
 | `apply` | `-f <file>`: creates or updates the Settings 2.0 objects in a file (`--dry-run`, `--validate-only`) |
 | `delete` | `settings <object-id>` (`--yes`, `--dry-run`; refuses update windows still in use) |
-| `edit` | `setting <object-id>`: opens a value in an editor, for people (`--validate-only`) |
+| `edit` | `setting <object-id>`, and `activegate-updates [id]` on cluster contexts: opens it in an editor, for people (`--validate-only`) |
+| `update` | `activegate-updates [id] -f <file>`: the cluster ActiveGates' auto-update, cluster contexts (`--dry-run`, `--validate-only`) |
 | `create` | `settings` (`--dry-run`, `--validate-only`; needs a context whose safety-level allows writes) |
 | `doctor` | checks every context: connectivity, token, cluster version |
 | `config`, `ctx` | contexts and credentials ([configuration](docs/configuration.md)) |

@@ -28,6 +28,7 @@ Supported resources:
   settings-schema <id>      A Settings 2.0 schema: scopes, properties, allowed values
 
 Cluster resources (need a cluster context: one without env-id):
+  activegate-updates [id]   The cluster ActiveGates' auto-update configuration
   backup                    The cluster's backup configuration
   cluster                   The cluster's name, version and node states
   environment <id>          An environment's properties, quotas and storage
@@ -37,6 +38,7 @@ Detail commands print a readable summary (or YAML) by default; use -o json for t
 		RunE: requireSubcommand,
 	}
 	cmd.AddCommand(
+		newDescribeActiveGateUpdatesCmd(a),
 		newDescribeBackupCmd(a),
 		newDescribeClusterCmd(a),
 		newDescribeEntityCmd(a),

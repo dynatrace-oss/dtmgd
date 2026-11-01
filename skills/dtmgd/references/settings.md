@@ -172,6 +172,14 @@ dtmgd apply -f object.yaml                 # writes; result action created/updat
       recurrenceRange: {start: "2026-01-01T00:00:00Z", end: "2027-01-01T00:00:00Z"}
   ```
 
+## Cluster contexts
+
+Every settings command works on a cluster context as well: `--context
+<cluster-context>`, scope `cluster`. The cluster token then needs
+`settings.read`/`settings.write` besides `ServiceProviderAPI`. See
+[cluster-api.md](cluster-api.md), which also covers the cluster ActiveGates'
+auto-update (`activegate-updates`).
+
 ## Token scopes
 
 An environment token needs `settings.read` for every settings command, and

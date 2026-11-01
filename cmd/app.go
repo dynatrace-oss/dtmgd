@@ -170,6 +170,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 		newCreateCmd(a),
 		newDeleteCmd(a),
 		newEditCmd(a),
+		newUpdateCmd(a),
 		newQueryCmd(a),
 		newConfigCmd(a),
 		newCtxCmd(a),

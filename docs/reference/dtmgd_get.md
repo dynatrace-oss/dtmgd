@@ -24,6 +24,7 @@ Cluster resources (need a cluster context: one without env-id):
   environments (envs)   The cluster's environments
   nodes (node)          The cluster's nodes, their state, version and roles
   license-usage         Each environment's total billed license usage
+  activegate-updates    How the cluster's ActiveGates update automatically
 ```
 
 Use 'dtmgd get &lt;resource> --help' for resource-specific options.
@@ -57,6 +58,7 @@ dtmgd get [flags]
 ### SEE ALSO
 
 * [dtmgd](dtmgd.md)	 - Dynatrace Managed CLI
+* [dtmgd get activegate-updates](dtmgd_get_activegate-updates.md)	 - Show how the cluster's ActiveGates update
 * [dtmgd get entities](dtmgd_get_entities.md)	 - Discover entities using an entity selector
 * [dtmgd get entity-types](dtmgd_get_entity-types.md)	 - List all available entity types
 * [dtmgd get environments](dtmgd_get_environments.md)	 - List the environments of a Dynatrace Managed cluster (cluster context)

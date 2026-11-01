@@ -305,3 +305,15 @@ your task.
 - **When it applies**: Adding or changing a write command, or reading why a write was refused
 - **Date**: 2026-11-01
 - **Ref**: Settings 2.0 phase 2 (docs/superpowers/plans/2026-11-01-settings-write-environments.md)
+
+### Settings on cluster contexts and cluster ActiveGate auto-update
+- **Context**: Phase 3 of Settings 2.0 (2026-11-01) made the settings commands work on cluster contexts and added `get`/`describe`/`update`/`edit activegate-updates`.
+- **Insight**:
+  - Every settings call goes through `cmd/settings_api.go` (`settingsGet`, `settingsPaged`, `settingsPost`, …), which picks the environment API (`/api/v2/settings/…`) or the Cluster API (`/api/cluster/v2/settings/…`; `GetCluster` paths are relative to `{host}/api`) by `c.ClusterScoped()`. Reads use `a.runSettingsFetch` (the cluster runner on a cluster context); writes set `writeSpec.ClusterToo`. Never call `GetV2` for settings directly.
+  - A cluster token needs `settings.read`/`settings.write` besides `ServiceProviderAPI`; creates also need `ServiceProviderAPI`. Tokens made for the earlier cluster commands carry only `ServiceProviderAPI`, so a 403 there names the settings scopes (`fetchSpec.Forbidden`).
+  - Cluster ActiveGate auto-update has no public Settings 2.0 schema (`builtin:deployment.cluster.activegate.updates` is in development and hidden): it is `/api/cluster/v2/activeGates/autoUpdate` (global, `globalSetting` ENABLED/DISABLED) and `/{agId}/autoUpdate` (`setting` ENABLED/DISABLED/INHERITED, read-only `effectiveSetting`), each with a `POST …/validator` (204 = valid, saves nothing). The `/activeGates?type=CLUSTER` list carries each ActiveGate's `autoUpdateSettings` and `autoUpdateStatus`.
+  - `targetVersion`/`updateWindows` on those endpoints take effect only behind a server feature flag (off by default): with it off the GET omits them and PUT/validator drop them silently, so dtmgd refuses a file that sets them unless the GET returned them, and checks cluster window references only then.
+  - Non-settings writes go through `runWrites` with `plannedWrite.Exec` (and `writeSpec.ClusterOnly`); the 1.288 version gate and the version read apply only to settings writes.
+- **When it applies**: Changing a settings command (keep both APIs working), touching cluster ActiveGate auto-update, or a 403 on a cluster context
+- **Date**: 2026-11-01
+- **Ref**: Settings 2.0 phase 3 (docs/superpowers/plans/2026-11-01-settings-cluster.md)

@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -53,9 +53,10 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 			return a.runWrites(writeSpec{
-				Verb:     "delete",
-				Resource: "settings",
-				DryRun:   opts.dryRun,
+				ClusterToo: true,
+				Verb:       "delete",
+				Resource:   "settings",
+				DryRun:     opts.dryRun,
 				Plan: func(_ string, c *client.Client) ([]plannedWrite, error) {
 					return planDelete(c, id)
 				},
@@ -75,16 +76,12 @@ Examples:
 // pointing at nothing.
 func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 	var cur settingsObject
-	if err := c.GetV2(settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
+	if err := getSettingsObject(c, id, &cur); err != nil {
 		return nil, err
 	}
 	if cur.SchemaID == schemaUpdateWindows {
-		refs, err := windowReferences(c, id)
-		if err != nil {
+		if err := checkWindowUnused(c, id); err != nil {
 			return nil, err
-		}
-		if len(refs) > 0 {
-			return nil, windowInUse(id, refs)
 		}
 	}
 	return []plannedWrite{{
@@ -94,10 +91,38 @@ func planDelete(c *client.Client, id string) ([]plannedWrite, error) {
 	}}, nil
 }
 
+// checkWindowUnused refuses deleting update window id while something uses
+// it: in an environment, OneAgent and ActiveGate update settings; on a
+// cluster, its ActiveGates' auto-update.
+func checkWindowUnused(c *client.Client, id string) error {
+	if c.ClusterScoped() {
+		refs, err := clusterWindowReferences(c, id)
+		if isForbidden(err) {
+			return withHint(err, "Checking whether the cluster's ActiveGates still use this window needs ServiceProviderAPI on the cluster token, besides settings.write.")
+		}
+		if err != nil || len(refs) == 0 {
+			return err
+		}
+		return withHint(fmt.Errorf("update window %s is still used by the cluster ActiveGates' auto-update: %s", id, strings.Join(refs, ", ")),
+			"Point those configurations at another window first (dtmgd update activegate-updates), then delete the window.")
+	}
+	refs, err := windowReferences(c, id)
+	if err != nil || len(refs) == 0 {
+		return err
+	}
+	return windowInUse(id, refs)
+}
+
+// isForbidden reports whether err is an HTTP 403.
+func isForbidden(err error) bool {
+	var apiErr *client.ErrAPI
+	return errors.As(err, &apiErr) && apiErr.StatusCode == 403
+}
+
 // windowReferences lists the OneAgent and ActiveGate update settings, at
 // every scope, that name update window windowID.
 func windowReferences(c *client.Client, windowID string) ([]settingsObject, error) {
-	body, err := c.GetV2Paged(settingsObjectsPath, map[string]string{
+	body, err := settingsPaged(c, settingsObjectsPath, map[string]string{
 		"schemaIds": schemaOneAgentUpdates + "," + schemaActiveGateUpdates,
 		"fields":    "objectId,schemaId,scope,value",
 		"pageSize":  "500",

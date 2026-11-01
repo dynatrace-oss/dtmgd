@@ -80,6 +80,11 @@ type plannedWrite struct {
 	// Existing are the objects the plan listed for a create: a POST that
 	// answers with one of them overwrote it, and is reported as an update.
 	Existing map[string]bool
+	// Exec, when set, carries out a write that is not a settings object
+	// (cluster ActiveGate auto-update): it gets validateOnly and reports
+	// the action and error. Such a write validates its own way, so the
+	// validateOnly version gate does not apply to it.
+	Exec func(c *client.Client, validateOnly bool) writeResult
 }
 
 // writeSpec describes one write command for runWrites.
@@ -96,6 +101,13 @@ type writeSpec struct {
 	// Confirm, when set, asks before anything is written (not in a dry
 	// run); errCancelled ends the command with nothing changed.
 	Confirm func(writes []plannedWrite) error
+	// ClusterToo accepts one cluster context besides environment contexts:
+	// settings writes work on both APIs.
+	ClusterToo bool
+	// ClusterOnly accepts one cluster context only (cluster ActiveGate
+	// auto-update); NotFound is its hint for a 404.
+	ClusterOnly bool
+	NotFound    string
 }
 
 // errCancelled is a write a person declined at the prompt.
@@ -127,6 +139,9 @@ type contextPlan struct {
 	writes     []plannedWrite
 	version    string
 	versionErr error
+	// cluster says the context is a cluster context, whose version comes
+	// from the node list (ServiceProviderAPI).
+	cluster bool
 }
 
 // runWrites is the one path every write command takes. It plans every
@@ -151,6 +166,9 @@ func (a *App) runWrites(s writeSpec) error {
 	}
 	names, plans, err := a.planWrites(cfg, s)
 	if err != nil {
+		if a.onClusterContext(cfg) {
+			return clusterHint(err, cfg.CurrentContext, s.clusterHints())
+		}
 		return err
 	}
 	if err := s.checkPlans(names, plans, levels); err != nil {
@@ -169,6 +187,16 @@ func (a *App) runWrites(s writeSpec) error {
 		return err
 	}
 	return a.renderWriteReport(s, rep)
+}
+
+// clusterHints are the hints of s's errors on a cluster context: a
+// settings write's 403 needs the settings scopes on the cluster token.
+func (s writeSpec) clusterHints() fetchSpec {
+	f := fetchSpec{Verb: s.Verb, Resource: s.Resource, NotFound: s.NotFound}
+	if s.ClusterToo {
+		f.Forbidden = hintClusterSettingsScopes
+	}
+	return f
 }
 
 // confirm runs s.Confirm over every planned write, unless this is a dry
@@ -203,8 +231,18 @@ func (a *App) checkWriteContexts(cfg *config.Config, s writeSpec) error {
 	if err := a.checkEnvVarContext(cfg); err != nil {
 		return err
 	}
-	if err := a.checkEnvironmentContexts(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
+	if err := a.refuseClusterFanOut(cfg); err != nil {
 		return err
+	}
+	switch {
+	case s.ClusterOnly:
+		if err := a.checkClusterContext(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
+			return err
+		}
+	case !s.ClusterToo || !a.onClusterContext(cfg):
+		if err := a.checkEnvironmentContexts(cfg, fetchSpec{Verb: s.Verb, Resource: s.Resource}); err != nil {
+			return err
+		}
 	}
 	if !s.MultiEnv && a.isMultiEnv() {
 		return &UsageError{Err: fmt.Errorf("\"dtmgd %s %s\" changes one object in one context; give one context with --context", s.Verb, s.Resource)}
@@ -260,12 +298,12 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 		return nil, nil, err
 	}
 	results, err := client.MultiRequestNamed(cfg, a.envSpec(), a.Opts.Concurrency, a.clientOptions(), func(name string, c *client.Client) (interface{}, error) {
-		var p contextPlan
+		p := contextPlan{cluster: c.ClusterScoped()}
 		var err error
 		if p.writes, err = s.Plan(name, c); err != nil {
 			return nil, err
 		}
-		if s.ValidateOnly {
+		if s.ValidateOnly && hasWrites(p.writes) {
 			p.version, p.versionErr = c.ClusterVersion()
 		}
 		return p, nil
@@ -346,10 +384,11 @@ func (s writeSpec) checkPlan(name string, p contextPlan, level config.SafetyLeve
 	return nil
 }
 
-// hasWrites reports whether ws would send anything.
+// hasWrites reports whether ws would send anything through the settings
+// API, whose validateOnly needs the version gate.
 func hasWrites(ws []plannedWrite) bool {
 	for _, w := range ws {
-		if w.Op != "" {
+		if w.Op != "" && w.Exec == nil {
 			return true
 		}
 	}
@@ -361,8 +400,11 @@ func hasWrites(ws []plannedWrite) bool {
 func versionGate(name string, p contextPlan) error {
 	const dryRunHint = "--dry-run shows the planned change with GETs only and needs only settings.read"
 	if p.versionErr != nil {
-		return withHint(&UsageError{Err: fmt.Errorf("context %q: cannot read the cluster version, which --validate-only checks first: %w", name, p.versionErr)},
-			"Reading the version needs the DataExport scope on an environment token. "+dryRunHint)
+		scope := "Reading the version needs the DataExport scope on an environment token. "
+		if p.cluster {
+			scope = "Reading the version needs ServiceProviderAPI on the cluster token. "
+		}
+		return withHint(&UsageError{Err: fmt.Errorf("context %q: cannot read the cluster version, which --validate-only checks first: %w", name, p.versionErr)}, scope+dryRunHint)
 	}
 	ok, known := client.VersionAtLeast(p.version, validateOnlyFloor)
 	switch {
@@ -446,6 +488,11 @@ type settingsWriteItem struct {
 // executeWrite sends one planned write and reports its outcome.
 func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResult {
 	r := w.result("")
+	if w.Exec != nil && w.Op != "" {
+		done := w.Exec(c, validateOnly)
+		r.Action, r.Error = done.Action, done.Error
+		return r
+	}
 	var params map[string]string
 	if validateOnly {
 		params = map[string]string{"validateOnly": "true"}
@@ -460,7 +507,7 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 			obj["externalId"] = w.ExternalID
 		}
 		var items []settingsWriteItem
-		err = c.PostV2(settingsObjectsPath, params, []interface{}{obj}, &items)
+		err = settingsPost(c, settingsObjectsPath, params, []interface{}{obj}, &items)
 		if len(items) > 0 {
 			item = items[0]
 		}
@@ -469,9 +516,9 @@ func executeWrite(c *client.Client, w plannedWrite, validateOnly bool) writeResu
 		if w.UpdateToken != "" {
 			body["updateToken"] = w.UpdateToken
 		}
-		err = c.PutV2(settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), params, body, &item)
+		err = settingsPut(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), params, body, &item)
 	case actionDelete:
-		err = c.DeleteV2(settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), deleteParams(w.UpdateToken))
+		err = settingsDelete(c, settingsObjectsPath+"/"+url.PathEscape(w.ObjectID), deleteParams(w.UpdateToken))
 	default:
 		r.Action = actionUnchanged
 		return r

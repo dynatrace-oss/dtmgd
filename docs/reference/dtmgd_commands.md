@@ -10,7 +10,7 @@ needs, for AI agents and scripts to discover the CLI.
 The catalog is JSON (or YAML with -o yaml) and is never wrapped in an agent
 envelope. Global flags (--context, --env, -o and the rest) are listed once,
 under global_flags; each command lists only its own flags. --brief lists only
-the resources of get, describe, query, create, edit and delete.
+the resources of get, describe, query, create, edit, update and delete.
 
 Examples:
 ```

@@ -104,7 +104,7 @@ A cluster context's token is different: see Cluster Contexts below.
 ## Cluster Contexts
 
 A context without an `env-id` is a cluster context. It reaches the cluster's
-Cluster Management API, read-only, for what belongs to the cluster rather than
+Cluster Management API for what belongs to the cluster rather than
 to one environment: its environments, nodes, license and backup configuration.
 
 ```bash
@@ -136,7 +136,14 @@ dtmgd doctor -c prod-cluster
 - **No fan-out.** Cluster commands take one context; `--env` with several
   names or `ALL_ENVIRONMENTS` is an error. `ALL_ENVIRONMENTS` never includes
   cluster contexts.
-- **Read-only.** dtmgd sends only `GET` requests to the Cluster API.
+- **Mostly read-only.** dtmgd only reads the Cluster API, except the
+  cluster's own settings (`apply`, `create`, `edit`, `delete settings`) and its
+  ActiveGates' auto-update (`update`/`edit activegate-updates`), which follow
+  the context's `safety-level` like any write.
+- **Token scopes.** `ServiceProviderAPI` for the cluster commands; the
+  cluster's settings also need `settings.read` (and `settings.write` to
+  write). Creating cluster settings, `--validate-only` and deleting a cluster
+  update window also use `ServiceProviderAPI`.
 - **Backups:** `describe backup` shows the configuration only. The API has no
   last-backup time and no backup health.
 - **License:** `describe license` and `get license-usage` need Dynatrace

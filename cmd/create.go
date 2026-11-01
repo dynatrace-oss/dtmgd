@@ -83,6 +83,7 @@ Examples:
 				return err
 			}
 			return a.runWrites(writeSpec{
+				ClusterToo:   true,
 				Verb:         "create",
 				Resource:     "settings",
 				DryRun:       opts.dryRun,
@@ -178,7 +179,7 @@ type settingsSchemaShape struct {
 // schemaShape reads schemaID's definition.
 func schemaShape(c *client.Client, schemaID string) (settingsSchemaShape, error) {
 	var shape settingsSchemaShape
-	err := c.GetV2(settingsSchemasPath+"/"+url.PathEscape(schemaID), nil, &shape)
+	err := settingsGet(c, settingsSchemasPath+"/"+url.PathEscape(schemaID), nil, &shape)
 	var apiErr *client.ErrAPI
 	if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 		return shape, withHint(err, hintListSchemas)
@@ -221,7 +222,7 @@ func listedIDs(listed []settingsObject) map[string]bool {
 
 // listSettings returns every object of schemaID at scope, with fields.
 func listSettings(c *client.Client, schemaID, scope, fields string) ([]settingsObject, error) {
-	body, err := c.GetV2Paged(settingsObjectsPath, map[string]string{
+	body, err := settingsPaged(c, settingsObjectsPath, map[string]string{
 		"schemaIds": schemaID,
 		"scopes":    scope,
 		"fields":    fields,

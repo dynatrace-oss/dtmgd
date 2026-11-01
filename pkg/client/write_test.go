@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -136,5 +137,29 @@ func TestMultiRequestNamedPassesNames(t *testing.T) {
 	}
 	if got, err := ResolveContexts(cfg, ""); err != nil || len(got) != 1 || got[0].Name != "a" {
 		t.Errorf("ResolveContexts(\"\") = %v, %v", got, err)
+	}
+}
+
+// TestClusterWriteMethods pins the cluster client's writes: relative to
+// {host}/api, and never resent after a 5xx.
+func TestClusterWriteMethods(t *testing.T) {
+	var paths []string
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(srv.URL, "", "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.PostCluster("/cluster/v2/settings/objects", nil, []int{1}, nil)
+	_ = c.PutCluster("/cluster/v2/settings/objects/x", nil, map[string]int{}, nil)
+	_ = c.DeleteCluster("/cluster/v2/settings/objects/x", nil)
+	want := "POST /api/cluster/v2/settings/objects,PUT /api/cluster/v2/settings/objects/x,DELETE /api/cluster/v2/settings/objects/x"
+	if got := strings.Join(paths, ","); got != want || hits.Load() != 3 {
+		t.Errorf("sent %q (%d requests)", got, hits.Load())
 	}
 }

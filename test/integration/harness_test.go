@@ -54,7 +54,7 @@ func run(t testing.TB, args ...string) result {
 }
 
 // writeVerbs are the only verbs writeRun runs.
-var writeVerbs = map[string]bool{"apply": true, "create": true, "delete": true}
+var writeVerbs = map[string]bool{"apply": true, "create": true, "delete": true, "update": true}
 
 // writeConfig returns a temporary copy of DTMGD_IT_CONFIG in which only the
 // write context, DTMGD_IT_WRITE_ENV, may write (readwrite-all), and that
@@ -62,8 +62,15 @@ var writeVerbs = map[string]bool{"apply": true, "create": true, "delete": true}
 // variables the test skips.
 func writeConfig(t *testing.T) (path, ctx string) {
 	t.Helper()
+	return writeConfigFor(t, "DTMGD_IT_WRITE_ENV")
+}
+
+// writeConfigFor is writeConfig for the write context named by the
+// variable envVar: DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER.
+func writeConfigFor(t *testing.T, envVar string) (path, ctx string) {
+	t.Helper()
 	orig := requireEnv(t, "DTMGD_IT_CONFIG")
-	ctx = requireEnv(t, "DTMGD_IT_WRITE_ENV")
+	ctx = requireEnv(t, envVar)
 	cfg, err := config.LoadFrom(orig)
 	if err != nil {
 		t.Fatalf("loading the config: %v", err)
@@ -78,7 +85,7 @@ func writeConfig(t *testing.T) (path, ctx string) {
 		}
 	}
 	if _, err := cfg.GetContext(ctx); err != nil {
-		t.Fatalf("DTMGD_IT_WRITE_ENV: %v", err)
+		t.Fatalf("%s: %v", envVar, err)
 	}
 	path = filepath.Join(t.TempDir(), "config")
 	if err := cfg.SaveTo(path); err != nil {
@@ -87,18 +94,24 @@ func writeConfig(t *testing.T) (path, ctx string) {
 	return path, ctx
 }
 
-// writeRun runs a write command with config cfg against context ctx, the
-// write context. It refuses any verb but apply, create and delete, and any
-// other context, so a test can write nowhere else; a dry run, which sends
-// GETs only, may name any context.
+// writeRun runs a write command with config cfg against context ctx, a
+// write context (DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER). It refuses
+// any verb but apply, create, delete and update, any other context, and an
+// update without --validate-only or --dry-run: the suite never really
+// changes how ActiveGates update. A dry run, which sends GETs only, may
+// name any context.
 func writeRun(t testing.TB, cfg, ctx string, args ...string) result {
 	t.Helper()
 	if len(args) == 0 || !writeVerbs[args[0]] {
-		t.Fatalf("writeRun runs apply, create and delete only, not %q", args)
+		t.Fatalf("writeRun runs apply, create, delete and update only, not %q", args)
 		return result{}
 	}
-	if want := os.Getenv("DTMGD_IT_WRITE_ENV"); ctx != want && !slices.Contains(args, "--dry-run") {
-		t.Fatalf("writeRun writes to %q only, not %q", want, ctx)
+	if args[0] == "update" && !slices.Contains(args, "--validate-only") && !slices.Contains(args, "--dry-run") {
+		t.Fatalf("writeRun runs update only with --validate-only or --dry-run, not %q", args)
+		return result{}
+	}
+	if !isWriteContext(ctx) && !slices.Contains(args, "--dry-run") {
+		t.Fatalf("writeRun writes to DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER only, not %q", ctx)
 		return result{}
 	}
 	for _, arg := range args {
@@ -113,6 +126,17 @@ func writeRun(t testing.TB, cfg, ctx string, args ...string) result {
 	var out, errb bytes.Buffer
 	code := cmd.Run(full, &out, &errb)
 	return result{Out: out.Bytes(), Err: errb.String(), Code: code}
+}
+
+// isWriteContext reports whether ctx is one of the contexts the suite may
+// write to: DTMGD_IT_WRITE_ENV or DTMGD_IT_WRITE_CLUSTER.
+func isWriteContext(ctx string) bool {
+	for _, v := range []string{"DTMGD_IT_WRITE_ENV", "DTMGD_IT_WRITE_CLUSTER"} {
+		if w := os.Getenv(v); w != "" && w == ctx {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -260,7 +284,7 @@ func TestWriteRunRefusesReadsAndOtherContexts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("DTMGD_IT_WRITE_ENV", "stage")
-	for _, args := range [][]string{{"get", "settings"}, {"config", "view"}, {"apply", "-f", "x"}, {"apply", "-f", "x", "--env", "prod"}, {"apply", "-f", "x", "--context=prod"}} {
+	for _, args := range [][]string{{"get", "settings"}, {"config", "view"}, {"apply", "-f", "x"}, {"apply", "-f", "x", "--env", "prod"}, {"apply", "-f", "x", "--context=prod"}, {"update", "activegate-updates", "-f", "x"}} {
 		ctx := "stage"
 		if len(args) == 3 && args[0] == "apply" {
 			ctx = "prod"

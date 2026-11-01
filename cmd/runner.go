@@ -74,6 +74,9 @@ type fetchSpec struct {
 	// WrongContext is a cluster command's extra suggestion when it is run
 	// against an environment context.
 	WrongContext string
+	// Forbidden is a cluster command's hint for a 403, beside the scopes
+	// the command declares.
+	Forbidden string
 }
 
 // runFetch is the one path every get, describe and query command takes:

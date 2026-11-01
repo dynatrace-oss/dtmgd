@@ -1,8 +1,8 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"reflect"
@@ -26,10 +26,11 @@ func newEditCmd(a *App) *cobra.Command {
 scripts use apply.
 
 Supported resources:
-  setting <object-id>   A Settings 2.0 object's value`,
+  setting <object-id>        A Settings 2.0 object's value
+  activegate-updates [id]    The cluster ActiveGates' auto-update (cluster contexts)`,
 		RunE: requireSubcommand,
 	}
-	cmd.AddCommand(newEditSettingCmd(a))
+	cmd.AddCommand(newEditSettingCmd(a), newEditActiveGateUpdatesCmd(a))
 	return asGroup(cmd)
 }
 
@@ -55,7 +56,7 @@ Examples:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !a.isInteractive() {
-				return withHint(&UsageError{Err: fmt.Errorf("edit opens an editor and needs a person at a terminal")},
+				return withHint(&UsageError{Err: errNeedsTerminal},
 					"Use: dtmgd describe settings "+args[0]+" -o yaml > object.yaml, change the value, then dtmgd apply -f object.yaml")
 			}
 			if !validateOnly {
@@ -67,6 +68,7 @@ Examples:
 			}
 			id := args[0]
 			return a.runWrites(writeSpec{
+				ClusterToo:   true,
 				Verb:         "edit",
 				Resource:     "setting",
 				ValidateOnly: validateOnly,
@@ -79,6 +81,9 @@ Examples:
 	cmd.Flags().BoolVar(&validateOnly, "validate-only", false, "have the cluster validate the edited value without saving it")
 	return withWrites(cmd)
 }
+
+// errNeedsTerminal refuses an edit where nobody can use the editor.
+var errNeedsTerminal = errors.New("edit opens an editor and needs a person at a terminal")
 
 // checkCanUpdate refuses an edit through a context whose level does not
 // allow updates, before anything else happens.
@@ -107,7 +112,7 @@ func (a *App) checkCanUpdate() error {
 // update (unchanged when they saved nothing new).
 func (a *App) planEdit(c *client.Client, id string) ([]plannedWrite, error) {
 	var cur settingsObject
-	if err := c.GetV2(settingsObjectsPath+"/"+url.PathEscape(id), nil, &cur); err != nil {
+	if err := getSettingsObject(c, id, &cur); err != nil {
 		return nil, err
 	}
 	value, changed, err := a.editValue(cur.Value)
