@@ -134,6 +134,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 	cmd.AddCommand(
 		newGetCmd(a),
 		newDescribeCmd(a),
+		newCreateCmd(a),
 		newQueryCmd(a),
 		newConfigCmd(a),
 		newCtxCmd(a),

@@ -59,8 +59,11 @@ type catalogCommand struct {
 	RequiredScopes []string `json:"required_scopes,omitempty" yaml:"required_scopes,omitempty"`
 	// ClusterScoped marks a command that needs a cluster context (no
 	// env-id) rather than an environment context.
-	ClusterScoped bool                   `json:"cluster_scoped,omitempty" yaml:"cluster_scoped,omitempty"`
-	Flags         map[string]catalogFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
+	ClusterScoped bool `json:"cluster_scoped,omitempty" yaml:"cluster_scoped,omitempty"`
+	// Mutating marks a command that writes: its context's safety-level must
+	// allow the write.
+	Mutating bool                   `json:"mutating,omitempty" yaml:"mutating,omitempty"`
+	Flags    map[string]catalogFlag `json:"flags,omitempty" yaml:"flags,omitempty"`
 }
 
 // catalogFlag describes one flag. Default is the flag's default as cobra
@@ -182,6 +185,7 @@ func describeCommand(cmd *cobra.Command) catalogCommand {
 		Short:          cmd.Short,
 		RequiredScopes: requiredScopes(cmd),
 		ClusterScoped:  isClusterCommand(cmd),
+		Mutating:       isMutating(cmd),
 	}
 	visitOwnFlags(cmd, func(f *pflag.Flag) {
 		if e.Flags == nil {

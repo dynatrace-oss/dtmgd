@@ -147,6 +147,20 @@ func withFakeEnvs(t *testing.T, envs ...fakeEnv) string {
 // URLs apart once the harness has normalised every host to http://FAKE.
 func withFakeEnvIDs(t *testing.T, ids map[string]string, envs ...fakeEnv) string {
 	t.Helper()
+	return writeFakeConfig(t, ids, nil, envs...)
+}
+
+// withFakeEnvLevels is withFakeEnvs with each context named in levels given
+// that safety-level (none for the others, which makes them readonly).
+func withFakeEnvLevels(t *testing.T, levels map[string]string, envs ...fakeEnv) string {
+	t.Helper()
+	return writeFakeConfig(t, nil, levels, envs...)
+}
+
+// writeFakeConfig writes the temp config of withFakeEnvIDs and
+// withFakeEnvLevels.
+func writeFakeConfig(t *testing.T, ids, levels map[string]string, envs ...fakeEnv) string {
+	t.Helper()
 	var b strings.Builder
 	fmt.Fprintf(&b, "apiVersion: dtmgd.io/v1\nkind: Config\ncurrent-context: %s\ncontexts:\n", envs[0].Name)
 	for _, e := range envs {
@@ -155,6 +169,9 @@ func withFakeEnvIDs(t *testing.T, ids map[string]string, envs ...fakeEnv) string
 			envID = id
 		}
 		fmt.Fprintf(&b, "  - name: %s\n    context:\n      host: %s\n      env-id: %s\n      token-ref: tok-%s\n", e.Name, e.API.URL, envID, e.Name)
+		if level, ok := levels[e.Name]; ok {
+			fmt.Fprintf(&b, "      safety-level: %s\n", level)
+		}
 	}
 	b.WriteString("tokens:\n")
 	for _, e := range envs {

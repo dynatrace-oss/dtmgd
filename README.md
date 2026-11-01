@@ -186,7 +186,7 @@ declares the scopes it uses, and a permission error names the ones the failed
 command needs; a test keeps this list identical to those declarations.
 
 <!-- scopes:start -->
-- Access problem and event feed, metrics, and topology (`DataExport`): `doctor`
+- Access problem and event feed, metrics, and topology (`DataExport`): `doctor`, and the cluster-version check of `--validate-only` on settings writes
 - Read entities (`entities.read`): entities, entity types and relations; name lookups in `query metrics` and `query log-counts`
 - Read events (`events.read`): events
 - Read logs (`logs.read`): `query logs`, `query log-counts`
@@ -195,6 +195,7 @@ command needs; a test keeps this list identical to those declarations.
 - Read security problems (`securityProblems.read`): security problems
 - Read SLO (`slo.read`): SLOs
 - Read settings (`settings.read`): settings schemas, settings objects and effective values
+- Write settings (`settings.write`): `create settings`, on a context whose safety-level allows it
 - Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`, `doctor`
 <!-- scopes:end -->
 
@@ -211,6 +212,7 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 | `get` | `problems`, `entities`, `entity-types`, `events`, `metrics`, `slos`, `security-problems`, `settings-schemas`, `settings`; cluster contexts: `environments`, `nodes`, `license-usage` |
 | `describe` | `problem`, `entity`, `entity-type`, `entity-relations`, `event`, `metric`, `slo`, `security-problem`, `settings-schema`, `settings`; cluster contexts: `environment`, `cluster`, `license`, `backup` |
 | `query` | `metrics`, `logs`, `log-counts` |
+| `create` | `settings` (`--dry-run`, `--validate-only`; needs a context whose safety-level allows writes) |
 | `doctor` | checks every context: connectivity, token, cluster version |
 | `config`, `ctx` | contexts and credentials ([configuration](docs/configuration.md)) |
 | `skills` | installs the dtmgd skill for an AI agent ([agent mode](docs/agent-mode.md)) |

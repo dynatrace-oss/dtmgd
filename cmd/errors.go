@@ -216,6 +216,10 @@ func exitCode(err error) int {
 	if err == nil {
 		return client.ExitSuccess
 	}
+	var safety *SafetyError
+	if errors.As(err, &safety) {
+		return client.ExitSafetyBlocked
+	}
 	var usage *UsageError
 	if errors.As(err, &usage) || errors.Is(err, output.ErrNotTabular) || errors.Is(err, output.ErrUnknownColumns) {
 		return client.ExitUsage
@@ -327,7 +331,10 @@ func errorDetail(err error, hint string) *agentmode.ErrorDetail {
 		unres    *config.UnresolvedVarsError
 		netErr   net.Error
 	)
+	var safety *SafetyError
 	switch {
+	case errors.As(err, &safety):
+		d.Code = "safety_blocked"
 	case errors.As(err, &partial):
 		d.Code = "partial_failure"
 	case errors.As(err, &apiErr):

@@ -59,6 +59,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 * [dtmgd commands](dtmgd_commands.md)	 - Print a machine-readable catalog of dtmgd commands
 * [dtmgd completion](dtmgd_completion.md)	 - Generate shell completion script
 * [dtmgd config](dtmgd_config.md)	 - Manage dtmgd configuration
+* [dtmgd create](dtmgd_create.md)	 - Create resources
 * [dtmgd ctx](dtmgd_ctx.md)	 - Manage contexts (shortcut for config context commands)
 * [dtmgd describe](dtmgd_describe.md)	 - Show detailed information about a specific resource
 * [dtmgd doctor](dtmgd_doctor.md)	 - Check connectivity, token and cluster version of each context
