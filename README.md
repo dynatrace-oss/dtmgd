@@ -195,7 +195,7 @@ command needs; a test keeps this list identical to those declarations.
 - Read security problems (`securityProblems.read`): security problems
 - Read SLO (`slo.read`): SLOs
 - Read settings (`settings.read`): settings schemas, settings objects and effective values
-- Write settings (`settings.write`): `apply`, `create settings`, `delete settings`, on a context whose safety-level allows it
+- Write settings (`settings.write`): `apply`, `create settings`, `edit setting`, `delete settings`, on a context whose safety-level allows it
 - Service Provider API (`ServiceProviderAPI`), on a cluster context's token: `get environments`, `describe environment`, `get nodes`, `describe cluster`, `describe license`, `get license-usage`, `describe backup`, `doctor`
 <!-- scopes:end -->
 
@@ -214,6 +214,7 @@ command and flag is in the [command reference](docs/reference/dtmgd.md), and
 | `query` | `metrics`, `logs`, `log-counts` |
 | `apply` | `-f <file>`: creates or updates the Settings 2.0 objects in a file (`--dry-run`, `--validate-only`) |
 | `delete` | `settings <object-id>` (`--yes`, `--dry-run`; refuses update windows still in use) |
+| `edit` | `setting <object-id>`: opens a value in an editor, for people (`--validate-only`) |
 | `create` | `settings` (`--dry-run`, `--validate-only`; needs a context whose safety-level allows writes) |
 | `doctor` | checks every context: connectivity, token, cluster version |
 | `config`, `ctx` | contexts and credentials ([configuration](docs/configuration.md)) |

@@ -70,7 +70,12 @@ func (a *App) isInteractive() bool {
 // and stderr, and returns the process exit code. main passes os.Args[1:];
 // tests pass their own arguments and writers.
 func Run(args []string, stdout, stderr io.Writer) int {
-	a := &App{Out: stdout, Err: stderr, args: args}
+	return (&App{Out: stdout, Err: stderr, args: args}).run()
+}
+
+// run executes the command in a.args and returns the process exit code.
+func (a *App) run() int {
+	stderr, args := a.Err, a.args
 	// Until flags are parsed, plain mode follows the environment alone; the
 	// persistent pre-run applies --plain once it is known.
 	output.SetStderr(stderr)
@@ -164,6 +169,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 		newApplyCmd(a),
 		newCreateCmd(a),
 		newDeleteCmd(a),
+		newEditCmd(a),
 		newQueryCmd(a),
 		newConfigCmd(a),
 		newCtxCmd(a),

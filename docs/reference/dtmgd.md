@@ -65,6 +65,7 @@ Cluster (a context without --env-id, with a ServiceProviderAPI token):
 * [dtmgd delete](dtmgd_delete.md)	 - Delete resources
 * [dtmgd describe](dtmgd_describe.md)	 - Show detailed information about a specific resource
 * [dtmgd doctor](dtmgd_doctor.md)	 - Check connectivity, token and cluster version of each context
+* [dtmgd edit](dtmgd_edit.md)	 - Edit resources in an editor
 * [dtmgd get](dtmgd_get.md)	 - List or retrieve resources
 * [dtmgd query](dtmgd_query.md)	 - Query time-series or log data
 * [dtmgd skills](dtmgd_skills.md)	 - Manage AI coding assistant skill files
