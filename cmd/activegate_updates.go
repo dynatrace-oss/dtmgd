@@ -22,6 +22,14 @@ const (
 	clusterAGAutoUpdatePath = clusterAGPath + "/autoUpdate"
 )
 
+// The resource name, its usage with an optional ID, and its alias, shared by
+// the get, describe, update and edit commands.
+const (
+	agResource = "activegate-updates"
+	agUse      = agResource + " [activegate-id]"
+	agAlias    = "ag-updates"
+)
+
 // hintListClusterActiveGates is the next step after an unknown ActiveGate ID.
 const hintListClusterActiveGates = "List cluster ActiveGates with: dtmgd get activegate-updates"
 
@@ -47,8 +55,8 @@ func agAutoUpdatePath(id string) string {
 
 func newGetActiveGateUpdatesCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "activegate-updates [activegate-id]",
-		Aliases: []string{"ag-updates"},
+		Use:     agUse,
+		Aliases: []string{agAlias},
 		Short:   "Show how the cluster's ActiveGates update",
 		Long: `Show the cluster ActiveGates' automatic updates: the global setting, then
 each cluster ActiveGate's own setting (ENABLED, DISABLED or INHERITED from the
@@ -67,7 +75,7 @@ Examples:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			spec := fetchSpec{
 				Verb:     "get",
-				Resource: "activegate-updates",
+				Resource: agResource,
 				Fetch:    agUpdatesFetch,
 				Rows:     agUpdatesRows(""),
 				NotFound: hintListClusterActiveGates,
@@ -88,8 +96,8 @@ Examples:
 
 func newDescribeActiveGateUpdatesCmd(a *App) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "activegate-updates [activegate-id]",
-		Aliases: []string{"ag-updates"},
+		Use:     agUse,
+		Aliases: []string{agAlias},
 		Short:   "Show the cluster ActiveGates' auto-update configuration",
 		Long: `Show the global auto-update configuration of the cluster's ActiveGates, or
 one ActiveGate's, as the Cluster API returns it. update activegate-updates
@@ -107,7 +115,7 @@ Examples:
 			path := agConfigPath(id)
 			return a.runClusterFetch(fetchSpec{
 				Verb:     "describe",
-				Resource: "activegate-updates",
+				Resource: agResource,
 				Fetch:    clusterObjectFetch(path, nil),
 				NotFound: hintListClusterActiveGates,
 			})
@@ -242,8 +250,8 @@ func newUpdateActiveGateUpdatesCmd(a *App) *cobra.Command {
 		dryRun, validateOnly bool
 	}
 	cmd := &cobra.Command{
-		Use:     "activegate-updates [activegate-id] -f <file>",
-		Aliases: []string{"ag-updates"},
+		Use:     agUse + " -f <file>",
+		Aliases: []string{agAlias},
 		Short:   "Change how the cluster's ActiveGates update",
 		Long: `Change the cluster ActiveGates' global auto-update configuration, or, with an
 ID, one ActiveGate's. The file (YAML or JSON, - for stdin) holds the object
@@ -273,7 +281,7 @@ Examples:
 				return err
 			}
 			return a.runWrites(writeSpec{
-				Verb: "update", Resource: "activegate-updates",
+				Verb: "update", Resource: agResource,
 				DryRun: opts.dryRun, ValidateOnly: opts.validateOnly,
 				ClusterOnly: true, NotFound: hintListClusterActiveGates,
 				Plan: func(_ string, c *client.Client) ([]plannedWrite, error) {
@@ -292,8 +300,8 @@ Examples:
 func newEditActiveGateUpdatesCmd(a *App) *cobra.Command {
 	var validateOnly bool
 	cmd := &cobra.Command{
-		Use:     "activegate-updates [activegate-id]",
-		Aliases: []string{"ag-updates"},
+		Use:     agUse,
+		Aliases: []string{agAlias},
 		Short:   "Edit the cluster ActiveGates' auto-update in an editor",
 		Long: `Open the cluster ActiveGates' global auto-update configuration (or one
 ActiveGate's) in $EDITOR, and update it when the file changed. For people at a
@@ -316,7 +324,7 @@ Examples:
 				return err
 			}
 			return a.runWrites(writeSpec{
-				Verb: "edit", Resource: "activegate-updates",
+				Verb: "edit", Resource: agResource,
 				ValidateOnly: validateOnly, ClusterOnly: true, NotFound: hintListClusterActiveGates,
 				Plan: func(_ string, c *client.Client) ([]plannedWrite, error) {
 					return a.planActiveGateEdit(c, id)

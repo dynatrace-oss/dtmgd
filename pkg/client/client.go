@@ -417,21 +417,24 @@ func (c *Client) writeV2(method, path string, params map[string]string, body, re
 	return c.send(c.http, "request", method, "/v2"+path, params, body, result)
 }
 
+// clusterRequest names a cluster-level request in transport errors.
+const clusterRequest = "cluster request"
+
 // PostCluster is PostV2 for the cluster-level API: path is relative to
 // {host}/api (e.g. /cluster/v2/settings/objects). Like every write, it is
 // never retried once it may have been sent.
 func (c *Client) PostCluster(path string, params map[string]string, body, result interface{}) error {
-	return c.send(c.cluster, "cluster request", http.MethodPost, path, params, body, result)
+	return c.send(c.cluster, clusterRequest, http.MethodPost, path, params, body, result)
 }
 
 // PutCluster is PostCluster with PUT.
 func (c *Client) PutCluster(path string, params map[string]string, body, result interface{}) error {
-	return c.send(c.cluster, "cluster request", http.MethodPut, path, params, body, result)
+	return c.send(c.cluster, clusterRequest, http.MethodPut, path, params, body, result)
 }
 
 // DeleteCluster sends a DELETE to the cluster-level API.
 func (c *Client) DeleteCluster(path string, params map[string]string) error {
-	return c.send(c.cluster, "cluster request", http.MethodDelete, path, params, nil, nil)
+	return c.send(c.cluster, clusterRequest, http.MethodDelete, path, params, nil, nil)
 }
 
 // send sends one write through rc: body as JSON, the answer decoded into
@@ -485,7 +488,7 @@ func (c *Client) GetCluster(path string, params map[string]string, result interf
 	}
 	resp, err := req.Get(path)
 	if err != nil {
-		return c.requestError("cluster request", err)
+		return c.requestError(clusterRequest, err)
 	}
 	if resp.IsError() {
 		return APIError(resp.StatusCode(), resp.String())
