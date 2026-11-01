@@ -128,7 +128,7 @@ func isForbidden(err error) bool {
 func deletePrompt(ws []plannedWrite) string {
 	if len(ws) == 1 {
 		w := ws[0]
-		return fmt.Sprintf("Delete %s object %s (%s) at %s?", w.SchemaID, w.ObjectID, w.Summary, w.Scope)
+		return fmt.Sprintf("Delete %s object %s (%s) at %s?", w.SchemaID, w.ObjectID, unescapeMarkdown(w.Summary), w.Scope)
 	}
 	return fmt.Sprintf("Delete %d settings objects?", len(ws))
 }

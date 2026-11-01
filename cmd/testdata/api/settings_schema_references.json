@@ -1,0 +1,17 @@
+{
+  "schemaId": "builtin:example.references",
+  "displayName": "Reference example",
+  "description": "Has references.",
+  "version": "1.0.0",
+  "maturity": "EARLY_ADOPTER",
+  "keyProperty": "name",
+  "multiObject": true,
+  "ordered": false,
+  "maxObjects": 10,
+  "allowedScopes": ["environment"],
+  "properties": {
+    "name": {"type": "text"},
+    "profile": {"type": "setting", "referencedType": "builtin:alerting.profile"},
+    "zones": {"type": "list", "items": {"type": "setting", "referencedType": "builtin:management-zones"}}
+  }
+}

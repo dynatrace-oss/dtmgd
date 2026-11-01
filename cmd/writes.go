@@ -737,13 +737,13 @@ func (a *App) printWriteReport(rep writeReport) error {
 	if !a.isMultiEnv() {
 		rows := make([]writeRow, 0, len(rep.Results))
 		for _, r := range rep.Results {
-			rows = append(rows, writeRow{Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: r.Summary})
+			rows = append(rows, writeRow{Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: unescapeMarkdown(r.Summary)})
 		}
 		return p.PrintList(rows)
 	}
 	rows := make([]writeContextRow, 0, len(rep.Results))
 	for _, r := range rep.Results {
-		rows = append(rows, writeContextRow{Context: r.Context, Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: r.Summary})
+		rows = append(rows, writeContextRow{Context: r.Context, Action: r.Action, ObjectID: r.ObjectID, Schema: r.SchemaID, Scope: r.Scope, Summary: unescapeMarkdown(r.Summary)})
 	}
 	return p.PrintList(rows)
 }

@@ -14,6 +14,6 @@ Description:  Configure how OneAgents update.
  updateMode          enum                      AUTOMATIC  AUTOMATIC, AUTOMATIC_DURING_MW, MANUAL 
 
 Type MaintenanceWindow:
- PROPERTY           TYPE     DEFAULT  VALUES 
- maintenanceWindow  setting  —               
+ PROPERTY           TYPE                                                    DEFAULT  VALUES 
+ maintenanceWindow  setting → builtin:deployment.management.update-windows  —               
 == stderr

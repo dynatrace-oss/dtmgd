@@ -93,7 +93,7 @@ func clusterHint(err error, ctxName string, s fetchSpec) error {
 		return withHint(err, hintClusterAuth)
 	case 403:
 		// A hint the command gave the error names the missing scope better.
-		if s.Forbidden != "" && explicitHint(err) == "" {
+		if s.Forbidden != "" && explicitHint(err) == "" && !client.IsNotApplicable(err) {
 			return withHint(err, s.Forbidden)
 		}
 	case 404:

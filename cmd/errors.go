@@ -369,11 +369,12 @@ func errorDetail(err error, hint string) *agentmode.ErrorDetail {
 	return d
 }
 
-// isPermissionDenied reports whether err is, or includes, an HTTP 403.
+// isPermissionDenied reports whether err is, or includes, an HTTP 403 that
+// a token scope could cure (not "Setting not applicable").
 func isPermissionDenied(err error) bool {
 	var apiErr *client.ErrAPI
 	if errors.As(err, &apiErr) {
-		return apiErr.StatusCode == 403
+		return apiErr.StatusCode == 403 && !client.IsNotApplicable(apiErr)
 	}
 	var partial *client.PartialFailureError
 	if errors.As(err, &partial) {

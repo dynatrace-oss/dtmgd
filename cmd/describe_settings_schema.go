@@ -21,6 +21,8 @@ type settingsSchemaDetail struct {
 	DisplayName   string                    `json:"displayName"`
 	Description   string                    `json:"description"`
 	Version       string                    `json:"version"`
+	Maturity      string                    `json:"maturity"`
+	KeyProperty   string                    `json:"keyProperty"`
 	MultiObject   bool                      `json:"multiObject"`
 	Ordered       bool                      `json:"ordered"`
 	MaxObjects    int                       `json:"maxObjects"`
@@ -40,10 +42,12 @@ type settingsSchemaDetail struct {
 // a name ("text", "set", …) or a {"$ref": "#/enums/X"} or
 // {"$ref": "#/types/Y"} object.
 type schemaProperty struct {
-	Type    json.RawMessage `json:"type"`
-	Default interface{}     `json:"default"`
-	Items   *struct {
-		Type json.RawMessage `json:"type"`
+	Type           json.RawMessage `json:"type"`
+	ReferencedType string          `json:"referencedType"`
+	Default        interface{}     `json:"default"`
+	Items          *struct {
+		Type           json.RawMessage `json:"type"`
+		ReferencedType string          `json:"referencedType"`
 	} `json:"items"`
 }
 
@@ -93,6 +97,12 @@ func printSettingsSchemaDetail(w io.Writer, body interface{}) error {
 	_, _ = fmt.Fprintf(w, "Version:      %s\n", d.Version)
 	_, _ = fmt.Fprintf(w, "Scopes:       %s\n", strings.Join(d.AllowedScopes, ", "))
 	_, _ = fmt.Fprintf(w, "Objects:      %s\n", schemaObjects(d))
+	if d.Maturity != "" {
+		_, _ = fmt.Fprintf(w, "Maturity:     %s\n", d.Maturity)
+	}
+	if d.KeyProperty != "" {
+		_, _ = fmt.Fprintf(w, "Key property: %s\n", d.KeyProperty)
+	}
 	if d.Description != "" {
 		_, _ = fmt.Fprintf(w, "Description:  %s\n", d.Description)
 	}
@@ -144,9 +154,9 @@ func propertyType(p schemaProperty) (typ, enum string) {
 	typ, enum = typeRef(p.Type)
 	if (typ == "set" || typ == "list") && p.Items != nil {
 		item, itemEnum := typeRef(p.Items.Type)
-		return typ + " of " + item, itemEnum
+		return withReference(typ+" of "+item, p.Items.ReferencedType), itemEnum
 	}
-	return typ, enum
+	return withReference(typ, p.ReferencedType), enum
 }
 
 // typeRef reads a type: a plain name, or a $ref to an enum or a type.
@@ -203,4 +213,12 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// withReference appends the schema a "setting" property points at.
+func withReference(typ, referenced string) string {
+	if referenced == "" {
+		return typ
+	}
+	return typ + " → " + referenced
 }

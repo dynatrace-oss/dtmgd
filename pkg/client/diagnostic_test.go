@@ -84,3 +84,25 @@ func TestDiagnoseTokenNotFoundSuggestsThePrompt(t *testing.T) {
 		t.Errorf("hint = %q", hint)
 	}
 }
+
+func TestIsNotApplicable(t *testing.T) {
+	const na = `{"error":{"code":403,"message":"Setting not applicable: 'x'"}}`
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"not applicable", APIError(403, na), true},
+		{"other 403", APIError(403, `{"error":{"code":403,"message":"Token is missing required scope"}}`), false},
+		{"404", APIError(404, na), false},
+		{"nil", nil, false},
+	}
+	for _, c := range cases {
+		if got := IsNotApplicable(c.err); got != c.want {
+			t.Errorf("%s: IsNotApplicable = %v, want %v", c.name, got, c.want)
+		}
+	}
+	if h := Diagnose(APIError(403, na)); !strings.Contains(h, "does not apply to this scope") {
+		t.Errorf("Diagnose = %q", h)
+	}
+}
