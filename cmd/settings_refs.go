@@ -195,7 +195,7 @@ func checkUnreferenced(c *client.Client, cur settingsObject) (warnings []string,
 		return warnings, err
 	}
 	return nil, withHint(fmt.Errorf("%s object %s (%s) is still used by %d settings object(s): %s",
-		cur.SchemaID, cur.ObjectID, cur.Summary, len(refs), listReferences(refs)),
+		cur.SchemaID, cur.ObjectID, unescapeMarkdown(cur.Summary), len(refs), listReferences(refs)),
 		"Change or delete those settings first. Settings only: dashboards and other configuration outside Settings 2.0 are not checked.")
 }
 
@@ -206,7 +206,7 @@ func listReferences(refs []settingsObject) string {
 		if i == maxListedReferences {
 			break
 		}
-		users = append(users, fmt.Sprintf("%s at %s (%s, %s)", r.SchemaID, r.Scope, r.ObjectID, r.Summary))
+		users = append(users, fmt.Sprintf("%s at %s (%s, %s)", r.SchemaID, r.Scope, r.ObjectID, unescapeMarkdown(r.Summary)))
 	}
 	out := strings.Join(users, ", ")
 	if len(refs) > maxListedReferences {

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"reflect"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -209,20 +210,48 @@ func planApply(c *client.Client, objs []applyObject) ([]plannedWrite, error) {
 
 // finalPlaces sets each positioned write's reported New place from the
 // virtual order after the whole file: a create is found by its plan index,
-// an existing object by its objectId. Current stays the place before the
-// run, and what the requests carry stays as resolved at planning time.
+// an existing object by its objectId. Current of an existing object is its
+// place in the server's listing before the run (the planning-time Current,
+// kept for the unchanged check, follows earlier writes of the file), and
+// what the requests carry stays as resolved at planning time.
 func (p *applyPlanner) finalPlaces(writes []plannedWrite) {
 	for i, w := range writes {
 		if w.Position == nil {
 			continue
 		}
-		for j, e := range p.order[orderKey(w.SchemaID, w.Scope)] {
-			if (w.ObjectID == "" && e.Planned == i+1) || (w.ObjectID != "" && e.ObjectID == w.ObjectID) {
-				w.Position.New = j + 1
-				break
+		p.setFinalPlace(i, w)
+	}
+}
+
+// setFinalPlace sets New of write i, and Current of an existing object.
+func (p *applyPlanner) setFinalPlace(i int, w plannedWrite) {
+	for j, e := range p.order[orderKey(w.SchemaID, w.Scope)] {
+		if (w.ObjectID == "" && e.Planned == i+1) || (w.ObjectID != "" && e.ObjectID == w.ObjectID) {
+			w.Position.New = j + 1
+			break
+		}
+	}
+	if w.ObjectID != "" {
+		if c := p.listedPlace(w.SchemaID, w.ObjectID); c > 0 {
+			w.Position.Current = c
+		}
+	}
+}
+
+// listedPlace is the 1-based place of objectID in the listing the server
+// gave for schemaID, before any write of the run; 0 when it was not listed.
+func (p *applyPlanner) listedPlace(schemaID, objectID string) int {
+	for key, l := range p.listed {
+		if !strings.HasPrefix(key, schemaID+"\x00") {
+			continue
+		}
+		for i, o := range l {
+			if o.ObjectID == objectID {
+				return i + 1
 			}
 		}
 	}
+	return 0
 }
 
 // target names the object w writes, so two writes to one object are found

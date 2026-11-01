@@ -172,12 +172,12 @@ func guardSecrets(c *client.Client, ws []plannedWrite, dryRun bool) error {
 	shapes := map[string]settingsSchemaShape{}
 	for i := range ws {
 		w := &ws[i]
-		if w.SchemaID == "" {
-			continue
-		}
 		if w.Exec != nil {
 			// Not a settings object: it carries no secrets.
 			w.ReportValue = w.Value
+			continue
+		}
+		if w.SchemaID == "" {
 			continue
 		}
 		if !needsSchema(*w, dryRun) {
@@ -222,6 +222,10 @@ func guardWrite(shape settingsSchemaShape, w *plannedWrite, dryRun bool) error {
 			return withHint(&UsageError{Err: fmt.Errorf("creating a %s object at %s: %s hold(s) a masked secret (***…***), not the secret itself", w.SchemaID, w.Scope, strings.Join(paths, ", "))},
 				"Exports mask secrets. Put the real value in the file; dtmgd never prints it.")
 		}
+	}
+	if dryRun && !shape.hasSecrets() {
+		w.ReportValue = w.Value
+		return nil
 	}
 	if dryRun {
 		w.Current = maskSecrets(shape, w.Current)

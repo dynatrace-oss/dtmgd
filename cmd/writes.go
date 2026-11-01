@@ -366,9 +366,42 @@ func (a *App) planWrites(cfg *config.Config, s writeSpec) ([]string, map[string]
 	case len(failed) == 1 && len(results) == 1:
 		return nil, nil, failed[0].Error
 	case len(failed) > 0:
-		return nil, nil, fmt.Errorf("nothing was written anywhere: %w", &client.PartialFailureError{Failed: failed, Total: len(results)})
+		return nil, nil, planFailure(failed, len(results))
 	}
 	return names, plans, nil
+}
+
+// planFailure is the error of a run where several contexts failed to plan: a
+// usage error with their common hint when every failure is one, otherwise a
+// partial failure.
+func planFailure(failed []client.EnvResult, total int) error {
+	err := fmt.Errorf("nothing was written anywhere: %w", &client.PartialFailureError{Failed: failed, Total: total})
+	if allUsageErrors(failed) {
+		return withHint(&UsageError{Err: err}, commonHint(failed))
+	}
+	return err
+}
+
+// allUsageErrors reports whether every failed context failed with a UsageError.
+func allUsageErrors(failed []client.EnvResult) bool {
+	for _, r := range failed {
+		var u *UsageError
+		if !errors.As(r.Error, &u) {
+			return false
+		}
+	}
+	return len(failed) > 0
+}
+
+// commonHint is the hint every failure carries, or "" when they differ.
+func commonHint(failed []client.EnvResult) string {
+	h := explicitHint(failed[0].Error)
+	for _, r := range failed[1:] {
+		if explicitHint(r.Error) != h {
+			return ""
+		}
+	}
+	return h
 }
 
 // refuseReadonly blocks a write run through a readonly context before any

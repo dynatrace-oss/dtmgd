@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dynatrace-oss/dtctl/sdk/agentmode"
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
 	"gopkg.in/yaml.v3"
 )
 
@@ -255,5 +257,64 @@ func TestSecretCheckSharesTheValueSafelyAcrossContexts(t *testing.T) {
 		if e.API.Hits(postObjects) != 2 {
 			t.Errorf("%s: %d POSTs, want 2", e.Name, e.API.Hits(postObjects))
 		}
+	}
+}
+
+// TestApplyMaskedSecretOverTwoContextsIsAUsageError pins that when every
+// context's plan fails with a usage error the run is a usage error (exit 2)
+// with their common hint, not a partial failure.
+func TestApplyMaskedSecretOverTwoContextsIsAUsageError(t *testing.T) {
+	a, b := newFakeAPI(t, notifRoutes()), newFakeAPI(t, notifRoutes())
+	cfg := withFakeEnvLevels(t, map[string]string{"a": "readwrite-all", "b": "readwrite-all"}, fakeEnv{"a", a}, fakeEnv{"b", b})
+	file := notifFile(t, "'"+maskValue+"'", "")
+	r := runCLI(t, cfg, "apply", "-f", file, "--env", "a;b")
+	if r.Code != 2 || !strings.Contains(r.Stderr, "Exports mask secrets") || !strings.Contains(r.Stderr, "a:") || !strings.Contains(r.Stderr, "b:") {
+		t.Errorf("human: %s", r)
+	}
+	r = runCLIWithEnv(t, map[string]string{"CLAUDECODE": "1"}, cfg, "apply", "-f", file, "--env", "a;b")
+	var resp agentmode.Response
+	if err := json.Unmarshal([]byte(r.Stdout), &resp); err != nil {
+		t.Fatalf("%v\n%s", err, r)
+	}
+	if r.Code != 2 || resp.Error == nil || !strings.Contains(strings.Join(resp.Error.Suggestions, "\n"), "Exports mask secrets") {
+		t.Errorf("agent: %s", r)
+	}
+}
+
+func TestGuardSecretsExecWriteKeepsItsDryRunValueWithoutASchemaID(t *testing.T) {
+	ws := []plannedWrite{{Exec: func(*client.Client, bool) writeResult { return writeResult{} }, Value: map[string]interface{}{"setting": "ENABLED"}}}
+	if err := guardSecrets(nil, ws, true); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ws[0].ReportValue, ws[0].Value) {
+		t.Errorf("ReportValue %v, want %v", ws[0].ReportValue, ws[0].Value)
+	}
+}
+
+// listOfSecretsShape has one property: a list of plain secrets.
+func listOfSecretsShape(t *testing.T) settingsSchemaShape {
+	t.Helper()
+	var s settingsSchemaShape
+	if err := json.Unmarshal([]byte(`{"properties":{"tokens":{"type":"list","items":{"type":"secret"}}}}`), &s); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestSecretListOfPlainSecrets(t *testing.T) {
+	s := listOfSecretsShape(t)
+	if !s.hasSecrets() {
+		t.Error("hasSecrets is false for a list of secrets")
+	}
+	v := map[string]interface{}{"tokens": []interface{}{"real", maskValue}}
+	masked := maskSecrets(s, v)
+	if want := []interface{}{secretPlaceholder, secretPlaceholder}; !reflect.DeepEqual(masked["tokens"], want) {
+		t.Errorf("maskSecrets = %v, want %v", masked["tokens"], want)
+	}
+	if v["tokens"].([]interface{})[0] != "real" {
+		t.Error("maskSecrets changed its input")
+	}
+	if got := maskedSecretPaths(s, v); !reflect.DeepEqual(got, []string{"tokens[1]"}) {
+		t.Errorf("maskedSecretPaths = %v", got)
 	}
 }

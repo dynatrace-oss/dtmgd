@@ -47,7 +47,7 @@ func printSettingsObject(w io.Writer, body interface{}) error {
 	_, _ = fmt.Fprintf(w, "Object ID:       %s\n", o.ObjectID)
 	_, _ = fmt.Fprintf(w, "Schema:          %s\n", o.SchemaID)
 	_, _ = fmt.Fprintf(w, "Scope:           %s\n", o.Scope)
-	_, _ = fmt.Fprintf(w, "Summary:         %s\n", o.Summary)
+	_, _ = fmt.Fprintf(w, "Summary:         %s\n", unescapeMarkdown(o.Summary))
 	if o.ExternalID != "" {
 		_, _ = fmt.Fprintf(w, "External ID:     %s\n", o.ExternalID)
 	}

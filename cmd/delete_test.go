@@ -257,3 +257,18 @@ func TestConfirmDeletePrompt(t *testing.T) {
 		}
 	}
 }
+
+// TestDeleteRefusalShowsUnescapedSummaries pins that the refusal, which a
+// person reads, shows summaries without the cluster's markdown backslashes.
+func TestDeleteRefusalShowsUnescapedSummaries(t *testing.T) {
+	escaped := `{"objectId":"obj-alerting-1","schemaId":"builtin:alerting.profile","scope":"environment","summary":"dtmgd\\-it\\-profile","updateToken":"tok","value":{"name":"x"}}`
+	ref := `{"objectId":"notif-1","schemaId":"builtin:problem.notifications","scope":"environment","summary":"dtmgd\\-it\\-mail","value":{"alertingProfile":"obj-alerting-1"}}`
+	_, cfg := deleteFake(t, "readwrite-all", "", map[string]route{
+		objPrefix + "obj-alerting-1": {Body: escaped},
+		notifPath:                    refList(ref),
+	})
+	r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes")
+	if r.Code != 1 || !strings.Contains(r.Stderr, "(dtmgd-it-profile)") || !strings.Contains(r.Stderr, "dtmgd-it-mail") || strings.Contains(r.Stderr, `\-`) {
+		t.Errorf("%s", r)
+	}
+}

@@ -471,3 +471,18 @@ func TestPositionAnchorsAreResolvedPerContext(t *testing.T) {
 		}
 	}
 }
+
+// TestDryRunCurrentIsThePlaceBeforeTheRun pins that position.current of an
+// existing object is its place in the server's listing, not in the virtual
+// order after earlier writes of the file.
+func TestDryRunCurrentIsThePlaceBeforeTheRun(t *testing.T) {
+	_, cfg := applyFake(t, "readwrite-all", orderedRoutes())
+	doc := createDoc("a", "first") + "---\nobjectId: o3\nschemaId: " + orderedSchema + "\nscope: environment\nposition: after:a\nvalue: {name: three}\n"
+	r, rep := orderedApply(t, cfg, doc, "--dry-run")
+	if r.Code != 0 || len(rep.Results) != 2 {
+		t.Fatalf("%s", r)
+	}
+	if p := rep.Results[1].Position; p == nil || p.Current != 3 || p.New != 2 {
+		t.Errorf("o3 position %+v, want current 3 new 2", p)
+	}
+}

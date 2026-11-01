@@ -349,10 +349,10 @@ func TestOrderedRulesPosition(t *testing.T) {
 	expectAction(t, "create c first", applied(t, cfg, ctx, "apply", "-f", orderFile(t, "c", "first")), "created")
 	expectOrder(t, ctx, "c first", "c", "a", "b")
 
-	applied(t, cfg, ctx, "apply", "-f", orderFile(t, "b", "before:"+orderPrefix+"c"))
+	expectAction(t, "move b before c", applied(t, cfg, ctx, "apply", "-f", orderFile(t, "b", "before:"+orderPrefix+"c")), "updated")
 	expectOrder(t, ctx, "b before c", "b", "c", "a")
 
-	applied(t, cfg, ctx, "apply", "-f", orderFile(t, "a", "after:"+orderPrefix+"b"))
+	expectAction(t, "move a after b", applied(t, cfg, ctx, "apply", "-f", orderFile(t, "a", "after:"+orderPrefix+"b")), "updated")
 	expectOrder(t, ctx, "a after b", "b", "a", "c")
 
 	for _, m := range testObjects(t, ctx, availabilitySchema, "environment") {

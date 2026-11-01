@@ -302,7 +302,7 @@ order. `get settings --schema <id> --scope <scope>` lists them in it
   place makes it `update`, even with the same value: a move.
 - The dry run shows `position: {current: N, new: M}` in json, yaml and the
   agent envelope; tables don't show it. Both are 1-based places: `current`
-  is the place now, `new` the place after the whole file is applied. A
+  is the place in the cluster's listing before the run, `new` the place after the whole file is applied. A
   create has no `current`.
 - `position` on a schema that is not ordered exits 2. An anchor that names
   no object fails the plan, with a hint to list the objects.

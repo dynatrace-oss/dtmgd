@@ -61,7 +61,8 @@ dtmgd apply -f window.yaml --dry-run --context <cluster-context>           # wri
   itself answers such a listing with 404 "No schema with schemaId …", so
   dtmgd then asks each schema (8 at a time) and merges the results in
   schema ID order. That takes a few seconds; `--limit` and the note that
-  more exist work as for any listing.
+  more exist work as for any listing. Schemas that cannot answer at the scope
+  are skipped; when none can (a mistyped scope, say), dtmgd reports an error.
 - **A 404 with a specific message** ("No schema with …", "Settings objectId
   '…' not found") comes from the Cluster API, so the host is right. Only a
   404 without a message, or with the generic "HTTP 404 Not Found", adds the

@@ -294,3 +294,45 @@ func TestClusterScopeFallbackSkipsSchemasNotQueryableAtTheScope(t *testing.T) {
 		wantObjectIDs(t, runCLI(t, cfg, tc.args...), "a1", "a2")
 	}
 }
+
+// TestClusterScopeFallbackErrorsWhenNoSchemaAnswers pins that a scope no
+// schema can answer at (a typo, an environment scope on a cluster) is an
+// error with a hint, not "No settings found.".
+func TestClusterScopeFallbackErrorsWhenNoSchemaAnswers(t *testing.T) {
+	path := "/api/cluster/v2/settings/objects"
+	routes := clusterFallbackRoutes(path)
+	for _, id := range []string{"a", "b", "c"} {
+		routes["GET "+path+" schemaIds=builtin:"+id] = route{Status: 404, Body: `{"error":{"code":404,"message":"No schema with topic identifier 'x'"}}`}
+	}
+	_, _, cfg := clusterSettingsFake(t, "", routes)
+	r := runCLI(t, cfg, "get", "settings", "--scope", "clustr")
+	if r.Code != 4 || strings.Contains(r.Stdout, "No settings found") {
+		t.Errorf("%s", r)
+	}
+	wantStderr(t, r, "No settings schema of this cluster can be read at scope clustr")
+}
+
+func TestClusterScopeFallbackEmptyAnswerIsNotAnError(t *testing.T) {
+	path := "/api/cluster/v2/settings/objects"
+	routes := clusterFallbackRoutes(path)
+	routes["GET "+path+" schemaIds=builtin:a"] = route{Body: `{"items":[],"totalCount":0}`}
+	routes["GET "+path+" schemaIds=builtin:b"] = route{Status: 404, Body: `{"error":{"code":404,"message":"No schema with topic identifier 'x'"}}`}
+	_, _, cfg := clusterSettingsFake(t, "", routes)
+	r := runCLI(t, cfg, "get", "settings", "--scope", "cluster")
+	if r.Code != 0 {
+		t.Errorf("%s", r)
+	}
+	wantStderr(t, r, "No settings found.")
+}
+
+func TestClusterScopeFallbackKnowsTheTotalWhenLimited(t *testing.T) {
+	path := "/api/cluster/v2/settings/objects"
+	routes := clusterFallbackRoutes(path)
+	routes["GET "+path+" schemaIds=builtin:a"] = route{Body: `{"items":[{"objectId":"a1"}],"totalCount":1}`}
+	_, _, cfg := clusterSettingsFake(t, "", routes)
+	r := runCLI(t, cfg, "get", "settings", "--scope", "cluster", "--limit", "1", "-o", "json")
+	wantObjectIDs(t, r, "a1")
+	if !strings.Contains(r.Stdout, `"totalCount": 2`) {
+		t.Errorf("totalCount not 2:\n%s", r.Stdout)
+	}
+}
