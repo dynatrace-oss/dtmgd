@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
 )
 
 const (
@@ -59,10 +61,11 @@ Examples:
   dtmgd get settings <object-id> -o yaml`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			names := &windowNames{}
 			spec := fetchSpec{
 				Verb:     "get",
 				Resource: "settings",
-				Rows:     settingsView{}.rows,
+				Rows:     settingsView{names: names}.rows,
 				Limit:    opts.limit,
 				Empty:    "No settings found.",
 			}
@@ -70,13 +73,13 @@ Examples:
 				if len(opts.schemas) > 0 || opts.scope != "" {
 					return &UsageError{Err: fmt.Errorf("--schema and --scope list objects; they cannot be combined with an object ID")}
 				}
-				spec.Fetch = describeFetch(settingsObjectsPath+"/"+url.PathEscape(args[0]), nil)
+				spec.Fetch = a.withWindowNames(describeFetch(settingsObjectsPath+"/"+url.PathEscape(args[0]), nil), names)
 				return a.runFetch(spec)
 			}
 			if len(opts.schemas) == 0 && opts.scope == "" {
 				return &UsageError{Err: fmt.Errorf("give --schema or --scope (the API needs one), or an object ID")}
 			}
-			spec.Fetch = hintOnNotFound(pagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, a.Opts.MaxPages), hintListSchemas)
+			spec.Fetch = a.withWindowNames(hintOnNotFound(pagedFetch(settingsObjectsPath, settingsParams(opts), "items", 500, a.Opts.MaxPages), hintListSchemas), names)
 			spec.List = true
 			return a.runFetch(spec)
 		},
@@ -85,4 +88,20 @@ Examples:
 	cmd.Flags().StringVar(&opts.scope, "scope", "", `scope: "environment" or an entity ID (HOST-…, HOST_GROUP-…, ENVIRONMENT_ACTIVE_GATE-…)`)
 	cmd.Flags().IntVar(&opts.limit, "limit", 0, "maximum number of results to show")
 	return withScopes(cmd, scopeSettingsRead)
+}
+
+// withWindowNames adds to fetch the lookup of update window names that the
+// OneAgent and ActiveGate update tables show. Only a person's table needs
+// them; a failed lookup leaves the object IDs, with a warning.
+func (a *App) withWindowNames(fetch func(*client.Client, int) (fetched, error), names *windowNames) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, limit int) (fetched, error) {
+		f, err := fetch(c, limit)
+		if err != nil || !a.humanOutput() || !usesWindows(f.Body) {
+			return f, err
+		}
+		if err := lookupWindowNames(c, names); err != nil {
+			f.Warnings = append(f.Warnings, "update window names unavailable: "+err.Error())
+		}
+		return f, nil
+	}
 }

@@ -1,0 +1,22 @@
+{
+  "items": [
+    {"objectId": "uw-weekly", "schemaId": "builtin:deployment.management.update-windows", "scope": "environment", "summary": "Weekly maintenance",
+     "value": {"enabled": false, "name": "Weekly maintenance", "recurrence": "WEEKLY",
+       "weeklyRecurrence": {"selectedWeekDays": {"monday": true, "tuesday": false, "wednesday": false, "thursday": false, "friday": true, "saturday": false, "sunday": false},
+         "every": 2, "updateTime": {"startTime": "03:00", "timeZone": "GMT+01:00", "duration": 90},
+         "recurrenceRange": {"start": "2026-01-01T00:00:00Z", "end": "2027-01-01T00:00:00Z"}}}},
+    {"objectId": "uw-daily", "schemaId": "builtin:deployment.management.update-windows", "scope": "environment", "summary": "Daily window",
+     "value": {"enabled": true, "name": "Daily window", "recurrence": "DAILY",
+       "dailyRecurrence": {"every": 1, "updateTime": {"startTime": "02:00", "timeZone": "GMT+00:00", "duration": 60},
+         "recurrenceRange": {"start": "2026-01-01T00:00:00Z", "end": "2027-01-01T00:00:00Z"}}}},
+    {"objectId": "uw-monthly", "schemaId": "builtin:deployment.management.update-windows", "scope": "environment", "summary": "Monthly window",
+     "value": {"enabled": true, "name": "Monthly window", "recurrence": "MONTHLY",
+       "monthlyRecurrence": {"selectedMonthDay": 15, "every": 1, "updateTime": {"startTime": "04:00", "timeZone": "GMT-05:00", "duration": 120},
+         "recurrenceRange": {"start": "2026-01-01T00:00:00Z", "end": "2027-01-01T00:00:00Z"}}}},
+    {"objectId": "uw-once", "schemaId": "builtin:deployment.management.update-windows", "scope": "environment", "summary": "One-off window",
+     "value": {"enabled": true, "name": "One-off window", "recurrence": "ONCE",
+       "onceRecurrence": {"recurrenceRange": {"start": "2026-11-01T03:00:00Z", "end": "2026-11-01T04:00:00Z"}}}}
+  ],
+  "totalCount": 4,
+  "pageSize": 500
+}

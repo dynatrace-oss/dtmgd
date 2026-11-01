@@ -1,0 +1,13 @@
+{
+  "items": [
+    {"objectId": "oa-env", "schemaId": "builtin:deployment.oneagent.updates", "scope": "environment", "summary": "During update windows",
+     "value": {"targetVersion": "latest", "revision": "latest", "updateMode": "AUTOMATIC_DURING_MW",
+       "maintenanceWindows": [{"maintenanceWindow": "uw-weekly"}, {"maintenanceWindow": "uw-gone"}]}},
+    {"objectId": "oa-group", "schemaId": "builtin:deployment.oneagent.updates", "scope": "HOST_GROUP-0000000000000001", "summary": "Manual",
+     "value": {"targetVersion": "latest", "revision": "latest", "updateMode": "MANUAL", "maintenanceWindows": []}},
+    {"objectId": "oa-host", "schemaId": "builtin:deployment.oneagent.updates", "scope": "HOST-0000000000000001", "summary": "Automatic",
+     "value": {"targetVersion": "1.341", "revision": "latest", "updateMode": "AUTOMATIC", "maintenanceWindows": []}}
+  ],
+  "totalCount": 3,
+  "pageSize": 500
+}

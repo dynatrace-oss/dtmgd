@@ -1,0 +1,10 @@
+{
+  "items": [
+    {"objectId": "ag-env", "schemaId": "builtin:deployment.activegate.updates", "scope": "environment", "summary": "During update windows",
+     "value": {"targetVersion": "previous", "updateMode": "AUTOMATIC_DURING_UW", "updateWindows": [{"updateWindow": "uw-daily"}]}},
+    {"objectId": "ag-old", "schemaId": "builtin:deployment.activegate.updates", "scope": "ENVIRONMENT_ACTIVE_GATE-0000000000000001", "summary": "Old format",
+     "value": {"autoUpdate": true}}
+  ],
+  "totalCount": 2,
+  "pageSize": 500
+}

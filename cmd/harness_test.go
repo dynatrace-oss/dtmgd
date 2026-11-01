@@ -40,7 +40,10 @@ type route struct {
 //
 // Routes are keyed "METHOD /path" and match regardless of the query string.
 // A follow-up page is keyed "METHOD /path nextPageKey=<key>", so a paged
-// fixture can serve page 2 when the client sends that key.
+// fixture can serve page 2 when the client sends that key. A Settings API
+// request can be keyed "METHOD /path schemaIds=<value>", so one fake answers
+// each schema with its own fixture; without such a key the plain one
+// answers.
 type fakeAPI struct {
 	URL string
 
@@ -67,6 +70,8 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 		rt, ok := routes[key]
 		if npk := q.Get("nextPageKey"); npk != "" {
 			rt, ok = routes[key+" nextPageKey="+npk]
+		} else if bySchema, found := routes[key+" schemaIds="+q.Get("schemaIds")]; found && q.Has("schemaIds") {
+			rt, ok = bySchema, true
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if !ok {
