@@ -63,6 +63,16 @@ that names an existing context is skipped unless you pass `--overwrite`. If any 
 is invalid (a missing `alias`, `apiEndpointUrl` or `environmentId`, a duplicate alias, or
 an alias containing `;`), nothing is written and the command exits 2.
 
+## Token Scopes
+
+An environment context's token is an API token created in that environment.
+Give it the scopes of the commands you use: the README lists which command
+needs which, and a 403 names the missing scope.
+The Settings 2.0 commands (`get settings-schemas`, `describe settings-schema`,
+`get settings`, `describe settings`) need `settings.read`.
+
+A cluster context's token is different: see Cluster Contexts below.
+
 ## Cluster Contexts
 
 A context without an `env-id` is a cluster context. It reaches the cluster's

@@ -1,0 +1,7 @@
+== exit code: 0
+== stdout
+ SCOPE                        UPDATE-MODE          TARGET-VERSION  REVISION  WINDOWS                      OBJECT-ID 
+ environment                  AUTOMATIC_DURING_MW  latest          latest    Weekly maintenance, uw-gone  oa-env    
+ HOST_GROUP-0000000000000001  MANUAL               latest          latest    —                            oa-group  
+ HOST-0000000000000001        AUTOMATIC            1.341           latest    —                            oa-host   
+== stderr

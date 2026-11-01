@@ -1,0 +1,6 @@
+== exit code: 0
+== stdout
+ SCOPE                                     UPDATE-MODE          TARGET-VERSION  WINDOWS       OBJECT-ID 
+ environment                               AUTOMATIC_DURING_UW  previous        Daily window  ag-env    
+ ENVIRONMENT_ACTIVE_GATE-0000000000000001  —                    —               —             ag-old    
+== stderr

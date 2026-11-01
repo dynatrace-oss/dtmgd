@@ -273,3 +273,19 @@ your task.
 - **When it applies**: Adding a filter flag or any behaviour that depends on how the cluster treats a parameter; re-checking the undocumented-parameter findings after a cluster upgrade
 - **Date**: 2026-10-30
 - **Ref**: coverage and architecture gaps
+
+### Settings 2.0 reads: paging, fields, effective values, update-schema quirks
+- **Context**: Phase 1 of Settings 2.0 (`get settings-schemas`, `describe settings-schema`, `get settings`, `get settings --effective`, `describe settings`) was built from the OpenAPI specs and the cluster server source at 1.352, before any live call.
+- **Insight**:
+  - `/settings/objects` needs `schemaIds` or `scopes` on the first page; later pages send `nextPageKey` alone (any other parameter, `pageSize` included, gets 400). Page size defaults to 100, at most 500.
+  - `get settings` asks for `fields=objectId,schemaId,scope,externalId,summary,updateToken,schemaVersion,value`, so an exported object carries what a write needs. The default fields are only `objectId,value`.
+  - `/settings/effectiveValues` takes a **singular** `scope` (required), not `scopes`. It returns no `objectId` or `updateToken`; `origin` is the scope the value is stored at; the server sends `"origin": "default"` for a schema default (dtmgd also shows an absent origin as `default`).
+  - `/settings/schemas` has no paging; `--search` and `--limit` work in dtmgd, and a search recounts `totalCount`.
+  - Update schemas: OneAgent's window mode is `AUTOMATIC_DURING_MW` (windows in `maintenanceWindows[].maintenanceWindow`), ActiveGate's is `AUTOMATIC_DURING_UW` (`updateWindows[].updateWindow`). A reference holds the update window's `objectId`.
+  - Deleting an update window is not blocked by references (the server check is behind a feature flag that is off), so tables must tolerate unknown window IDs: they show the ID.
+  - Window names are looked up only for tables (`a.humanOutput()`) whose view has a WINDOWS column, into a mutex-guarded map, because `--env` fan-out fetches in parallel.
+  - A listing's table is fixed by its request (one `--schema` → that schema's table; several schemas or a scope alone → the multi-schema table), never by the data: multi-environment csv/tsv prints one header for every environment, and `PrintSections` refuses lists of different row types.
+  - The fake API can key a route on the schema: `"GET /path schemaIds=<value>"`; `EscapedPaths(key)` shows a path as sent, since route keys hold the decoded path.
+- **When it applies**: Changing the settings commands, or adding Settings 2.0 writes (phase 2) or cluster settings (phase 3)
+- **Date**: 2026-11-01
+- **Ref**: Settings 2.0 phase 1 (docs/superpowers/plans/2026-10-31-settings-read-environments.md)

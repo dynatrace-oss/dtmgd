@@ -15,6 +15,8 @@ Supported resources:
   metrics (met)         Available metric descriptors
   slos                  Service Level Objectives
   security-problems (sp) Security vulnerabilities
+  settings-schemas (schemas) Settings 2.0 schemas
+  settings              Settings 2.0 objects (requires --schema or --scope)
 ```
 
 Cluster resources (need a cluster context: one without env-id):
@@ -64,5 +66,7 @@ dtmgd get [flags]
 * [dtmgd get nodes](dtmgd_get_nodes.md)	 - List the nodes of a Dynatrace Managed cluster (cluster context)
 * [dtmgd get problems](dtmgd_get_problems.md)	 - List problems from the Dynatrace Managed environment
 * [dtmgd get security-problems](dtmgd_get_security-problems.md)	 - List security vulnerabilities
+* [dtmgd get settings](dtmgd_get_settings.md)	 - List Settings 2.0 objects, or the values in effect at a scope
+* [dtmgd get settings-schemas](dtmgd_get_settings-schemas.md)	 - List Settings 2.0 schemas
 * [dtmgd get slos](dtmgd_get_slos.md)	 - List Service Level Objectives
 

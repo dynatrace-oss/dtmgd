@@ -1,0 +1,9 @@
+{
+  "items": [
+    {"objectId": "obj-mixed-1", "schemaId": "builtin:deployment.oneagent.updates", "scope": "HOST-0000000000000001", "summary": "Manual", "value": {"updateMode": "MANUAL"}},
+    {"objectId": "obj-mixed-2", "schemaId": "builtin:host.monitoring", "scope": "HOST-0000000000000001", "summary": "Full-stack", "value": {"enabled": true}},
+    {"objectId": "obj-mixed-3", "schemaId": "builtin:tags.auto-tagging", "scope": "HOST-0000000000000001", "summary": "team:payments", "value": {"name": "team"}}
+  ],
+  "totalCount": 3,
+  "pageSize": 500
+}

@@ -135,6 +135,19 @@ func hintOnBadRequest(fetch func(*client.Client, int) (fetched, error), hint str
 	}
 }
 
+// hintOnNotFound gives fetch's HTTP 404 errors hint, such as how to find a
+// valid ID.
+func hintOnNotFound(fetch func(*client.Client, int) (fetched, error), hint string) func(*client.Client, int) (fetched, error) {
+	return func(c *client.Client, limit int) (fetched, error) {
+		f, err := fetch(c, limit)
+		var apiErr *client.ErrAPI
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			return f, withHint(err, hint)
+		}
+		return f, err
+	}
+}
+
 // checkDelimited refuses -o csv or -o tsv, before any request, for a command
 // without table rows: one that only prints a summary or the API object.
 // Agent mode keeps its envelope whatever -o says.

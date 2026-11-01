@@ -1,0 +1,8 @@
+{
+  "items": [
+    {"schemaId": "builtin:deployment.oneagent.updates", "summary": "Automatic",
+     "value": {"targetVersion": "latest", "revision": "latest", "updateMode": "AUTOMATIC", "maintenanceWindows": []}}
+  ],
+  "totalCount": 1,
+  "pageSize": 500
+}

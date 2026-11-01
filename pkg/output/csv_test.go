@@ -130,3 +130,21 @@ func TestMaxTagShortensTablesOnly(t *testing.T) {
 		t.Errorf("csv: %q, %v", got, err)
 	}
 }
+
+// TestPrintSectionsRefusesMixedRowTypes pins that environments whose rows
+// differ in type get an error, not columns taken from the first list (or a
+// panic when the others have fewer fields).
+func TestPrintSectionsRefusesMixedRowTypes(t *testing.T) {
+	type wide struct {
+		A string `table:"A"`
+		B string `table:"B"`
+	}
+	type narrow struct {
+		A string `table:"A"`
+	}
+	var buf bytes.Buffer
+	err := (&CSVPrinter{w: &buf, comma: ','}).PrintSections([]string{"x", "y"}, []interface{}{[]wide{{"1", "2"}}, []narrow{{"3"}}})
+	if err == nil {
+		t.Errorf("want an error, wrote %q", buf.String())
+	}
+}

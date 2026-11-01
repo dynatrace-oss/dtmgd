@@ -1,0 +1,10 @@
+{
+  "items": [
+    {"schemaId": "builtin:alerting.profile", "displayName": "Problem alerting profiles", "latestSchemaVersion": "8.2.1"},
+    {"schemaId": "builtin:anomaly-detection.services", "displayName": "Anomaly detection for services", "latestSchemaVersion": "1.0.12"},
+    {"schemaId": "builtin:deployment.activegate.updates", "displayName": "ActiveGate updates", "latestSchemaVersion": "1.0.4"},
+    {"schemaId": "builtin:deployment.management.update-windows", "displayName": "Update windows", "latestSchemaVersion": "0.63.3"},
+    {"schemaId": "builtin:deployment.oneagent.updates", "displayName": "OneAgent updates", "latestSchemaVersion": "1.0.4"}
+  ],
+  "totalCount": 5
+}

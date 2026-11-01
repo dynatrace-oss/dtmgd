@@ -1,0 +1,19 @@
+== exit code: 0
+== stdout
+Schema:       builtin:deployment.oneagent.updates
+Name:         OneAgent updates
+Version:      1.0.4
+Scopes:       HOST, HOST_GROUP, environment
+Objects:      one per scope
+Description:  Configure how OneAgents update.
+
+ PROPERTY            TYPE                      DEFAULT    VALUES                                 
+ maintenanceWindows  set of MaintenanceWindow  —                                                 
+ revision            text                      —                                                 
+ targetVersion       text                      latest                                            
+ updateMode          enum                      AUTOMATIC  AUTOMATIC, AUTOMATIC_DURING_MW, MANUAL 
+
+Type MaintenanceWindow:
+ PROPERTY           TYPE     DEFAULT  VALUES 
+ maintenanceWindow  setting  —               
+== stderr

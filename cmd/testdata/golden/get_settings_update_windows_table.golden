@@ -1,0 +1,8 @@
+== exit code: 0
+== stdout
+ NAME                ENABLED  SCHEDULE                                                                         OBJECT-ID  
+ Weekly maintenance  no       every 2 weeks Mon,Fri 03:00 GMT+01:00, 90 min, from 2026-01-01 until 2027-01-01  uw-weekly  
+ Daily window        yes      daily 02:00 GMT+00:00, 60 min, from 2026-01-01 until 2027-01-01                  uw-daily   
+ Monthly window      yes      monthly on day 15 04:00 GMT-05:00, 120 min, from 2026-01-01 until 2027-01-01     uw-monthly 
+ One-off window      yes      once 2026-11-01T03:00:00Z – 2026-11-01T04:00:00Z                                 uw-once    
+== stderr

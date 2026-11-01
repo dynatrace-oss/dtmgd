@@ -17,6 +17,8 @@ Supported resources:
   metrics (met)         Available metric descriptors
   slos                  Service Level Objectives
   security-problems (sp) Security vulnerabilities
+  settings-schemas (schemas) Settings 2.0 schemas
+  settings              Settings 2.0 objects (requires --schema or --scope)
 
 Cluster resources (need a cluster context: one without env-id):
   environments (envs)   The cluster's environments
@@ -36,6 +38,8 @@ Use 'dtmgd get <resource> --help' for resource-specific options.`,
 		newGetNodesCmd(a),
 		newGetProblemsCmd(a),
 		newGetSecurityProblemsCmd(a),
+		newGetSettingsCmd(a),
+		newGetSettingsSchemasCmd(a),
 		newGetSLOsCmd(a),
 	)
 	return asGroup(cmd)

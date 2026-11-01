@@ -1,0 +1,540 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/dynatrace-oss/dtmgd/pkg/client"
+)
+
+// The update schemas get settings shows as readable tables.
+const (
+	schemaUpdateWindows     = "builtin:deployment.management.update-windows"
+	schemaOneAgentUpdates   = "builtin:deployment.oneagent.updates"
+	schemaActiveGateUpdates = "builtin:deployment.activegate.updates"
+)
+
+// The update modes that use update windows. OneAgent and ActiveGate spell
+// them differently.
+const (
+	modeOneAgentDuringWindows   = "AUTOMATIC_DURING_MW"
+	modeActiveGateDuringWindows = "AUTOMATIC_DURING_UW"
+)
+
+// noValue is the cell of a field the value does not have.
+const noValue = "—"
+
+// settingsObject is a stored Settings 2.0 object as get settings asks for it
+// (settingsObjectFields), or an effective value (which has origin instead of
+// objectId, scope and updateToken).
+type settingsObject struct {
+	ObjectID      string                 `json:"objectId"`
+	SchemaID      string                 `json:"schemaId"`
+	Scope         string                 `json:"scope"`
+	ExternalID    string                 `json:"externalId"`
+	Summary       string                 `json:"summary"`
+	UpdateToken   string                 `json:"updateToken"`
+	SchemaVersion string                 `json:"schemaVersion"`
+	Origin        string                 `json:"origin"`
+	Value         map[string]interface{} `json:"value"`
+}
+
+// genericSettingsRow is the table row for objects of any one schema.
+type genericSettingsRow struct {
+	ObjectID string `table:"OBJECT-ID"`
+	Scope    string `table:"SCOPE"`
+	Summary  string `table:"SUMMARY,max=80"`
+}
+
+// genericMultiSchemaRow is the table row for objects of several schemas.
+type genericMultiSchemaRow struct {
+	Schema   string `table:"SCHEMA"`
+	ObjectID string `table:"OBJECT-ID"`
+	Scope    string `table:"SCOPE"`
+	Summary  string `table:"SUMMARY,max=80"`
+}
+
+// settingsView turns get settings' results into table rows: a readable view
+// for the update schemas, a generic one for any other schema or a mix of
+// schemas. A listing's request decides the table (see forRequest), so every
+// environment of a multi-environment csv gets the same columns, nothing
+// stored or not; only a get by object ID goes by the object's schema.
+type settingsView struct {
+	// schema is the one schema a listing asks for; "" with fixed means
+	// several schemas or a scope, which get the multi-schema table.
+	schema string
+	// fixed says the request decided the table; otherwise the objects do.
+	fixed bool
+	// names are the update windows' names by object ID, for the WINDOWS
+	// column; nil (or a missing ID) shows the object ID.
+	names *windowNames
+	// effective selects the tables for effective values, which show where
+	// each value is stored (ORIGIN) instead of an object ID and scope.
+	effective bool
+}
+
+// rows is get settings' fetchSpec.Rows. body is a list (items) or one object.
+func (v settingsView) rows(body interface{}) (interface{}, int, error) {
+	m, _ := body.(map[string]interface{})
+	var objs []settingsObject
+	if err := decodeItems(m, &objs); err != nil {
+		return nil, 0, err
+	}
+	schema, single := v.table(objs)
+	if v.effective {
+		return v.effectiveRows(objs, schema, single)
+	}
+	if !single {
+		return genericMultiSchemaRows(objs)
+	}
+	switch schema {
+	case schemaUpdateWindows:
+		return updateWindowRows(objs)
+	case schemaOneAgentUpdates:
+		return v.oneAgentUpdatesRows(objs)
+	case schemaActiveGateUpdates:
+		return v.activeGateUpdatesRows(objs)
+	}
+	return genericRows(objs)
+}
+
+// forRequest fixes the table by what a listing asks for: one --schema gets
+// that schema's table, several schemas or a scope alone the multi-schema
+// table. A get by object ID (no flags) leaves it to the object.
+func (v settingsView) forRequest(opts getSettingsOptions, byID bool) settingsView {
+	if byID {
+		return v
+	}
+	v.fixed = true
+	if len(opts.schemas) == 1 {
+		v.schema = opts.schemas[0]
+	}
+	return v
+}
+
+// table returns the schema whose table objs get, and whether it is a single
+// schema (false: the multi-schema table).
+func (v settingsView) table(objs []settingsObject) (string, bool) {
+	if v.fixed {
+		return v.schema, v.schema != ""
+	}
+	return singleSchema(objs)
+}
+
+// singleSchema returns the schema all objs belong to, and whether there is
+// only one (true for no objects).
+func singleSchema(objs []settingsObject) (string, bool) {
+	if len(objs) == 0 {
+		return "", true
+	}
+	for _, o := range objs[1:] {
+		if o.SchemaID != objs[0].SchemaID {
+			return "", false
+		}
+	}
+	return objs[0].SchemaID, true
+}
+
+func genericRows(objs []settingsObject) (interface{}, int, error) {
+	rows := make([]genericSettingsRow, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, genericSettingsRow{ObjectID: o.ObjectID, Scope: o.Scope, Summary: o.Summary})
+	}
+	return rows, len(rows), nil
+}
+
+func genericMultiSchemaRows(objs []settingsObject) (interface{}, int, error) {
+	rows := make([]genericMultiSchemaRow, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, genericMultiSchemaRow{Schema: o.SchemaID, ObjectID: o.ObjectID, Scope: o.Scope, Summary: o.Summary})
+	}
+	return rows, len(rows), nil
+}
+
+// updateWindowRow is the table row for update windows.
+type updateWindowRow struct {
+	Name     string `table:"NAME"`
+	Enabled  string `table:"ENABLED"`
+	Schedule string `table:"SCHEDULE"`
+	ObjectID string `table:"OBJECT-ID"`
+}
+
+// oneAgentUpdatesRow is the table row for OneAgent update settings.
+type oneAgentUpdatesRow struct {
+	Scope         string `table:"SCOPE"`
+	UpdateMode    string `table:"UPDATE-MODE"`
+	TargetVersion string `table:"TARGET-VERSION"`
+	Revision      string `table:"REVISION"`
+	Windows       string `table:"WINDOWS,max=60"`
+	ObjectID      string `table:"OBJECT-ID"`
+}
+
+// activeGateUpdatesRow is the table row for ActiveGate update settings.
+type activeGateUpdatesRow struct {
+	Scope         string `table:"SCOPE"`
+	UpdateMode    string `table:"UPDATE-MODE"`
+	TargetVersion string `table:"TARGET-VERSION"`
+	Windows       string `table:"WINDOWS,max=60"`
+	ObjectID      string `table:"OBJECT-ID"`
+}
+
+func updateWindowRows(objs []settingsObject) (interface{}, int, error) {
+	rows := make([]updateWindowRow, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, updateWindowRow{
+			Name:     cell(o.Value, "name"),
+			Enabled:  enabledCell(o.Value),
+			Schedule: updateWindowSchedule(o.Value),
+			ObjectID: o.ObjectID,
+		})
+	}
+	return rows, len(rows), nil
+}
+
+func (v settingsView) oneAgentUpdatesRows(objs []settingsObject) (interface{}, int, error) {
+	rows := make([]oneAgentUpdatesRow, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, v.oneAgentUpdatesRow(o))
+	}
+	return rows, len(rows), nil
+}
+
+func (v settingsView) activeGateUpdatesRows(objs []settingsObject) (interface{}, int, error) {
+	rows := make([]activeGateUpdatesRow, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, v.activeGateUpdatesRow(o))
+	}
+	return rows, len(rows), nil
+}
+
+// oneAgentUpdatesRow is o's row in the OneAgent updates table; the effective
+// table takes its cells from it too, so the two cannot drift.
+func (v settingsView) oneAgentUpdatesRow(o settingsObject) oneAgentUpdatesRow {
+	return oneAgentUpdatesRow{
+		Scope:         o.Scope,
+		UpdateMode:    cell(o.Value, "updateMode"),
+		TargetVersion: cell(o.Value, "targetVersion"),
+		Revision:      cell(o.Value, "revision"),
+		Windows:       v.windowsCell(o.Value, modeOneAgentDuringWindows, "maintenanceWindows", "maintenanceWindow"),
+		ObjectID:      o.ObjectID,
+	}
+}
+
+// activeGateUpdatesRow is o's row in the ActiveGate updates table, shared
+// with the effective table like oneAgentUpdatesRow.
+func (v settingsView) activeGateUpdatesRow(o settingsObject) activeGateUpdatesRow {
+	return activeGateUpdatesRow{
+		Scope:         o.Scope,
+		UpdateMode:    cell(o.Value, "updateMode"),
+		TargetVersion: cell(o.Value, "targetVersion"),
+		Windows:       v.windowsCell(o.Value, modeActiveGateDuringWindows, "updateWindows", "updateWindow"),
+		ObjectID:      o.ObjectID,
+	}
+}
+
+// updateWindowEffectiveRow is the table row for effective update windows.
+type updateWindowEffectiveRow struct {
+	Name     string `table:"NAME"`
+	Enabled  string `table:"ENABLED"`
+	Schedule string `table:"SCHEDULE"`
+	Origin   string `table:"ORIGIN"`
+}
+
+// oneAgentUpdatesEffectiveRow is the table row for effective OneAgent
+// update settings.
+type oneAgentUpdatesEffectiveRow struct {
+	Origin        string `table:"ORIGIN"`
+	UpdateMode    string `table:"UPDATE-MODE"`
+	TargetVersion string `table:"TARGET-VERSION"`
+	Revision      string `table:"REVISION"`
+	Windows       string `table:"WINDOWS,max=60"`
+}
+
+// activeGateUpdatesEffectiveRow is the table row for effective ActiveGate
+// update settings.
+type activeGateUpdatesEffectiveRow struct {
+	Origin        string `table:"ORIGIN"`
+	UpdateMode    string `table:"UPDATE-MODE"`
+	TargetVersion string `table:"TARGET-VERSION"`
+	Windows       string `table:"WINDOWS,max=60"`
+}
+
+// genericEffectiveRow is the table row for effective values of any schema.
+type genericEffectiveRow struct {
+	Schema  string `table:"SCHEMA"`
+	Origin  string `table:"ORIGIN"`
+	Summary string `table:"SUMMARY,max=80"`
+}
+
+// effectiveRows builds the effective-values table for objs, all of schema
+// when single.
+func (v settingsView) effectiveRows(objs []settingsObject, schema string, single bool) (interface{}, int, error) {
+	if !single {
+		schema = ""
+	}
+	switch schema {
+	case schemaUpdateWindows:
+		rows := make([]updateWindowEffectiveRow, 0, len(objs))
+		for _, o := range objs {
+			rows = append(rows, updateWindowEffectiveRow{Name: cell(o.Value, "name"), Enabled: enabledCell(o.Value), Schedule: updateWindowSchedule(o.Value), Origin: originCell(o)})
+		}
+		return rows, len(rows), nil
+	case schemaOneAgentUpdates:
+		rows := make([]oneAgentUpdatesEffectiveRow, 0, len(objs))
+		for _, o := range objs {
+			r := v.oneAgentUpdatesRow(o)
+			rows = append(rows, oneAgentUpdatesEffectiveRow{Origin: originCell(o), UpdateMode: r.UpdateMode, TargetVersion: r.TargetVersion, Revision: r.Revision, Windows: r.Windows})
+		}
+		return rows, len(rows), nil
+	case schemaActiveGateUpdates:
+		rows := make([]activeGateUpdatesEffectiveRow, 0, len(objs))
+		for _, o := range objs {
+			r := v.activeGateUpdatesRow(o)
+			rows = append(rows, activeGateUpdatesEffectiveRow{Origin: originCell(o), UpdateMode: r.UpdateMode, TargetVersion: r.TargetVersion, Windows: r.Windows})
+		}
+		return rows, len(rows), nil
+	}
+	rows := make([]genericEffectiveRow, 0, len(objs))
+	for _, o := range objs {
+		rows = append(rows, genericEffectiveRow{Schema: o.SchemaID, Origin: originCell(o), Summary: o.Summary})
+	}
+	return rows, len(rows), nil
+}
+
+// originCell is where an effective value is stored; "default" when it has
+// no origin, which is the schema default applying.
+func originCell(o settingsObject) string {
+	if o.Origin == "" {
+		return "default"
+	}
+	return o.Origin
+}
+
+// cell is a value field as a table cell, noValue when the value lacks it.
+func cell(v map[string]interface{}, key string) string {
+	switch t := v[key].(type) {
+	case nil:
+		return noValue
+	case string:
+		if t == "" {
+			return noValue
+		}
+		return t
+	default:
+		return fmt.Sprint(t)
+	}
+}
+
+// enabledCell is the value's enabled field as yes or no.
+func enabledCell(v map[string]interface{}) string {
+	enabled, ok := v["enabled"].(bool)
+	switch {
+	case !ok:
+		return noValue
+	case enabled:
+		return "yes"
+	}
+	return "no"
+}
+
+// windowsCell names the update windows an update setting uses: those under
+// listKey (each a reference under itemKey), in order, when its update mode
+// is mode (the one that uses windows), else noValue.
+func (v settingsView) windowsCell(value map[string]interface{}, mode, listKey, itemKey string) string {
+	if cell(value, "updateMode") != mode {
+		return noValue
+	}
+	list, _ := value[listKey].([]interface{})
+	var names []string
+	for _, item := range list {
+		ref, _ := item.(map[string]interface{})
+		if id, _ := ref[itemKey].(string); id != "" {
+			names = append(names, v.names.name(id))
+		}
+	}
+	if len(names) == 0 {
+		return noValue
+	}
+	return strings.Join(names, ", ")
+}
+
+// updateWindowSchedule describes an update window's recurrence in one
+// phrase, e.g. "weekly Mon 03:00 GMT+00:00, 60 min, from 2026-01-01 until
+// 2027-01-01". The range is there so an expired window shows. A window
+// whose recurrence block is missing shows its recurrence as is.
+func updateWindowSchedule(v map[string]interface{}) string {
+	recurrence, _ := v["recurrence"].(string)
+	switch recurrence {
+	case "":
+		return noValue
+	case "ONCE":
+		r := nested(v, "onceRecurrence", "recurrenceRange")
+		if start, end := text(r, "start"), text(r, "end"); start != "" && end != "" {
+			return fmt.Sprintf("once %s – %s", start, end)
+		}
+	case "DAILY":
+		if b := nested(v, "dailyRecurrence"); b != nil {
+			return recurringSchedule(b, "daily", "days", "")
+		}
+	case "WEEKLY":
+		if b := nested(v, "weeklyRecurrence"); b != nil {
+			return recurringSchedule(b, "weekly", "weeks", weekDays(nested(b, "selectedWeekDays")))
+		}
+	case "MONTHLY":
+		if b := nested(v, "monthlyRecurrence"); b != nil {
+			return recurringSchedule(b, "monthly", "months", fmt.Sprintf("on day %d", intOf(b["selectedMonthDay"])))
+		}
+	}
+	return recurrence
+}
+
+// recurringSchedule is the phrase for a daily, weekly or monthly block:
+// its cadence ("weekly", "every 2 weeks"), when (days of the week or the
+// month, if any), its start time, time zone and duration, and the dates it
+// runs between. Parts the block lacks are left out.
+func recurringSchedule(block map[string]interface{}, once, unit, when string) string {
+	parts := []string{once}
+	if every := intOf(block["every"]); every > 1 {
+		parts[0] = fmt.Sprintf("every %d %s", every, unit)
+	}
+	for _, p := range []string{when, text(nested(block, "updateTime"), "startTime"), text(nested(block, "updateTime"), "timeZone")} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	phrase := strings.Join(parts, " ")
+	if d := intOf(nested(block, "updateTime")["duration"]); d > 0 {
+		phrase += fmt.Sprintf(", %d min", d)
+	}
+	r := nested(block, "recurrenceRange")
+	if start, end := text(r, "start"), text(r, "end"); start != "" && end != "" {
+		phrase += fmt.Sprintf(", from %s until %s", day(start), day(end))
+	}
+	return phrase
+}
+
+// text is a string field of v, "" when v or the field is missing.
+func text(v map[string]interface{}, key string) string {
+	s, _ := v[key].(string)
+	return s
+}
+
+// day is a timestamp's date, e.g. 2026-01-01 for 2026-01-01T00:00:00Z.
+func day(timestamp string) string {
+	if d, _, found := strings.Cut(timestamp, "T"); found {
+		return d
+	}
+	return timestamp
+}
+
+// weekDays lists the selected days, Monday first, as "Mon,Fri".
+func weekDays(selected map[string]interface{}) string {
+	var days []string
+	for _, d := range []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} {
+		if on, _ := selected[d].(bool); on {
+			days = append(days, strings.ToUpper(d[:1])+d[1:3])
+		}
+	}
+	return strings.Join(days, ",")
+}
+
+// nested follows keys through nested objects, nil when one is missing.
+func nested(v map[string]interface{}, keys ...string) map[string]interface{} {
+	for _, k := range keys {
+		next, ok := v[k].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		v = next
+	}
+	return v
+}
+
+// intOf is a JSON number as an int, 0 when it is not one.
+func intOf(v interface{}) int {
+	f, _ := v.(float64)
+	return int(f)
+}
+
+// windowNames maps update windows' object IDs to their names. The fetches
+// of a multi-environment run fill it in parallel, so a mutex guards it;
+// object IDs are unique across environments.
+type windowNames struct {
+	mu sync.Mutex
+	m  map[string]string
+}
+
+func (n *windowNames) set(id, name string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.m == nil {
+		n.m = map[string]string{}
+	}
+	n.m[id] = name
+}
+
+// name is the window's name, or id when it is unknown (a window deleted
+// while settings still name it, or a failed lookup).
+func (n *windowNames) name(id string) string {
+	if n == nil {
+		return id
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if name, ok := n.m[id]; ok {
+		return name
+	}
+	return id
+}
+
+// lookupWindowNames fills n with the environment's update windows' names.
+func lookupWindowNames(c *client.Client, n *windowNames) error {
+	body, err := c.GetV2Paged(settingsObjectsPath, map[string]string{
+		"schemaIds": schemaUpdateWindows,
+		"scopes":    "environment",
+		"fields":    "objectId,value",
+		"pageSize":  "500",
+	}, client.Paging{ListKey: "items"})
+	if err != nil {
+		return err
+	}
+	var windows []settingsObject
+	if err := decodeItems(body, &windows); err != nil {
+		return err
+	}
+	for _, w := range windows {
+		if name, ok := w.Value["name"].(string); ok {
+			n.set(w.ObjectID, name)
+		}
+	}
+	return nil
+}
+
+// usesWindows reports whether the table for a get settings body has a
+// WINDOWS column: OneAgent or ActiveGate update settings, alone.
+func (v settingsView) usesWindows(body interface{}) bool {
+	m, _ := body.(map[string]interface{})
+	var objs []settingsObject
+	if decodeItems(m, &objs) != nil {
+		return false
+	}
+	schema, single := v.table(objs)
+	return single && (schema == schemaOneAgentUpdates || schema == schemaActiveGateUpdates)
+}
+
+// decodeItems decodes a Settings API body into out, a pointer to a slice:
+// the body's items when it is a list, else the body itself as the only
+// element (a get by ID returns the bare object).
+func decodeItems(body map[string]interface{}, out interface{}) error {
+	var items interface{} = []interface{}{body}
+	if list, isList := body["items"]; isList {
+		items = list
+	}
+	data, err := json.Marshal(items)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, out)
+}
