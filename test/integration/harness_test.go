@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,6 +48,51 @@ func run(t testing.TB, args ...string) result {
 		return result{}
 	}
 	full := append([]string{"--config", requireEnv(t, "DTMGD_IT_CONFIG"), "--no-agent", "--plain"}, args...)
+	var out, errb bytes.Buffer
+	code := cmd.Run(full, &out, &errb)
+	return result{Out: out.Bytes(), Err: errb.String(), Code: code}
+}
+
+// writeVerbs are the only verbs writeRun runs.
+var writeVerbs = map[string]bool{"apply": true, "create": true, "delete": true}
+
+// writeConfig returns a temporary copy of DTMGD_IT_CONFIG in which only the
+// write context, DTMGD_IT_WRITE_ENV, may write (readwrite-all), and that
+// context's name. The original config is never written. Without both
+// variables the test skips.
+func writeConfig(t *testing.T) (path, ctx string) {
+	t.Helper()
+	orig := requireEnv(t, "DTMGD_IT_CONFIG")
+	ctx = requireEnv(t, "DTMGD_IT_WRITE_ENV")
+	cfg, err := config.LoadFrom(orig)
+	if err != nil {
+		t.Fatalf("loading the config: %v", err)
+	}
+	if err := cfg.SetSafetyLevel(ctx, config.SafetyReadWriteAll); err != nil {
+		t.Fatal(err)
+	}
+	path = filepath.Join(t.TempDir(), "config")
+	if err := cfg.SaveTo(path); err != nil {
+		t.Fatalf("saving the copy: %v", err)
+	}
+	return path, ctx
+}
+
+// writeRun runs a write command with config cfg against context ctx, the
+// write context. It refuses any verb but apply, create and delete, and any
+// other context, so a test can write nowhere else; a dry run, which sends
+// GETs only, may name any context.
+func writeRun(t testing.TB, cfg, ctx string, args ...string) result {
+	t.Helper()
+	if len(args) == 0 || !writeVerbs[args[0]] {
+		t.Fatalf("writeRun runs apply, create and delete only, not %q", args)
+		return result{}
+	}
+	if want := os.Getenv("DTMGD_IT_WRITE_ENV"); ctx != want && !slices.Contains(args, "--dry-run") {
+		t.Fatalf("writeRun writes to %q only, not %q", want, ctx)
+		return result{}
+	}
+	full := append([]string{"--config", cfg, "--context", ctx, "--no-agent", "--plain"}, args...)
 	var out, errb bytes.Buffer
 	code := cmd.Run(full, &out, &errb)
 	return result{Out: out.Bytes(), Err: errb.String(), Code: code}
@@ -185,6 +231,26 @@ func TestHarnessRefusesWriteVerbs(t *testing.T) {
 		r := run(rec, verb, "view")
 		if rec.msg == "" || r.Code != 0 || len(r.Out) != 0 {
 			t.Errorf("run(%q) was not refused", verb)
+		}
+	}
+}
+
+// TestWriteRunRefusesReadsAndOtherContexts needs no cluster: it pins that
+// writeRun runs only write verbs, and writes only to the write context.
+func TestWriteRunRefusesReadsAndOtherContexts(t *testing.T) {
+	cfg := filepath.Join(t.TempDir(), "config")
+	if err := os.WriteFile(cfg, []byte("contexts: []\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DTMGD_IT_WRITE_ENV", "stage")
+	for _, args := range [][]string{{"get", "settings"}, {"config", "view"}, {"apply", "-f", "x"}} {
+		ctx := "stage"
+		if args[0] == "apply" {
+			ctx = "prod"
+		}
+		rec := &fatalRecorder{TB: t}
+		if r := writeRun(rec, cfg, ctx, args...); rec.msg == "" || len(r.Out) != 0 {
+			t.Errorf("writeRun(%q, %v) was not refused", ctx, args)
 		}
 	}
 }
