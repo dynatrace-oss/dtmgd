@@ -1,0 +1,12 @@
+== exit code: 0
+== stdout
+Object ID:       vu9/x+y=
+Schema:          builtin:alerting.profile
+Scope:           environment
+Summary:         Payments on-call
+External ID:     ext-1
+Schema version:  8.2.1
+Value:
+  name: Payments on-call
+  severityRules: []
+== stderr

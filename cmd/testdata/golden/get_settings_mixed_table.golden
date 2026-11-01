@@ -1,0 +1,7 @@
+== exit code: 0
+== stdout
+ SCHEMA                               OBJECT-ID    SCOPE                  SUMMARY       
+ builtin:deployment.oneagent.updates  obj-mixed-1  HOST-0000000000000001  Manual        
+ builtin:host.monitoring              obj-mixed-2  HOST-0000000000000001  Full-stack    
+ builtin:tags.auto-tagging            obj-mixed-3  HOST-0000000000000001  team:payments 
+== stderr

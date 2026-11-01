@@ -48,11 +48,12 @@ type fakeAPI struct {
 	hits    map[string]int
 	queries map[string][]url.Values
 	headers map[string][]http.Header
+	escaped map[string][]string
 }
 
 func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 	t.Helper()
-	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}}
+	f := &fakeAPI{hits: map[string]int{}, queries: map[string][]url.Values{}, headers: map[string][]http.Header{}, escaped: map[string][]string{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
 		q := r.URL.Query()
@@ -60,6 +61,7 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 		f.hits[key]++
 		f.queries[key] = append(f.queries[key], q)
 		f.headers[key] = append(f.headers[key], r.Header.Clone())
+		f.escaped[key] = append(f.escaped[key], r.URL.EscapedPath())
 		f.mu.Unlock()
 
 		rt, ok := routes[key]
@@ -111,6 +113,15 @@ func (f *fakeAPI) Headers(key string) []http.Header {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]http.Header(nil), f.headers[key]...)
+}
+
+// EscapedPaths returns the paths of the requests to "METHOD /path" as sent,
+// still escaped, in order. Route keys use the decoded path, so this is how a
+// test sees that an ID was escaped.
+func (f *fakeAPI) EscapedPaths(key string) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.escaped[key]...)
 }
 
 // fakeEnv names one context and the fake API it points at.

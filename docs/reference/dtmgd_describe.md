@@ -16,6 +16,7 @@ Supported resources:
   metric <id>               Metric descriptor details
   slo <id>                  SLO details with evaluation data
   security-problem <id>     Security vulnerability details with CVE info
+  settings <object-id>      A Settings 2.0 object and its value
   settings-schema <id>      A Settings 2.0 schema: scopes, properties, allowed values
 ```
 
@@ -69,6 +70,7 @@ dtmgd describe [flags]
 * [dtmgd describe metric](dtmgd_describe_metric.md)	 - Show detailed information about a specific metric descriptor
 * [dtmgd describe problem](dtmgd_describe_problem.md)	 - Show detailed information about a specific problem
 * [dtmgd describe security-problem](dtmgd_describe_security-problem.md)	 - Show detailed information about a security vulnerability
+* [dtmgd describe settings](dtmgd_describe_settings.md)	 - Show a Settings 2.0 object
 * [dtmgd describe settings-schema](dtmgd_describe_settings-schema.md)	 - Show a Settings 2.0 schema: scopes, properties and allowed values
 * [dtmgd describe slo](dtmgd_describe_slo.md)	 - Show detailed information about a specific SLO
 

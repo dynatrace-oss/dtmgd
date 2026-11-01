@@ -1,0 +1,6 @@
+== exit code: 0
+== stdout
+ OBJECT-ID       SCOPE        SUMMARY          
+ obj-alerting-1  environment  Default          
+ obj-alerting-2  environment  Payments on-call 
+== stderr
