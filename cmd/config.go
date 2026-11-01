@@ -62,6 +62,7 @@ build log.`,
 			if !opts.showTokens {
 				cfg = withMaskedTokens(cfg)
 			}
+			cfg = withShownLevels(cfg)
 			return a.printer("").Print(cfg)
 		},
 	}
@@ -82,6 +83,21 @@ const tokenMask = "*** (use --show-tokens to reveal)"
 // A ${VAR} placeholder is left alone. It is a reference to a value, not the
 // value, and showing it is how a user confirms which variable a context reads
 // — masking it would hide configuration while protecting nothing.
+// withShownLevels is a copy of cfg in which every context shows its write
+// level, readonly for one at the default, as config view prints it. The
+// file itself is not changed.
+func withShownLevels(cfg *config.Config) *config.Config {
+	shown := *cfg
+	shown.Contexts = make([]config.NamedContext, len(cfg.Contexts))
+	copy(shown.Contexts, cfg.Contexts)
+	for i := range shown.Contexts {
+		if shown.Contexts[i].Context.SafetyLevel == "" {
+			shown.Contexts[i].Context.SafetyLevel = string(config.SafetyReadOnly)
+		}
+	}
+	return &shown
+}
+
 func withMaskedTokens(cfg *config.Config) *config.Config {
 	masked := *cfg
 	masked.Tokens = make([]config.NamedToken, len(cfg.Tokens))

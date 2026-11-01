@@ -361,6 +361,9 @@ func readAGConfig(c *client.Client, id string) (map[string]interface{}, error) {
 // cluster would drop or values that configuration cannot take, unchanged
 // when it equals the current one.
 func planActiveGateUpdate(c *client.Client, id string, value map[string]interface{}) ([]plannedWrite, error) {
+	if err := checkClusterActiveGate(c, id); err != nil {
+		return nil, err
+	}
 	cur, err := readAGConfig(c, id)
 	if err != nil {
 		return nil, err
@@ -390,6 +393,9 @@ func planActiveGateUpdate(c *client.Client, id string, value map[string]interfac
 // planActiveGateEdit lets a person edit ActiveGate id's configuration, then
 // plans writing it.
 func (a *App) planActiveGateEdit(c *client.Client, id string) ([]plannedWrite, error) {
+	if err := checkClusterActiveGate(c, id); err != nil {
+		return nil, err
+	}
 	cur, err := readAGConfig(c, id)
 	if err != nil {
 		return nil, err
@@ -402,6 +408,29 @@ func (a *App) planActiveGateEdit(c *client.Client, id string) ([]plannedWrite, e
 		output.PrintInfo("Edit cancelled: the configuration is unchanged.")
 	}
 	return planActiveGateUpdate(c, id, edited)
+}
+
+// checkClusterActiveGate refuses changing an ActiveGate that is not a
+// cluster ActiveGate: the Cluster API's per-ActiveGate endpoint would accept
+// an environment ActiveGate, whose auto-update belongs to its environment.
+// "" (the global configuration) needs no check.
+func checkClusterActiveGate(c *client.Client, id string) error {
+	if id == "" {
+		return nil
+	}
+	var gate map[string]interface{}
+	err := c.GetCluster(clusterAGPath+"/"+url.PathEscape(id), nil, &gate)
+	var apiErr *client.ErrAPI
+	if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
+		return withHint(err, hintListClusterActiveGates)
+	}
+	if err != nil {
+		return err
+	}
+	if t := cell(gate, "type"); t != "CLUSTER" {
+		return &UsageError{Err: fmt.Errorf("ActiveGate %s is an %s ActiveGate; the cluster commands change cluster ActiveGates only. Its auto-update is the %s setting at scope ENVIRONMENT_ACTIVE_GATE-<id> of its environment: use apply with an environment context", id, t, schemaActiveGateUpdates)}
+	}
+	return nil
 }
 
 // checkAutoUpdateFile refuses a configuration the cluster would take

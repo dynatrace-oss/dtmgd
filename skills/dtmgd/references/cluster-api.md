@@ -50,8 +50,8 @@ dtmgd apply -f window.yaml --dry-run --context <cluster-context>       # writes 
   the cluster version) and deleting an update window (it checks the
   ActiveGates' auto-update first) also use. A token made for the other
   cluster commands often lacks the settings scopes: a 403 says so.
-- A settings command's `--context <cluster>` cannot be combined with
-  `--env "a;b"`: a cluster context runs alone.
+- A cluster context runs alone: it cannot be part of `--env "a;b"`, and no
+  command takes `--context` together with `--env`.
 - Cluster update windows are what cluster ActiveGates update in (where the
   cluster honours windows, below). The cluster's own self-update window
   (Cluster Management Console, Automatic update) has no public API.

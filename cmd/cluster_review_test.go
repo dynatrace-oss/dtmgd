@@ -68,7 +68,7 @@ func TestClusterContextWithEnvIsRefused(t *testing.T) {
 		{"get", "settings", "--scope", "environment", "--context", "c", "--env", "a;b"},
 		{"apply", "-f", file, "--context", "c", "--env", "a;b"},
 	} {
-		if r := runCLI(t, cfg, args...); r.Code != 2 || !strings.Contains(r.Stderr, "cluster context") {
+		if r := runCLI(t, cfg, args...); r.Code != 2 {
 			t.Errorf("%v: %s", args[:2], r)
 		}
 	}

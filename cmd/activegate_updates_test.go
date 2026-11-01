@@ -19,6 +19,7 @@ func agRoutes(globalFile string) map[string]route {
 	return map[string]route{
 		agList:                          {File: "cluster_activegates.json"},
 		agGlobal:                        {File: globalFile},
+		agOnePrefix + "ag-1":            {Body: `{"id":"ag-1","type":"CLUSTER"}`},
 		agOnePrefix + "ag-1/autoUpdate": {Body: `{"setting":"INHERITED","effectiveSetting":"ENABLED"}`},
 		agOnePrefix + "ag-2/autoUpdate": {Body: `{"setting":"DISABLED","effectiveSetting":"DISABLED"}`},
 	}
