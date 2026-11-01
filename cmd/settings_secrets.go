@@ -59,6 +59,11 @@ func typeKey(raw json.RawMessage) string {
 	return typ
 }
 
+// visitFunc sees one secret. It returns the value to store in its place and
+// whether to store it at all: a read-only walk never stores, so it never
+// writes into data other goroutines share.
+type visitFunc func(path string, v interface{}) (interface{}, bool)
+
 // maskSecrets returns a deep copy of value in which every non-nil secret is
 // the placeholder.
 func maskSecrets(s settingsSchemaShape, value map[string]interface{}) map[string]interface{} {
@@ -66,11 +71,11 @@ func maskSecrets(s settingsSchemaShape, value map[string]interface{}) map[string
 		return nil
 	}
 	cp, _ := deepCopy(value).(map[string]interface{})
-	s.walkSecrets(s.Properties, cp, "", func(_ string, v interface{}) interface{} {
+	s.walkSecrets(s.Properties, cp, "", func(_ string, v interface{}) (interface{}, bool) {
 		if v == nil {
-			return nil
+			return nil, false
 		}
-		return secretPlaceholder
+		return secretPlaceholder, true
 	})
 	return cp
 }
@@ -79,11 +84,11 @@ func maskSecrets(s settingsSchemaShape, value map[string]interface{}) map[string
 // the cluster's mask instead of a secret.
 func maskedSecretPaths(s settingsSchemaShape, value map[string]interface{}) []string {
 	var paths []string
-	s.walkSecrets(s.Properties, value, "", func(path string, v interface{}) interface{} {
+	s.walkSecrets(s.Properties, value, "", func(path string, v interface{}) (interface{}, bool) {
 		if str, ok := v.(string); ok && maskedSecret.MatchString(str) {
 			paths = append(paths, path)
 		}
-		return v
+		return nil, false
 	})
 	sort.Strings(paths)
 	return paths
@@ -110,37 +115,46 @@ func deepCopy(v interface{}) interface{} {
 
 // walkSecrets visits every secret in m, described by props, and stores what
 // visit returns in its place. A property missing from m is skipped.
-func (s settingsSchemaShape) walkSecrets(props map[string]schemaProperty, m map[string]interface{}, prefix string, visit func(path string, v interface{}) interface{}) {
+func (s settingsSchemaShape) walkSecrets(props map[string]schemaProperty, m map[string]interface{}, prefix string, visit visitFunc) {
 	for name, p := range props {
-		v, ok := m[name]
+		_, ok := m[name]
 		if !ok {
 			continue
 		}
-		path := prefix + name
-		if typeName(p.Type) == "secret" {
-			m[name] = visit(path, v)
-			continue
+		s.walkProperty(p, m, name, prefix+name, visit)
+	}
+}
+
+// walkProperty visits the secrets in m[name], whose property is p.
+func (s settingsSchemaShape) walkProperty(p schemaProperty, m map[string]interface{}, name, path string, visit visitFunc) {
+	v := m[name]
+	if typeName(p.Type) == "secret" {
+		if nv, replace := visit(path, v); replace {
+			m[name] = nv
 		}
-		if key := typeKey(p.Type); key != "" {
-			if obj, ok := v.(map[string]interface{}); ok {
-				s.walkSecrets(s.Types[key].Properties, obj, path+".", visit)
-			}
-			continue
+		return
+	}
+	if key := typeKey(p.Type); key != "" {
+		if obj, ok := v.(map[string]interface{}); ok {
+			s.walkSecrets(s.Types[key].Properties, obj, path+".", visit)
 		}
-		if list, ok := v.([]interface{}); ok && p.Items != nil {
-			s.walkItems(p.Items.Type, list, path, visit)
-		}
+		return
+	}
+	if list, ok := v.([]interface{}); ok && p.Items != nil {
+		s.walkItems(p.Items.Type, list, path, visit)
 	}
 }
 
 // walkItems visits the secrets in a list whose items have type raw.
-func (s settingsSchemaShape) walkItems(raw json.RawMessage, list []interface{}, path string, visit func(string, interface{}) interface{}) {
+func (s settingsSchemaShape) walkItems(raw json.RawMessage, list []interface{}, path string, visit visitFunc) {
 	secret, key := typeName(raw) == "secret", typeKey(raw)
 	for i, item := range list {
 		p := fmt.Sprintf("%s[%d]", path, i)
 		switch {
 		case secret:
-			list[i] = visit(p, item)
+			if nv, replace := visit(p, item); replace {
+				list[i] = nv
+			}
 		case key != "":
 			if obj, ok := item.(map[string]interface{}); ok {
 				s.walkSecrets(s.Types[key].Properties, obj, p+".", visit)

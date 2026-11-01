@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -106,7 +108,7 @@ func TestApplyRefusesAMaskedSecretInACreate(t *testing.T) {
 	for name, objectID := range map[string]string{"no objectId": "", "unknown objectId": "obj-gone"} {
 		t.Run(name, func(t *testing.T) {
 			routes := notifRoutes()
-			routes[objPrefix+"obj-gone"] = route{Status: 404, File: "error_403.json"}
+			routes[objPrefix+"obj-gone"] = route{Status: 404, Body: `{"error":{"code":404,"message":"not found"}}`}
 			api, cfg := applyFake(t, "readwrite-all", routes)
 			r, _ := applyJSON(t, cfg, notifFile(t, "'"+maskValue+"'", objectID))
 			if r.Code != 2 || !strings.Contains(r.Stderr, secretPath) || api.Hits(postObjects) != 0 {
@@ -126,7 +128,7 @@ func TestApplyMaskedSecretUpdatePasses(t *testing.T) {
 	routes[putPrefix+"obj-n1"] = route{Body: `{"code":200,"objectId":"obj-n1"}`}
 	api, cfg := applyFake(t, "readwrite-all", routes)
 	r, rep := applyJSON(t, cfg, notifFile(t, "'"+maskValue+"'", "obj-n1"))
-	if r.Code != 0 || actions(rep) != "updated" || !strings.Contains(api.Bodies(putPrefix + "obj-n1")[0], maskValue) {
+	if r.Code != 0 || actions(rep) != "updated" || !strings.Contains(putBodyText(t, api), maskValue) {
 		t.Errorf("%s", r)
 	}
 }
@@ -146,37 +148,112 @@ func dryRunRoutes() map[string]route {
 	return routes
 }
 
+// secretAt reads webHookNotification.headers[0].secretValue of a report value.
+func secretAt(v map[string]interface{}) interface{} {
+	wh, _ := v["webHookNotification"].(map[string]interface{})
+	h, _ := wh["headers"].([]interface{})
+	if len(h) == 0 {
+		return nil
+	}
+	m, _ := h[0].(map[string]interface{})
+	return m["secretValue"]
+}
+
+// envelopeResults reads the results of an agent envelope.
+func envelopeResults(t *testing.T, stdout string) []writeResult {
+	t.Helper()
+	var e struct {
+		Result writeReport `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &e); err != nil {
+		t.Fatalf("%v\n%s", err, stdout)
+	}
+	return e.Result.Results
+}
+
 func TestDryRunNeverPrintsASecret(t *testing.T) {
 	file := notifFile(t, "real-value", "obj-n1")
-	for name, run := range map[string]func(cfg string) cliResult{
-		"json": func(cfg string) cliResult { return runCLI(t, cfg, "apply", "-f", file, "--dry-run", "-o", "json") },
-		"yaml": func(cfg string) cliResult { return runCLI(t, cfg, "apply", "-f", file, "--dry-run", "-o", "yaml") },
-		"agent": func(cfg string) cliResult {
-			return runCLIWithEnv(t, map[string]string{"CLAUDECODE": "1"}, cfg, "apply", "-f", file, "--dry-run")
-		},
-	} {
+	run := func(env map[string]string, args ...string) func(cfg string) cliResult {
+		return func(cfg string) cliResult {
+			return runCLIWithEnv(t, env, cfg, append([]string{"apply", "-f", file, "--dry-run"}, args...)...)
+		}
+	}
+	cases := map[string]struct {
+		run     func(cfg string) cliResult
+		results func(t *testing.T, stdout string) []writeResult
+	}{
+		"json": {run(nil, "-o", "json"), func(t *testing.T, o string) []writeResult { return decodeReport(t, o).Results }},
+		"yaml": {run(nil, "-o", "yaml"), func(t *testing.T, o string) []writeResult {
+			var rep writeReport
+			if err := yaml.Unmarshal([]byte(o), &rep); err != nil {
+				t.Fatal(err)
+			}
+			return rep.Results
+		}},
+		"agent": {run(map[string]string{"CLAUDECODE": "1"}), envelopeResults},
+		"table": {run(nil), nil},
+	}
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			_, cfg := applyFake(t, "readwrite-all", dryRunRoutes())
-			r := run(cfg)
-			if r.Code != 0 || strings.Contains(r.Stdout, "real-value") || strings.Contains(r.Stdout, maskValue) {
+			r := tc.run(cfg)
+			if r.Code != 0 || strings.Contains(r.Stdout+r.Stderr, "real-value") || strings.Contains(r.Stdout+r.Stderr, maskValue) {
 				t.Fatalf("%s", r)
 			}
-			if strings.Count(unescapeAngles(r.Stdout), secretPlaceholder) < 2 {
+			if tc.results == nil {
+				return
+			}
+			res := tc.results(t, r.Stdout)
+			if len(res) != 1 || secretAt(res[0].Value) != secretPlaceholder || secretAt(res[0].Current) != secretPlaceholder {
 				t.Errorf("want the placeholder in value and current: %s", r)
 			}
 		})
 	}
 }
 
+// putBodyText is the first PUT body to obj-n1; the test fails if none was sent.
+func putBodyText(t *testing.T, api *fakeAPI) string {
+	t.Helper()
+	bodies := api.Bodies(putPrefix + "obj-n1")
+	if len(bodies) == 0 {
+		t.Fatal("no PUT to obj-n1")
+	}
+	return bodies[0]
+}
+
 func TestRealWriteSendsTheRealSecret(t *testing.T) {
 	api, cfg := applyFake(t, "readwrite-all", dryRunRoutes())
 	r, _ := applyJSON(t, cfg, notifFile(t, "real-value", "obj-n1"))
-	if r.Code != 0 || strings.Contains(r.Stdout, "real-value") || !strings.Contains(api.Bodies(putPrefix + "obj-n1")[0], "real-value") {
+	if r.Code != 0 || strings.Contains(r.Stdout, "real-value") || !strings.Contains(putBodyText(t, api), "real-value") {
 		t.Errorf("%s", r)
 	}
 }
 
-// unescapeAngles undoes encoding/json's \u003c and \u003e.
-func unescapeAngles(s string) string {
-	return strings.NewReplacer(`\u003c`, "<", `\u003e`, ">").Replace(s)
+// TestSecretCheckSharesTheValueSafelyAcrossContexts runs one value through
+// several contexts planned in parallel: the check must only read it. Run
+// with -race.
+func TestSecretCheckSharesTheValueSafelyAcrossContexts(t *testing.T) {
+	var envs []fakeEnv
+	levels := map[string]string{}
+	for _, n := range []string{"a", "b", "c", "d"} {
+		envs = append(envs, fakeEnv{n, newFakeAPI(t, notifRoutes())})
+		levels[n] = "readwrite-all"
+	}
+	cfg := withFakeEnvLevels(t, levels, envs...)
+	create := valueFile(t, "type: WEBHOOK\nwebHookNotification:\n  url: https://example.invalid/x\n  secretUrl: real-url\n  headers:\n    - name: X\n      secretValue: real-value\n")
+	base := []string{"create", "settings", "-f", create, "--schema", notifSchema, "--scope", "environment", "--env", "a;b;c;d"}
+	apply := []string{"apply", "-f", notifFile(t, "real-value", ""), "--env", "a;b;c;d"}
+	for name, args := range map[string][]string{
+		"create dry run": append(base, "--dry-run"), "create": base,
+		"apply dry run": append(apply, "--dry-run"), "apply": apply,
+	} {
+		if r := runCLI(t, cfg, args...); r.Code != 0 {
+			t.Errorf("%s: %s", name, r)
+		}
+	}
+	for _, e := range envs {
+		if e.API.Hits(postObjects) != 2 {
+			t.Errorf("%s: %d POSTs, want 2", e.Name, e.API.Hits(postObjects))
+		}
+	}
 }
