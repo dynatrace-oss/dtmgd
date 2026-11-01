@@ -1,6 +1,6 @@
 ---
 name: dtmgd
-description: Query and investigate Dynatrace Managed (self-hosted) environments from the CLI, and read or change their Settings 2.0 (update windows, OneAgent and ActiveGate auto-update, any schema). Use this skill when the user asks about problems, incidents, entities, events, logs, metrics, SLOs, or security vulnerabilities in a Dynatrace Managed cluster — even if they don't mention dtmgd by name. Covers connectivity checks, entity topology, time-series metric queries, log search, every tool of the Dynatrace Managed MCP Server, and the cluster's environments, nodes, license and backup configuration through the Cluster Management API.
+description: Query and investigate Dynatrace Managed (self-hosted) environments from the CLI, and read or change their configuration through Settings 2.0, for any schema (alerting profiles, problem notifications, process-availability rules, update windows, OneAgent and ActiveGate auto-update, and the rest). Use this skill when the user asks about problems, incidents, entities, events, logs, metrics, SLOs, or security vulnerabilities in a Dynatrace Managed cluster, or how something is configured there or should be changed — even if they don't mention dtmgd by name. Covers connectivity checks, entity topology, time-series metric queries, log search, every tool of the Dynatrace Managed MCP Server, and the cluster's environments, nodes, license and backup configuration through the Cluster Management API.
 ---
 
 # Dynatrace Managed CLI — dtmgd
@@ -130,28 +130,29 @@ dtmgd query logs --query "exception" --from now-2h --to now --limit 100
 
 ## Settings 2.0
 
-```bash
-dtmgd get settings-schemas --search deployment                     # find a schema ID
-dtmgd describe settings-schema builtin:deployment.oneagent.updates # scopes, fields, allowed values
-dtmgd get settings --schema builtin:deployment.management.update-windows   # stored objects
-dtmgd get settings --effective --scope HOST-<id> --schema builtin:deployment.oneagent.updates   # what applies to a host
-dtmgd describe settings <object-id> -o yaml                        # one object
-```
-
-`get settings` needs `--schema` or `--scope`. Stored objects are only what someone set; `--effective` resolves inheritance and defaults (`ORIGIN` says where the value comes from). Token scope: `settings.read`.
-
-Writing (token scope `settings.write`, and a context whose `safety-level` allows it; every context starts `readonly`):
+dtmgd reads and writes **any** Settings 2.0 schema, in environments and on cluster contexts. For any configuration request:
 
 ```bash
-dtmgd apply -f object.yaml --dry-run       # ALWAYS first: shows what would change, GETs only
-dtmgd apply -f object.yaml                 # create or update; an export from describe settings -o yaml applies back
-dtmgd create settings -f value.yaml --schema <id> --scope <scope>
-dtmgd delete settings <object-id> --yes    # --yes is required in agent mode
+dtmgd get settings-schemas --search alerting                # 1. find the schema
+dtmgd describe settings-schema builtin:alerting.profile     # 2. scopes, ordered, properties, defaults, references, secrets, maturity
+dtmgd get settings --schema builtin:processavailability --scope environment                    # 3. what is stored,
+dtmgd get settings --effective --scope HOST-<id> --schema builtin:deployment.oneagent.updates   #    or what applies
+dtmgd describe settings <object-id> -o yaml > window.yaml   # 4. export and edit it, or write it from the schema
+dtmgd apply -f window.yaml --dry-run                        # 5. ALWAYS first: GETs only, what would change
+dtmgd apply -f window.yaml --validate-only                  #    the cluster checks it and saves nothing
+dtmgd apply -f window.yaml                                  #    the write
 ```
 
-The same commands work on a cluster context (the cluster's own settings, scope `cluster`); the cluster ActiveGates' auto-update is `get`/`update activegate-updates` there.
+- `get settings` needs `--schema` or `--scope`; `--effective` adds inherited values and defaults (`ORIGIN`). Token scopes: `settings.read`, and `settings.write` to write.
+- Every context starts `readonly`: a blocked write exits `6` (`safety_blocked`) and sends nothing. `--dry-run` and `--validate-only` work at any level.
+- Give a new object of a multi-object schema an `externalId`, so a repeated apply updates it.
+- Ask the user before writing a schema whose `Maturity` is `IN_DEVELOPMENT` or `EARLY_ADOPTER`.
+- Ordered schemas evaluate their list in order. Place an object with `position:` `first`, `last`, `after:<ref>` or `before:<ref>` in the file, or `create settings --position`.
+- A reference (`setting → <schema>`) holds an `objectId`. `delete settings <object-id> --yes` (`--yes` is required in agent mode) refuses an object that other settings use.
+- Secrets print as `<secret>`. An export's mask keeps the secret on update but cannot create an object (exit 2): put the real value in the file.
+- Cluster contexts use the scopes `cluster`, `environment-default` and a few more; the cluster ActiveGates' auto-update is `get`/`update activegate-updates` there.
 
-Exit `6` / `safety_blocked` means the context's level forbids the write; nothing was sent. Details: [references/settings.md](references/settings.md).
+Details and worked examples (an alerting profile with a webhook notification, a rule put first): [references/settings.md](references/settings.md).
 
 ## Gotchas
 
@@ -184,8 +185,9 @@ Read the one that matches the task:
 - [references/cluster-api.md](references/cluster-api.md): a cluster's
   environments, nodes, license, license usage, backup, its own settings, and
   its ActiveGates' auto-update (cluster contexts).
-- [references/settings.md](references/settings.md): Settings 2.0 — finding a
-  schema, stored objects versus effective values, scopes and inheritance, and
-  the update-window, OneAgent update and ActiveGate update settings.
+- [references/settings.md](references/settings.md): Settings 2.0 for any
+  schema — the workflow with worked examples, stored versus effective values,
+  scopes, ordered lists and `position`, references and the delete check,
+  secrets, refusals, maturity, and the update settings.
 - [references/mcp-parity.md](references/mcp-parity.md): which dtmgd command
   matches each Dynatrace Managed MCP Server tool, and how they differ.

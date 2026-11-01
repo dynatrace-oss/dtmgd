@@ -37,25 +37,46 @@ dtmgd describe backup --context <cluster-context>        # backup configuration 
 ## The cluster's own settings
 
 The settings commands work on a cluster context too, through the Cluster
-API's settings endpoints; the scope is `cluster`.
+API's settings endpoints, with the same workflow as in an environment
+([settings.md](settings.md)). `describe settings-schema` lists the scopes
+each schema takes:
+
+- `cluster`: the cluster itself;
+- `environment-default`: defaults for every environment of the cluster;
+- `realm`, `metric` and `CLUSTER_ACTIVE_GATE`, in a few schemas.
 
 ```bash
-dtmgd get settings-schemas --context <cluster-context>                 # the schemas a cluster has
+dtmgd get settings-schemas --context <cluster-context>                     # the schemas a cluster has
+dtmgd get settings --scope cluster --context <cluster-context>             # every schema stored at one scope
+dtmgd get settings --scope environment-default --context <cluster-context>
+dtmgd get settings --schema builtin:networkzones.zones --context <cluster-context>   # one schema, every scope
 dtmgd get settings --schema builtin:deployment.management.update-windows --scope cluster --context <cluster-context>
-dtmgd apply -f window.yaml --dry-run --context <cluster-context>       # writes need the context's safety-level
+dtmgd apply -f window.yaml --dry-run --context <cluster-context>           # writes need the context's safety-level
 ```
 
+- **Network zones** (`builtin:networkzones.zones`) are stored at
+  `environment-default`, although the schema lists `cluster` too: at
+  `cluster` the cluster answers 404 "No schema with topic identifier".
+- **Listing by scope alone works**, `--effective` included. The cluster
+  itself answers such a listing with 404 "No schema with schemaId …", so
+  dtmgd then asks each schema (8 at a time) and merges the results in
+  schema ID order. That takes a few seconds; `--limit` and the note that
+  more exist work as for any listing.
+- **A 404 with a specific message** ("No schema with …", "Settings objectId
+  '…' not found") comes from the Cluster API, so the host is right. Only a
+  404 without a message, or with the generic "HTTP 404 Not Found", adds the
+  hint about a wrong host.
 - The cluster token needs `settings.read` (and `settings.write` to write)
   besides `ServiceProviderAPI`, which creating, `--validate-only` (it reads
   the cluster version) and deleting an update window (it checks the
   ActiveGates' auto-update first) also use. A token made for the other
   cluster commands often lacks the settings scopes: a 403 says so.
-- A cluster context runs alone: it cannot be part of `--env "a;b"`, and no
-  command takes `--context` together with `--env`.
+- A cluster context runs alone: it is never part of `--env "a;b"` or
+  `ALL_ENVIRONMENTS`, and no command takes `--context` together with
+  `--env`.
 - Cluster update windows are what cluster ActiveGates update in (where the
   cluster honours windows, below). The cluster's own self-update window
   (Cluster Management Console, Automatic update) has no public API.
-- A cluster context is never part of `--env "a;b"` or `ALL_ENVIRONMENTS`.
 
 ## Cluster ActiveGate auto-update
 

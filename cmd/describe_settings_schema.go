@@ -65,8 +65,12 @@ func newDescribeSettingsSchemaCmd(a *App) *cobra.Command {
 		Aliases: []string{"settings-schemas", "schema"},
 		Short:   "Show a Settings 2.0 schema: scopes, properties and allowed values",
 		Long: `Show a Settings 2.0 schema: its version, the scopes it can be set at, how
-many objects a scope holds, and its properties with their types, defaults
-and allowed values.
+many objects a scope holds and whether they are ordered, its maturity and
+key property, and its properties with their types, defaults and allowed
+values. A reference to another settings object shows as
+"setting → <schema-id>", a secret as "secret".
+
+-o json or -o yaml prints the API's definition as it is.
 
 Examples:
   dtmgd describe settings-schema builtin:deployment.oneagent.updates

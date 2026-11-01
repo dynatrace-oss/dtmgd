@@ -38,9 +38,10 @@ func newApplyCmd(a *App) *cobra.Command {
 		Short: "Create or update the Settings 2.0 objects in a file",
 		Long: `Create or update the Settings 2.0 objects in a file: YAML or JSON (- for
 stdin), holding one {objectId?, externalId?, schemaId, scope, value,
-updateToken?} object, an array of them, or a list as get settings -o yaml
-prints it, in one or several "---" documents. An exported object applies back
-as it is, an agent-mode export (the envelope) included.
+updateToken?, position?} object, an array of them, or a list as
+get settings -o yaml prints it, in one or several "---" documents. An
+exported object applies back as it is, an agent-mode export (the envelope)
+included.
 
 For each object apply first finds out whether it exists, with GETs only:
   - with objectId: that object, which must have the file's schemaId and
@@ -55,6 +56,15 @@ catches changes since the export) or from the GET; one whose value is the
 same is left unchanged. Anything else is created. Give objects of
 multi-object schemas an externalId to make repeated applies update them
 instead of creating duplicates.
+
+In an ordered schema a new object goes last and an updated one keeps its
+place, unless the object's position key says: first, last, after:<ref> or
+before:<ref>, where <ref> is the objectId or externalId of an object at the
+same scope, or the externalId of an object created earlier in the file.
+
+A secret property holding the cluster's mask, as exports do, keeps the
+stored secret on an update, but cannot create an object. Reports show
+secrets as <secret>.
 
 --dry-run shows the planned changes, with GETs only, at any write level.
 --validate-only asks the cluster to check every change without saving it
