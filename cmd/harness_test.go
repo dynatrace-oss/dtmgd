@@ -73,25 +73,8 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
 		q := r.URL.Query()
-		f.mu.Lock()
-		f.hits[key]++
-		f.queries[key] = append(f.queries[key], q)
-		f.headers[key] = append(f.headers[key], r.Header.Clone())
-		f.escaped[key] = append(f.escaped[key], r.URL.EscapedPath())
-		sent, _ := io.ReadAll(r.Body)
-		f.bodies[key] = append(f.bodies[key], string(sent))
-		f.mu.Unlock()
-
-		rt, ok := routes[key]
-		if npk := q.Get("nextPageKey"); npk != "" {
-			rt, ok = routes[key+" nextPageKey="+npk]
-		} else if bySchema, found := routes[key+" schemaIds="+q.Get("schemaIds")]; found && q.Has("schemaIds") {
-			rt, ok = bySchema, true
-		}
-		if !ok {
-			// "*" answers a request that matches no other key.
-			rt, ok = routes["*"]
-		}
+		f.record(key, r)
+		rt, ok := resolveRoute(routes, key, q)
 		w.Header().Set("Content-Type", "application/json")
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
@@ -104,21 +87,11 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 			}
 			return
 		}
-		body := rt.Body
-		if len(rt.Seq) > 0 {
-			f.mu.Lock()
-			body = rt.Seq[min(f.seq[key], len(rt.Seq)-1)]
-			f.seq[key]++
-			f.mu.Unlock()
-		}
-		if rt.File != "" {
-			b, err := os.ReadFile(filepath.Join("testdata", "api", rt.File))
-			if err != nil {
-				t.Errorf("fixture %s: %v", rt.File, err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			body = string(b)
+		body, err := f.routeBody(key, rt)
+		if err != nil {
+			t.Errorf("fixture %s: %v", rt.File, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
 		}
 		if rt.Status != 0 {
 			w.WriteHeader(rt.Status)
@@ -128,6 +101,54 @@ func newFakeAPI(t *testing.T, routes map[string]route) *fakeAPI {
 	t.Cleanup(srv.Close)
 	f.URL = srv.URL
 	return f
+}
+
+// record stores what a request sent, under "METHOD /path".
+func (f *fakeAPI) record(key string, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.hits[key]++
+	f.queries[key] = append(f.queries[key], r.URL.Query())
+	f.headers[key] = append(f.headers[key], r.Header.Clone())
+	f.escaped[key] = append(f.escaped[key], r.URL.EscapedPath())
+	sent, _ := io.ReadAll(r.Body)
+	f.bodies[key] = append(f.bodies[key], string(sent))
+}
+
+// resolveRoute finds the route for a request: a nextPageKey or schemaIds
+// variant of the key first, then the key itself, then "*".
+func resolveRoute(routes map[string]route, key string, q url.Values) (route, bool) {
+	rt, ok := routes[key]
+	if npk := q.Get("nextPageKey"); npk != "" {
+		rt, ok = routes[key+" nextPageKey="+npk]
+	} else if bySchema, found := routes[key+" schemaIds="+q.Get("schemaIds")]; found && q.Has("schemaIds") {
+		rt, ok = bySchema, true
+	}
+	if !ok {
+		// "*" answers a request that matches no other key.
+		rt, ok = routes["*"]
+	}
+	return rt, ok
+}
+
+// routeBody returns a route's response body: the Seq entry for this hit, else
+// Body, replaced by the File fixture when one is set.
+func (f *fakeAPI) routeBody(key string, rt route) (string, error) {
+	body := rt.Body
+	if len(rt.Seq) > 0 {
+		f.mu.Lock()
+		body = rt.Seq[min(f.seq[key], len(rt.Seq)-1)]
+		f.seq[key]++
+		f.mu.Unlock()
+	}
+	if rt.File != "" {
+		b, err := os.ReadFile(filepath.Join("testdata", "api", rt.File))
+		if err != nil {
+			return "", err
+		}
+		body = string(b)
+	}
+	return body, nil
 }
 
 // Hits reports how many requests reached "METHOD /path".

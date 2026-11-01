@@ -113,18 +113,7 @@ func TestApplyPositionBodies(t *testing.T) {
 		"first": "", "before:o1": "", "before:o3": "o2", "after:x1": "o1", "after:o3": "o3",
 	}
 	for pos, want := range creates {
-		api, cfg := applyFake(t, "readwrite-all", orderedRoutes())
-		r, rep := orderedApply(t, cfg, "externalId: fresh\nschemaId: "+orderedSchema+"\nscope: environment\nposition: "+pos+"\nvalue: {name: new}\n")
-		if r.Code != 0 || actions(rep) != "created" {
-			t.Fatalf("%s: %s", pos, r)
-		}
-		var items []map[string]interface{}
-		if err := json.Unmarshal([]byte(api.Bodies(postObjects)[0]), &items); err != nil {
-			t.Fatal(err)
-		}
-		if got, ok := items[0]["insertAfter"]; !ok || got != want {
-			t.Errorf("create %s: insertAfter %v (present %v), want %q", pos, got, ok, want)
-		}
+		checkCreatePosition(t, pos, want)
 	}
 	api, cfg := applyFake(t, "readwrite-all", orderedRoutes())
 	orderedApply(t, cfg, "externalId: fresh\nschemaId: "+orderedSchema+"\nscope: environment\nposition: last\nvalue: {name: new}\n")
@@ -139,22 +128,46 @@ func TestApplyPositionBodies(t *testing.T) {
 		{"position: after:x3", "o1", "insertAfter", "o3"},
 	}
 	for _, u := range updates {
-		api, cfg := applyFake(t, "readwrite-all", orderedRoutes())
-		r, rep := orderedApply(t, cfg, "objectId: "+u.id+"\nschemaId: "+orderedSchema+"\nscope: environment\n"+u.doc+"\nvalue: {name: moved}\n")
-		if r.Code != 0 || actions(rep) != "updated" {
-			t.Fatalf("%s: %s", u.doc, r)
-		}
-		b := putBody(t, api, u.id)
-		other := "insertBefore"
-		if u.key == other {
-			other = "insertAfter"
-		}
-		if got, ok := b[u.key]; !ok || got != u.want {
-			t.Errorf("%s: %s = %v (present %v), want %q", u.doc, u.key, got, ok, u.want)
-		}
-		if _, both := b[other]; both {
-			t.Errorf("%s: PUT body holds both insertAfter and insertBefore: %v", u.doc, b)
-		}
+		checkUpdatePosition(t, u.doc, u.id, u.key, u.want)
+	}
+}
+
+// checkCreatePosition creates an object at pos and checks the POST's insertAfter.
+func checkCreatePosition(t *testing.T, pos, want string) {
+	t.Helper()
+	api, cfg := applyFake(t, "readwrite-all", orderedRoutes())
+	r, rep := orderedApply(t, cfg, "externalId: fresh\nschemaId: "+orderedSchema+"\nscope: environment\nposition: "+pos+"\nvalue: {name: new}\n")
+	if r.Code != 0 || actions(rep) != "created" {
+		t.Fatalf("%s: %s", pos, r)
+	}
+	var items []map[string]interface{}
+	if err := json.Unmarshal([]byte(api.Bodies(postObjects)[0]), &items); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := items[0]["insertAfter"]; !ok || got != want {
+		t.Errorf("create %s: insertAfter %v (present %v), want %q", pos, got, ok, want)
+	}
+}
+
+// checkUpdatePosition moves object id by doc and checks the PUT body holds
+// key=want and not the opposite key.
+func checkUpdatePosition(t *testing.T, doc, id, key, want string) {
+	t.Helper()
+	api, cfg := applyFake(t, "readwrite-all", orderedRoutes())
+	r, rep := orderedApply(t, cfg, "objectId: "+id+"\nschemaId: "+orderedSchema+"\nscope: environment\n"+doc+"\nvalue: {name: moved}\n")
+	if r.Code != 0 || actions(rep) != "updated" {
+		t.Fatalf("%s: %s", doc, r)
+	}
+	b := putBody(t, api, id)
+	other := "insertBefore"
+	if key == other {
+		other = "insertAfter"
+	}
+	if got, ok := b[key]; !ok || got != want {
+		t.Errorf("%s: %s = %v (present %v), want %q", doc, key, got, ok, want)
+	}
+	if _, both := b[other]; both {
+		t.Errorf("%s: PUT body holds both insertAfter and insertBefore: %v", doc, b)
 	}
 }
 
