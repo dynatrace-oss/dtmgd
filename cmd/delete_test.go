@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"strings"
 	"testing"
 
@@ -10,9 +13,41 @@ import (
 )
 
 const (
-	deletePrefix   = "DELETE /e/env1/api/v2/settings/objects/"
-	referencesPath = objectsPath + " schemaIds=" + schemaOneAgentUpdates + "," + schemaActiveGateUpdates
+	deletePrefix = "DELETE /e/env1/api/v2/settings/objects/"
+	// referencesPath is the listing of the schemas that reference an update
+	// window, the IDs sorted and comma-joined as the check sends them.
+	referencesPath = objectsPath + " schemaIds=" + schemaActiveGateUpdates + "," + schemaOneAgentUpdates
+	notifPath      = objectsPath + " schemaIds=builtin:problem.notifications"
+	envSchemas     = "/e/env1/api/v2/settings/schemas"
+	refAlerting    = `{"properties":{"alertingProfile":{"type":"setting","referencedType":"builtin:alerting.profile"}}}`
+	refWindow      = `{"types":{"W":{"properties":{"w":{"type":"list","items":{"type":"setting","referencedType":"builtin:deployment.management.update-windows"}}}}}}`
 )
+
+// schemaCatalog is the schema list and one definition route per schema, at
+// the schemas path prefix (without the method).
+func schemaCatalog(prefix string, defs map[string]string) map[string]route {
+	routes := map[string]route{}
+	var items []string
+	for id, def := range defs {
+		items = append(items, fmt.Sprintf(`{"schemaId":%q}`, id))
+		routes["GET "+prefix+"/"+id] = route{Body: def}
+	}
+	routes["GET "+prefix] = route{Body: fmt.Sprintf(`{"items":[%s],"totalCount":%d}`, strings.Join(items, ","), len(items))}
+	return routes
+}
+
+// deleteCatalog is the schemas deleteFake serves: a notification that
+// references alerting profiles, and the two update schemas that reference
+// update windows.
+func deleteCatalog() map[string]string {
+	return map[string]string{
+		"builtin:alerting.profile":      `{"multiObject":true}`,
+		schemaUpdateWindows:             `{"multiObject":true}`,
+		"builtin:problem.notifications": refAlerting,
+		schemaOneAgentUpdates:           refWindow,
+		schemaActiveGateUpdates:         refWindow,
+	}
+}
 
 // windowObject is the GET body of update window id.
 func windowObject(id string) route {
@@ -21,15 +56,19 @@ func windowObject(id string) route {
 
 // deleteFake is a writable context holding alerting object obj-alerting-1
 // and update window uw-weekly, whose references come from refs.
-func deleteFake(t *testing.T, level, refs string) (*fakeAPI, string) {
+func deleteFake(t *testing.T, level, refs string, extra ...map[string]route) (*fakeAPI, string) {
 	t.Helper()
 	routes := map[string]route{
-		"GET /e/env1/api/v2/settings/schemas/builtin:alerting.profile": {Body: `{"multiObject":true}`},
-		objPrefix + "obj-alerting-1":                                   alertingObject("obj-alerting-1", "Default"),
-		objPrefix + "uw-weekly":                                        windowObject("uw-weekly"),
-		deletePrefix + "obj-alerting-1":                                {Body: ""},
-		deletePrefix + "uw-weekly":                                     {Body: ""},
-		referencesPath:                                                 {Body: refs},
+		objPrefix + "obj-alerting-1":    alertingObject("obj-alerting-1", "Default"),
+		objPrefix + "uw-weekly":         windowObject("uw-weekly"),
+		deletePrefix + "obj-alerting-1": {Body: ""},
+		deletePrefix + "uw-weekly":      {Body: ""},
+		referencesPath:                  {Body: refs},
+		notifPath:                       {Body: `{"items":[],"totalCount":0}`},
+	}
+	maps.Copy(routes, schemaCatalog(envSchemas, deleteCatalog()))
+	for _, e := range extra {
+		maps.Copy(routes, e)
 	}
 	if level == "" {
 		api := newFakeAPI(t, routes)
@@ -67,6 +106,108 @@ func TestDeleteRefusesAReferencedWindow(t *testing.T) {
 	r := runCLI(t, cfg, "delete", "settings", "uw-weekly", "--yes")
 	if r.Code != 1 || !strings.Contains(r.Stderr, schemaOneAgentUpdates) || !strings.Contains(r.Stderr, "HOST_GROUP-0000000000000001") || api.Hits(deletePrefix+"uw-weekly") != 0 {
 		t.Errorf("%s", r)
+	}
+}
+
+// notification is a listed notification object that references profile id.
+func refNotification(id, profile string) string {
+	return fmt.Sprintf(`{"objectId":%q,"schemaId":"builtin:problem.notifications","scope":"environment","summary":"Mail %s","value":{"alertingProfile":%q}}`, id, id, profile)
+}
+
+func refList(items ...string) route {
+	return route{Body: `{"items":[` + strings.Join(items, ",") + `],"totalCount":` + fmt.Sprint(len(items)) + `}`}
+}
+
+func TestDeleteRefusesAReferencedObject(t *testing.T) {
+	for _, flags := range [][]string{{"--yes"}, {"--dry-run"}} {
+		api, cfg := deleteFake(t, "readwrite-all", "", map[string]route{notifPath: refList(refNotification("notif-1", "obj-alerting-1"))})
+		r := runCLI(t, cfg, append([]string{"delete", "settings", "obj-alerting-1"}, flags...)...)
+		for _, want := range []string{"builtin:problem.notifications", "notif-1", "Mail notif-1", "still used by 1 settings object", "outside Settings 2.0 are not checked"} {
+			if !strings.Contains(r.Stderr, want) {
+				t.Errorf("%v: stderr lacks %q: %s", flags, want, r)
+			}
+		}
+		if r.Code != 1 || api.Hits(deletePrefix+"obj-alerting-1") != 0 {
+			t.Errorf("%v: %s", flags, r)
+		}
+	}
+}
+
+func TestDeleteUnreferencedObject(t *testing.T) {
+	api, cfg := deleteFake(t, "readwrite-all", "", map[string]route{notifPath: refList(refNotification("notif-1", "someone-else"))})
+	if r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes"); r.Code != 0 || api.Hits(deletePrefix+"obj-alerting-1") != 1 {
+		t.Errorf("%s", r)
+	}
+}
+
+func TestDeleteNoReferencingSchemaListsNothing(t *testing.T) {
+	defs := deleteCatalog()
+	delete(defs, "builtin:problem.notifications")
+	api, cfg := deleteFake(t, "readwrite-all", "", schemaCatalog(envSchemas, defs))
+	if r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes"); r.Code != 0 || api.Hits(objectsPath) != 0 {
+		t.Errorf("listing hits %d: %s", api.Hits(objectsPath), r)
+	}
+}
+
+func TestDeleteFindsAReferenceOnALaterPage(t *testing.T) {
+	page1 := `{"items":[` + refNotification("notif-1", "other") + `],"nextPageKey":"pk2","totalCount":2}`
+	page2 := refList(refNotification("notif-2", "obj-alerting-1"))
+	api, cfg := deleteFake(t, "readwrite-all", "", map[string]route{notifPath: {Body: page1}, objectsPath + " nextPageKey=pk2": page2})
+	if r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes"); r.Code != 1 || !strings.Contains(r.Stderr, "notif-2") || api.Hits(deletePrefix+"obj-alerting-1") != 0 {
+		t.Errorf("%s", r)
+	}
+}
+
+func TestDeleteRefusalListsAtMostTen(t *testing.T) {
+	var items []string
+	for i := 1; i <= 12; i++ {
+		items = append(items, refNotification(fmt.Sprintf("notif-%02d", i), "obj-alerting-1"))
+	}
+	_, cfg := deleteFake(t, "readwrite-all", "", map[string]route{notifPath: refList(items...)})
+	r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes")
+	if r.Code != 1 || !strings.Contains(r.Stderr, "used by 12 settings") || strings.Count(r.Stderr, "(notif-") != 10 || !strings.Contains(r.Stderr, ", …") {
+		t.Errorf("%s", r)
+	}
+}
+
+func TestDeleteSkipsAnUnreadableDefinition(t *testing.T) {
+	routes := map[string]route{"GET " + envSchemas + "/builtin:unreadable": {Status: 404, Body: `{"error":{"code":404,"message":"gone"}}`}}
+	defs := deleteCatalog()
+	defs["builtin:unreadable"] = "{}"
+	catalog := schemaCatalog(envSchemas, defs)
+	maps.Copy(catalog, routes)
+	api, cfg := deleteFake(t, "readwrite-all", "", catalog)
+	r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes", "-o", "json")
+	rep := decodeReport(t, r.Stdout)
+	if r.Code != 0 || api.Hits(deletePrefix+"obj-alerting-1") != 1 || len(rep.Warnings) != 1 ||
+		!strings.Contains(rep.Warnings[0], "schema builtin:unreadable could not be read (404); the delete check skipped it") {
+		t.Errorf("%+v\n%s", rep.Warnings, r)
+	}
+	if r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes"); !strings.Contains(r.Stderr, "builtin:unreadable") {
+		t.Errorf("no warning on stderr: %s", r)
+	}
+}
+
+func TestDeleteFailsWhenTheScanFails(t *testing.T) {
+	for status, want := range map[int]string{400: "", 403: "settings.read"} {
+		api, cfg := deleteFake(t, "readwrite-all", "", map[string]route{notifPath: {Status: status, Body: `{"error":{"code":1,"message":"nope"}}`}})
+		r := runCLI(t, cfg, "delete", "settings", "obj-alerting-1", "--yes")
+		if r.Code == 0 || api.Hits(deletePrefix+"obj-alerting-1") != 0 || !strings.Contains(r.Stderr, want) {
+			t.Errorf("%d: %s", status, r)
+		}
+	}
+}
+
+func TestReferencingSchemas(t *testing.T) {
+	defs := map[string]json.RawMessage{
+		"builtin:problem.notifications": json.RawMessage(`{"properties":{"alertingProfile":{"type":"setting","referencedType":"builtin:alerting.profile"}}}`),
+		"builtin:x.nested":              json.RawMessage(`{"types":{"F":{"properties":{"mz":{"type":"list","items":{"type":"setting","referencedType":"builtin:alerting.profile"}}}}}}`),
+		"builtin:other":                 json.RawMessage(`{"properties":{"a":{"type":"setting","referencedType":"builtin:management-zones"}}}`),
+		"builtin:plain":                 json.RawMessage(`{"properties":{"a":{"type":"text","referencedType":"builtin:alerting.profile"}}}`),
+	}
+	got := strings.Join(referencingSchemas(defs, "builtin:alerting.profile"), ",")
+	if got != "builtin:problem.notifications,builtin:x.nested" {
+		t.Errorf("got %s", got)
 	}
 }
 

@@ -74,6 +74,9 @@ type writeReport struct {
 	DryRun       bool          `json:"dryRun" yaml:"dryRun"`
 	ValidateOnly bool          `json:"validateOnly" yaml:"validateOnly"`
 	Results      []writeResult `json:"results" yaml:"results"`
+	// Warnings are problems that did not stop the plan, as
+	// "<context>: <warning>".
+	Warnings []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
 }
 
 // plannedWrite is one object's write as the GET-only plan resolved it.
@@ -103,6 +106,9 @@ type plannedWrite struct {
 	// the action and error. Such a write validates its own way, so the
 	// validateOnly version gate does not apply to it.
 	Exec func(c *client.Client, validateOnly bool) writeResult
+	// Warnings are problems that did not stop the plan (a check that
+	// skipped something); the report lists them.
+	Warnings []string
 }
 
 // writeSpec describes one write command for runWrites.
@@ -192,7 +198,7 @@ func (a *App) runWrites(s writeSpec) error {
 	if err := s.checkPlans(names, plans, levels); err != nil {
 		return err
 	}
-	rep := writeReport{DryRun: s.DryRun, ValidateOnly: s.ValidateOnly, Results: []writeResult{}}
+	rep := writeReport{DryRun: s.DryRun, ValidateOnly: s.ValidateOnly, Results: []writeResult{}, Warnings: planWarnings(names, plans)}
 	if cancelled, err := s.confirm(names, plans); err != nil {
 		return err
 	} else if cancelled {
@@ -205,6 +211,19 @@ func (a *App) runWrites(s writeSpec) error {
 		return err
 	}
 	return a.renderWriteReport(s, rep)
+}
+
+// planWarnings collects every context's plan warnings, in context order.
+func planWarnings(names []string, plans map[string]contextPlan) []string {
+	var out []string
+	for _, name := range names {
+		for _, wr := range plans[name].writes {
+			for _, msg := range wr.Warnings {
+				out = append(out, name+": "+msg)
+			}
+		}
+	}
+	return out
 }
 
 // clusterHints are the hints of s's errors on a cluster context: a
@@ -680,6 +699,9 @@ func (a *App) renderWriteReport(s writeSpec, rep writeReport) error {
 			return err
 		}
 		return fmt.Errorf("%w: %w", errReported, failErr)
+	}
+	for _, msg := range rep.Warnings {
+		output.PrintWarning("%s", msg)
 	}
 	if len(rep.Results) > 0 || a.dataFormat() {
 		if err := a.printWriteReport(rep); err != nil {

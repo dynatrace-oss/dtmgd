@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,13 +10,14 @@ import (
 )
 
 const (
-	clusterSchemas   = "GET /api/cluster/v2/settings/schemas"
-	clusterObjects   = "GET /api/cluster/v2/settings/objects"
-	clusterEffective = "GET /api/cluster/v2/settings/effectiveValues"
-	clusterPost      = "POST /api/cluster/v2/settings/objects"
-	clusterObjPrefix = "GET /api/cluster/v2/settings/objects/"
-	clusterDelPrefix = "DELETE /api/cluster/v2/settings/objects/"
-	clusterWindowDef = "GET /api/cluster/v2/settings/schemas/" + schemaUpdateWindows
+	clusterSchemas      = "GET /api/cluster/v2/settings/schemas"
+	clusterObjects      = "GET /api/cluster/v2/settings/objects"
+	clusterEffective    = "GET /api/cluster/v2/settings/effectiveValues"
+	clusterPost         = "POST /api/cluster/v2/settings/objects"
+	clusterObjPrefix    = "GET /api/cluster/v2/settings/objects/"
+	clusterDelPrefix    = "DELETE /api/cluster/v2/settings/objects/"
+	clusterWindowDef    = "GET /api/cluster/v2/settings/schemas/" + schemaUpdateWindows
+	clusterSchemaPrefix = "/api/cluster/v2/settings/schemas"
 )
 
 // withFakeCluster writes a config whose current context is cluster context
@@ -130,6 +132,7 @@ func TestClusterWritesKeepTheGuards(t *testing.T) {
 		clusterObjPrefix + "obj-x": {Body: `{"objectId":"obj-x","schemaId":"builtin:test.multi","scope":"cluster","updateToken":"t-x","value":{}}`},
 		clusterDelPrefix + "obj-x": {Body: ""},
 	}
+	maps.Copy(routes, schemaCatalog(clusterSchemaPrefix, map[string]string{"builtin:test.multi": `{"multiObject":true}`}))
 	api, _, cfg := clusterSettingsFake(t, "", routes)
 	if r := runCLI(t, cfg, "apply", "-f", file); r.Code != 6 || api.totalHits() != 0 {
 		t.Errorf("readonly: %s", r)
