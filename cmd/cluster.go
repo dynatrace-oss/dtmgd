@@ -135,7 +135,7 @@ func hintOnStatus(fetch func(*client.Client, int) (fetched, error), status int, 
 // clusterPagedFetch is pagedFetch for a Cluster API list endpoint; path is
 // relative to {host}/api.
 func clusterPagedFetch(path string, params map[string]string, listKey string, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
-	return pagedWith((*client.Client).GetClusterPaged, path, params, listKey, pageCap, maxPages)
+	return pagedWith((*client.Client).GetClusterPaged, path, params, listKey, 0, pageCap, maxPages)
 }
 
 // clusterObjectFetch is describeFetch for a Cluster API endpoint that returns

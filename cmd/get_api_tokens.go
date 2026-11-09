@@ -11,8 +11,12 @@ import (
 	"github.com/dynatrace-oss/dtmgd/pkg/client"
 )
 
-// apiTokensPageCap is the largest pageSize /apiTokens accepts.
-const apiTokensPageCap = 10000
+// apiTokensPageMin and apiTokensPageCap are the smallest and largest pageSize
+// /apiTokens accepts; outside them it answers HTTP 400.
+const (
+	apiTokensPageMin = 100
+	apiTokensPageCap = 10000
+)
 
 // apiTokensFields are the optional fields get api-tokens asks for: the list
 // returns only id, name, enabled, owner and creationDate otherwise.
@@ -162,7 +166,7 @@ Examples:
 			if opts.sort != "" && !strings.HasPrefix(opts.sort, "-") && !strings.HasPrefix(opts.sort, "+") {
 				opts.sort = "+" + opts.sort
 			}
-			base := pagedFetch("/apiTokens", apiTokensParams(opts), "apiTokens", apiTokensPageCap, a.Opts.MaxPages)
+			base := pagedFetchMin("/apiTokens", apiTokensParams(opts), "apiTokens", apiTokensPageMin, apiTokensPageCap, a.Opts.MaxPages)
 			spec := fetchSpec{
 				Verb:     "get",
 				Resource: "api-tokens",

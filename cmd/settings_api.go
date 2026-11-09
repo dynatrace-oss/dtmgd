@@ -40,7 +40,7 @@ func settingsPaged(c *client.Client, path string, params map[string]string, p cl
 
 // settingsPagedFetch is pagedFetch for a settings list, in either API.
 func settingsPagedFetch(path string, params map[string]string, listKey string, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
-	return pagedWith(settingsPaged, path, params, listKey, pageCap, maxPages)
+	return pagedWith(settingsPaged, path, params, listKey, 0, pageCap, maxPages)
 }
 
 // settingsObjectFetch is describeFetch for one settings object or schema,

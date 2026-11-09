@@ -468,15 +468,23 @@ func showing(n, total int, resource string) string {
 // listKey. pageCap is the largest pageSize the endpoint accepts: the request
 // asks for min(limit, pageCap) items per page and pages until limit is met.
 func pagedFetch(path string, params map[string]string, listKey string, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
-	return pagedWith((*client.Client).GetV2Paged, path, params, listKey, pageCap, maxPages)
+	return pagedWith((*client.Client).GetV2Paged, path, params, listKey, 0, pageCap, maxPages)
+}
+
+// pagedFetchMin is pagedFetch for an endpoint that also refuses a pageSize
+// below pageMin (HTTP 400). A smaller limit still asks for pageMin items, and
+// the list is cut to the limit; the endpoint's totalCount shows the cut.
+func pagedFetchMin(path string, params map[string]string, listKey string, pageMin, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
+	return pagedWith((*client.Client).GetV2Paged, path, params, listKey, pageMin, pageCap, maxPages)
 }
 
 // pagedGetter is a paged GET of one API: (*client.Client).GetV2Paged or
 // GetClusterPaged.
 type pagedGetter func(c *client.Client, path string, params map[string]string, p client.Paging) (map[string]interface{}, error)
 
-// pagedWith is pagedFetch over get.
-func pagedWith(get pagedGetter, path string, params map[string]string, listKey string, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
+// pagedWith is pagedFetch over get; pageMin is the smallest pageSize the
+// endpoint accepts (0 = no minimum).
+func pagedWith(get pagedGetter, path string, params map[string]string, listKey string, pageMin, pageCap, maxPages int) func(*client.Client, int) (fetched, error) {
 	return func(c *client.Client, limit int) (fetched, error) {
 		p := make(map[string]string, len(params)+1)
 		for k, v := range params {
@@ -484,7 +492,7 @@ func pagedWith(get pagedGetter, path string, params map[string]string, listKey s
 		}
 		pageSize := pageCap
 		if limit > 0 && limit < pageCap {
-			pageSize = limit
+			pageSize = max(limit, pageMin)
 		}
 		p["pageSize"] = strconv.Itoa(pageSize)
 		body, err := get(c, path, p, client.Paging{MaxPages: maxPages, Limit: limit, ListKey: listKey})
