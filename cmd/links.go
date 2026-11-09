@@ -18,6 +18,7 @@ const (
 	uiVulnerabilities = "/ui/security/vulnerabilities"
 	uiVulnerability   = uiVulnerabilities + "/"
 	uiSLOs            = "/ui/slo"
+	uiAPITokens       = "/ui/access-tokens"
 	uiLogs            = "/ui/log-monitoring"
 	uiMetrics         = "/ui/metrics"
 	uiDataExplorer    = "/ui/data-explorer"
