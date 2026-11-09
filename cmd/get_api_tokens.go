@@ -202,21 +202,9 @@ func filteredTokensFetch(base func(*client.Client, int) (fetched, error), opts g
 		}
 		body := f.Body.(map[string]interface{})
 		all, _ := body["apiTokens"].([]interface{})
-		now := time.Now().UTC()
-		kept := make([]interface{}, 0, len(all))
-		for _, raw := range all {
-			m, ok := raw.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			var entry APITokenEntry
-			if err := client.DecodePaged(m, &entry); err != nil {
-				return fetched{}, err
-			}
-			if reasons := opts.uselessReasons(entry, now); len(reasons) > 0 {
-				m["uselessReasons"] = reasons
-				kept = append(kept, m)
-			}
+		kept, err := opts.keepUseless(all, time.Now().UTC())
+		if err != nil {
+			return fetched{}, err
 		}
 		total := len(kept)
 		more := false
@@ -232,6 +220,27 @@ func filteredTokensFetch(base func(*client.Client, int) (fetched, error), opts g
 		f.Count = len(kept)
 		return f, nil
 	}
+}
+
+// keepUseless returns the tokens of all that match a filter at now, each
+// with its "uselessReasons".
+func (o getAPITokensOptions) keepUseless(all []interface{}, now time.Time) ([]interface{}, error) {
+	kept := make([]interface{}, 0, len(all))
+	for _, raw := range all {
+		m, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		var entry APITokenEntry
+		if err := client.DecodePaged(m, &entry); err != nil {
+			return nil, err
+		}
+		if reasons := o.uselessReasons(entry, now); len(reasons) > 0 {
+			m["uselessReasons"] = reasons
+			kept = append(kept, m)
+		}
+	}
+	return kept, nil
 }
 
 // apiTokenRows turns an /apiTokens body into table rows.
