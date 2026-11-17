@@ -20,6 +20,7 @@ const (
 	scopeMetricsRead          = "metrics.read"
 	scopeLogsRead             = "logs.read"
 	scopeSLORead              = "slo.read"
+	scopeAPITokensRead        = "apiTokens.read"
 	scopeSecurityProblemsRead = "securityProblems.read"
 	scopeDataExport           = "DataExport"
 	scopeSettingsRead         = "settings.read"

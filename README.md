@@ -187,6 +187,7 @@ command needs; a test keeps this list identical to those declarations.
 
 <!-- scopes:start -->
 - Access problem and event feed, metrics, and topology (`DataExport`): `doctor`, and the cluster-version check of `--validate-only` on settings writes
+- Read API tokens (`apiTokens.read`): `get api-tokens`
 - Read entities (`entities.read`): entities, entity types and relations; name lookups in `query metrics` and `query log-counts`
 - Read events (`events.read`): events
 - Read logs (`logs.read`): `query logs`, `query log-counts`

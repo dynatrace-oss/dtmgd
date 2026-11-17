@@ -18,7 +18,7 @@ A context stores three things:
 
 Required API token scopes:
 ```
-  DataExport, entities.read, events.read, logs.read, metrics.read, problems.read, securityProblems.read, settings.read, settings.write, slo.read
+  DataExport, apiTokens.read, entities.read, events.read, logs.read, metrics.read, problems.read, securityProblems.read, settings.read, settings.write, slo.read
 ```
 
 Without --env-id the context is a cluster context, for the Cluster

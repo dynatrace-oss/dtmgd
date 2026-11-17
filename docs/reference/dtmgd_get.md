@@ -14,6 +14,7 @@ Supported resources:
   events (ev)           Events within a time range
   metrics (met)         Available metric descriptors
   slos                  Service Level Objectives
+  api-tokens (tokens)   API tokens, with their last use
   security-problems (sp) Security vulnerabilities
   settings-schemas (schemas) Settings 2.0 schemas
   settings              Settings 2.0 objects (requires --schema or --scope)
@@ -59,6 +60,7 @@ dtmgd get [flags]
 
 * [dtmgd](dtmgd.md)	 - Dynatrace Managed CLI
 * [dtmgd get activegate-updates](dtmgd_get_activegate-updates.md)	 - Show how the cluster's ActiveGates update
+* [dtmgd get api-tokens](dtmgd_get_api-tokens.md)	 - List API tokens and find the unused ones
 * [dtmgd get entities](dtmgd_get_entities.md)	 - Discover entities using an entity selector
 * [dtmgd get entity-types](dtmgd_get_entity-types.md)	 - List all available entity types
 * [dtmgd get environments](dtmgd_get_environments.md)	 - List the environments of a Dynatrace Managed cluster (cluster context)

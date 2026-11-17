@@ -16,6 +16,7 @@ Supported resources:
   events (ev)           Events within a time range
   metrics (met)         Available metric descriptors
   slos                  Service Level Objectives
+  api-tokens (tokens)   API tokens, with their last use
   security-problems (sp) Security vulnerabilities
   settings-schemas (schemas) Settings 2.0 schemas
   settings              Settings 2.0 objects (requires --schema or --scope)
@@ -31,6 +32,7 @@ Use 'dtmgd get <resource> --help' for resource-specific options.`,
 	}
 	cmd.AddCommand(
 		newGetActiveGateUpdatesCmd(a),
+		newGetAPITokensCmd(a),
 		newGetEntityTypesCmd(a),
 		newGetEntitiesCmd(a),
 		newGetEnvironmentsCmd(a),
